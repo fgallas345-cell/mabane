@@ -216,6 +216,7 @@ export default function Sales() {
   const [editClientId, setEditClientId] = useState('')
   const [editDiscount, setEditDiscount] = useState(0)
   const [editSaleItems, setEditSaleItems] = useState([])
+  const [editProductToAdd, setEditProductToAdd] = useState('')
   const [confirmCancel, setConfirmCancel] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [paymentOpen, setPaymentOpen] = useState(null)
@@ -343,21 +344,50 @@ export default function Sales() {
   const handleUpdateSale = async (e) => {
     e.preventDefault()
     if (!editSale) return
-    try {
-      // Update sale items first (if they changed)
-      if (editSaleItems.length > 0) {
-        const itemsToUpdate = editSaleItems.map(item => ({
-          product_id: item.product_id,
-          product_name: item.product_name,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          purchase_price: item.purchase_price || 0,
-        }))
-        await updateSaleItems.mutateAsync({ saleId: editSale.id, items: itemsToUpdate })
+
+    // --- Validation ---
+    if (editSaleItems.length === 0) {
+      alert('Une facture doit contenir au moins un article.')
+      return
+    }
+    const newSubtotal = editSaleItems.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
+    if (Number(editDiscount || 0) > newSubtotal) {
+      alert('La remise ne peut pas dépasser le sous-total de la facture.')
+      return
+    }
+    // Stock max disponible : le stock actuel + les quantités rendues depuis la facture d'origine
+    const originalByProductId = {}
+    ;(editSale.sale_items || []).forEach((item) => {
+      if (item.product_id) {
+        originalByProductId[item.product_id] = (originalByProductId[item.product_id] || 0) + item.quantity
       }
+    })
+    const overStock = editSaleItems.find((item) => {
+      if (!item.product_id) return false
+      const product = products.find((p) => p.id === item.product_id)
+      if (!product) return false
+      const available = Number(product.stock || 0) + (originalByProductId[item.product_id] || 0)
+      return item.quantity > available
+    })
+    if (overStock) {
+      alert(`Stock insuffisant pour "${overStock.product_name}" (disponible: ${Number(products.find((p) => p.id === overStock.product_id)?.stock || 0) + (originalByProductId[overStock.product_id] || 0)})`)
+      return
+    }
+
+    try {
+      // Update sale items (full replacement: add / modify / remove handled by RPC)
+      const itemsToUpdate = editSaleItems.map(item => ({
+        product_id: item.product_id,
+        product_name: item.product_name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        purchase_price: item.purchase_price || 0,
+      }))
+      await updateSaleItems.mutateAsync({ saleId: editSale.id, items: itemsToUpdate })
       // Then update client and discount if changed
       await updateSale.mutateAsync({ saleId: editSale.id, clientId: editClientId || null, discount: Number(editDiscount) || 0 })
       setEditSale(null)
+      setEditProductToAdd('')
       // refresh detail view if open
       if (detailSale?.id === editSale.id) {
         setDetailSale(null) // Force refresh by closing detail
@@ -375,6 +405,43 @@ export default function Sales() {
           : item
       )
     )
+  }
+
+  const handleEditSaleItemPrice = (itemId, newPrice) => {
+    setEditSaleItems(items =>
+      items.map(item =>
+        item.id === itemId
+          ? { ...item, unit_price: Math.max(0, Number(newPrice) || 0) }
+          : item
+      )
+    )
+  }
+
+  const addEditProduct = () => {
+    if (!editProductToAdd || !editSale) return
+    const product = products.find((p) => p.id === editProductToAdd)
+    if (!product) return
+    setEditSaleItems((items) => {
+      const existing = items.find((i) => i.product_id === product.id)
+      if (existing) {
+        return items.map((i) =>
+          i.product_id === product.id ? { ...i, quantity: i.quantity + 1 } : i
+        )
+      }
+      return [
+        ...items,
+        {
+          id: `new-${product.id}`,
+          product_id: product.id,
+          product_name: product.name,
+          quantity: 1,
+          unit_price: Number(product.sale_price) || 0,
+          purchase_price: Number(product.purchase_price) || 0,
+          stock: product.stock,
+        },
+      ]
+    })
+    setEditProductToAdd('')
   }
 
   const handleRemoveEditSaleItem = (itemId) => {
@@ -620,6 +687,7 @@ export default function Sales() {
                                   setEditClientId(s.client_id || '')
                                   setEditDiscount(s.discount || 0)
                                   setEditSaleItems(s.sale_items || [])
+                                  setEditProductToAdd('')
                                 }}
                               />
                             )}
@@ -690,7 +758,7 @@ export default function Sales() {
                         <ActionButton icon={RotateCcw} title="Annuler" onClick={() => setConfirmCancel(s)} tone="red" />
                       )}
                       {isAdmin && s.status !== 'annulee' && (
-                        <ActionButton icon={Edit} title="Modifier" onClick={() => { setEditSale(s); setEditClientId(s.client_id || ''); setEditDiscount(s.discount || 0); setEditSaleItems(s.sale_items || []) }} />
+                        <ActionButton icon={Edit} title="Modifier" onClick={() => { setEditSale(s); setEditClientId(s.client_id || ''); setEditDiscount(s.discount || 0); setEditSaleItems(s.sale_items || []); setEditProductToAdd('') }} />
                       )}
                       {isAdmin && s.status === 'annulee' && (
                         <ActionButton icon={Trash2} title="Supprimer" onClick={() => setConfirmDelete(s)} tone="red" />
@@ -826,6 +894,25 @@ export default function Sales() {
             </div>
 
             <div className="space-y-2">
+              <label className="label">Ajouter un produit à la facture</label>
+              <div className="flex gap-2">
+                <div className="flex-1 min-w-0">
+                  <SearchableSelect
+                    value={editProductToAdd}
+                    onChange={setEditProductToAdd}
+                    options={productOptions}
+                    placeholder="Rechercher un produit..."
+                    emptyMessage="Aucun produit trouvé"
+                  />
+                </div>
+                <button type="button" className="btn-secondary shrink-0" onClick={addEditProduct}>
+                  <Plus size={16} /> Ajouter
+                </button>
+              </div>
+              <p className="text-xs text-gray-400">Modifiez la quantité et le prix unitaire, ou supprimez des articles puis enregistrez.</p>
+            </div>
+
+            <div className="space-y-2">
               <label className="label">Articles de la facture</label>
               <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
                 {editSaleItems.length === 0 ? (
@@ -835,14 +922,22 @@ export default function Sales() {
                     <div key={item.id} className="flex items-center gap-3 p-3">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{item.product_name}</p>
-                        <p className="text-xs text-gray-400">{currency(item.unit_price)} / unité</p>
+                        <p className="text-xs text-gray-400">Prix unitaire</p>
                       </div>
                       <input
                         type="number"
                         min="1"
-                        className="input w-20 text-center"
+                        className="input w-16 text-center"
                         value={item.quantity}
                         onChange={(e) => handleEditSaleItemQuantity(item.id, Number(e.target.value))}
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="input w-24 text-right"
+                        value={item.unit_price}
+                        onChange={(e) => handleEditSaleItemPrice(item.id, Number(e.target.value))}
                       />
                       <p className="w-24 text-right text-sm font-semibold">{currency(item.quantity * item.unit_price)}</p>
                       <button
