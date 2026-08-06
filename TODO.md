@@ -13,3 +13,7 @@ Permettre de modifier une facture existante : ajouter, modifier la quantité/PU,
 - [x] 7. S'assurer que `useUpdateSaleItems` envoie toutes les lignes (existantes + nouvelles)
 - [x] 8. Vérifier build / lint
 
+## Bonus / corrections
+- [x] Corrigé le code dupliqué dans `src/pages/expenses/Finances.jsx` (bloc recalculé deux fois)
+- [x] Corrigé « Revenus du mois = 0 FCFA » sur le Dashboard : la requête mensuelle `small_sales` ne sélectionnait pas `total` → `NaN` → `totalMonth` cassé. Ajout de `total` + réductions défensives (`Number(s.total || 0)`).
+- [x] Build + lint OK

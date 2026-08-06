@@ -10,6 +10,7 @@ import Clients from './pages/clients/Clients'
 import Suppliers from './pages/suppliers/Suppliers'
 import Purchases from './pages/purchases/Purchases'
 import Sales from './pages/sales/Sales'
+import SmallSales from './pages/sales/SmallSales'
 import Stock from './pages/stock/Stock'
 import Finances from './pages/expenses/Finances'
 import Settings from './pages/settings/Settings'
@@ -32,6 +33,7 @@ export default function App() {
         >
           <Route index element={<Dashboard />} />
           <Route path="ventes" element={<Sales />} />
+          <Route path="petites-ventes" element={<SmallSales />} />
           <Route path="produits" element={<Products />} />
           <Route path="categories" element={<Categories />} />
           <Route path="stock" element={<Stock />} />

@@ -4,6 +4,7 @@ import {
   Package,
   Tags,
   ShoppingCart,
+  Zap,
   Boxes,
   Users,
   Truck,
@@ -17,6 +18,7 @@ import { useAuth } from '../context/AuthContext'
 const navItems = [
   { to: '/', label: 'Tableau de bord', icon: LayoutDashboard, end: true },
   { to: '/ventes', label: 'Ventes / Facturation', icon: ShoppingCart },
+  { to: '/petites-ventes', label: 'Petites ventes', icon: Zap },
   { to: '/produits', label: 'Produits', icon: Package },
   { to: '/categories', label: 'Catégories', icon: Tags },
   { to: '/stock', label: 'Stock', icon: Boxes },

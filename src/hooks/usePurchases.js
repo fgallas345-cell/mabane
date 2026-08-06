@@ -90,3 +90,59 @@ export function useCancelPurchase() {
     },
   })
 }
+
+export function useUpdatePurchase() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ purchaseId, supplierId, notes }) => {
+      const { data, error } = await supabase
+        .from('purchases')
+        .update({ supplier_id: supplierId || null, notes: notes || null })
+        .eq('id', purchaseId)
+        .select()
+        .single()
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchases'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
+export function useUpdatePurchaseItems() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ purchaseId, items }) => {
+      const { data, error } = await supabase.rpc('update_purchase_items', {
+        p_purchase_id: purchaseId,
+        p_items: items,
+      })
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchases'] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
+export function useDeletePurchase() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (purchaseId) => {
+      const { error } = await supabase.from('purchases').delete().eq('id', purchaseId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchases'] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}

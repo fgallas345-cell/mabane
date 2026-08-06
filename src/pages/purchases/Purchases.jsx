@@ -1,8 +1,8 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Plus, Trash2, Truck, Search, PackagePlus, Wallet, RotateCcw, CreditCard, Eye } from 'lucide-react'
+import { Plus, Trash2, Pencil, Truck, Search, PackagePlus, Wallet, RotateCcw, CreditCard, Eye } from 'lucide-react'
 import { useProducts } from '../../hooks/useProducts'
 import { useSuppliers } from '../../hooks/useEntities'
-import { usePurchases, useCreatePurchase, useAddPurchasePayment, useCancelPurchase } from '../../hooks/usePurchases'
+import { usePurchases, useCreatePurchase, useAddPurchasePayment, useCancelPurchase, useUpdatePurchase, useUpdatePurchaseItems, useDeletePurchase } from '../../hooks/usePurchases'
 import { useAuth } from '../../context/AuthContext'
 import Pagination from '../../components/Pagination'
 import Modal from '../../components/Modal'
@@ -59,14 +59,23 @@ export default function Purchases() {
   const { user, isAdmin } = useAuth()
   const { data: products = [] } = useProducts()
   const { data: suppliers = [] } = useSuppliers()
-  const { data: purchases = [], isLoading } = usePurchases()
+const { data: purchases = [], isLoading } = usePurchases()
   const createPurchase = useCreatePurchase()
   const addPayment = useAddPurchasePayment()
   const cancelPurchase = useCancelPurchase()
+  const updatePurchase = useUpdatePurchase()
+  const updatePurchaseItems = useUpdatePurchaseItems()
+  const deletePurchase = useDeletePurchase()
 
   const [newPurchaseOpen, setNewPurchaseOpen] = useState(false)
   const [detailPurchase, setDetailPurchase] = useState(null)
+  const [editPurchase, setEditPurchase] = useState(null)
+  const [editSupplierId, setEditSupplierId] = useState('')
+  const [editNotes, setEditNotes] = useState('')
+  const [editPurchaseItems, setEditPurchaseItems] = useState([])
+  const [editProductToAdd, setEditProductToAdd] = useState('')
   const [confirmCancel, setConfirmCancel] = useState(null)
+  const [confirmDelete, setConfirmDelete] = useState(null)
   const [paymentOpen, setPaymentOpen] = useState(null) // purchase being paid
   const [paymentAmount, setPaymentAmount] = useState('')
   const [search, setSearch] = useState('')

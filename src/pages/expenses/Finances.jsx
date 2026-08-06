@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { Plus, TrendingUp, TrendingDown, Wallet, FileSpreadsheet, Search, Receipt, Trash2, Pencil, Eye } from 'lucide-react'
 import { useExpenses } from '../../hooks/useEntities'
 import { useSales } from '../../hooks/useSales'
+import { useSmallSales } from '../../hooks/useSmallSales'
 import { useAuth } from '../../context/AuthContext'
 import StatCard from '../../components/StatCard'
 import Modal from '../../components/Modal'
@@ -57,6 +58,16 @@ function getSaleGrossMargin(sale) {
   return itemsMargin - Number(sale.discount || 0)
 }
 
+function getSmallSaleGrossMargin(sale) {
+  const itemsMargin = (sale.small_sale_items || []).reduce((sum, item) => {
+    const purchasePrice = Number(item.purchase_price ?? 0)
+    const unitPrice = Number(item.unit_price ?? 0)
+    const quantity = Number(item.quantity ?? 0)
+    return sum + (unitPrice - purchasePrice) * quantity
+  }, 0)
+  return itemsMargin - Number(sale.discount || 0)
+}
+
 function ActionButton({ icon: Icon, title, onClick, tone = 'gray' }) {
   const tones = {
     gray: 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200',
@@ -73,6 +84,7 @@ export default function Finances() {
   const { user } = useAuth()
   const { data: expenses = [], isLoading, createItem, updateItem, deleteItem } = useExpenses()
   const { data: sales = [] } = useSales()
+  const { data: smallSales = [] } = useSmallSales()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [detailExpense, setDetailExpense] = useState(null)
@@ -83,8 +95,18 @@ export default function Finances() {
   const pageSize = 10
 
   const activeSales = useMemo(() => sales.filter((sale) => sale.status !== 'annulee'), [sales])
-  const totalRevenue = useMemo(() => activeSales.reduce((sum, s) => sum + Number(s.total), 0), [activeSales])
-  const grossMargin = useMemo(() => activeSales.reduce((sum, s) => sum + getSaleGrossMargin(s), 0), [activeSales])
+  const totalRevenue = useMemo(
+    () =>
+      activeSales.reduce((sum, s) => sum + Number(s.total), 0) +
+      smallSales.reduce((sum, s) => sum + Number(s.total), 0),
+    [activeSales, smallSales]
+  )
+  const grossMargin = useMemo(
+    () =>
+      activeSales.reduce((sum, s) => sum + getSaleGrossMargin(s), 0) +
+      smallSales.reduce((sum, s) => sum + getSmallSaleGrossMargin(s), 0),
+    [activeSales, smallSales]
+  )
   const totalExpenses = useMemo(() => expenses.reduce((sum, e) => sum + Number(e.amount), 0), [expenses])
   const profit = grossMargin - totalExpenses
 
