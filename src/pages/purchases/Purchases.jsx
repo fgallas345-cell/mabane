@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Plus, Trash2, Pencil, Truck, Search, PackagePlus, Wallet, RotateCcw, CreditCard, Eye } from 'lucide-react'
+import { Plus, Trash2, Edit, Truck, Search, PackagePlus, Wallet, RotateCcw, CreditCard, Eye } from 'lucide-react'
 import { useProducts } from '../../hooks/useProducts'
 import { useSuppliers } from '../../hooks/useEntities'
 import { usePurchases, useCreatePurchase, useAddPurchasePayment, useCancelPurchase, useUpdatePurchase, useUpdatePurchaseItems, useDeletePurchase } from '../../hooks/usePurchases'
@@ -187,6 +187,94 @@ const { data: purchases = [], isLoading } = usePurchases()
     }
   }
 
+  // --- Gestion de l'édition d'un achat ---
+  const handleUpdatePurchase = async (e) => {
+    e.preventDefault()
+    if (!editPurchase) return
+
+    if (editPurchaseItems.length === 0) {
+      alert('Un achat doit contenir au moins un article.')
+      return
+    }
+    const invalid = editPurchaseItems.find((item) => Number(item.quantity) <= 0 || Number(item.unit_cost) < 0)
+    if (invalid) {
+      alert(`Quantité ou coût invalide pour "${invalid.product_name}".`)
+      return
+    }
+
+    try {
+      const itemsToUpdate = editPurchaseItems.map((item) => ({
+        product_id: item.product_id,
+        product_name: item.product_name,
+        quantity: Number(item.quantity),
+        unit_cost: Number(item.unit_cost),
+      }))
+      await updatePurchaseItems.mutateAsync({ purchaseId: editPurchase.id, items: itemsToUpdate })
+      await updatePurchase.mutateAsync({ purchaseId: editPurchase.id, supplierId: editSupplierId || null, notes: editNotes })
+      setEditPurchase(null)
+      setEditProductToAdd('')
+      if (detailPurchase?.id === editPurchase.id) setDetailPurchase(null)
+    } catch (err) {
+      alert(err.message || 'Erreur lors de la mise à jour de l\'achat')
+    }
+  }
+
+  const handleEditPurchaseItemQuantity = (itemId, newQuantity) => {
+    setEditPurchaseItems((items) =>
+      items.map((item) => (item.id === itemId ? { ...item, quantity: Math.max(1, newQuantity) } : item))
+    )
+  }
+
+  const handleEditPurchaseItemCost = (itemId, newCost) => {
+    setEditPurchaseItems((items) =>
+      items.map((item) => (item.id === itemId ? { ...item, unit_cost: Math.max(0, Number(newCost) || 0) } : item))
+    )
+  }
+
+  const addEditProduct = () => {
+    if (!editProductToAdd || !editPurchase) return
+    const product = products.find((p) => p.id === editProductToAdd)
+    if (!product) return
+    setEditPurchaseItems((items) => {
+      const existing = items.find((i) => i.product_id === product.id)
+      if (existing) {
+        return items.map((i) =>
+          i.product_id === product.id ? { ...i, quantity: i.quantity + 1 } : i
+        )
+      }
+      return [
+        ...items,
+        {
+          id: `new-${product.id}`,
+          product_id: product.id,
+          product_name: product.name,
+          quantity: 1,
+          unit_cost: Number(product.purchase_price) || 0,
+        },
+      ]
+    })
+    setEditProductToAdd('')
+  }
+
+  const handleRemoveEditPurchaseItem = (itemId) => {
+    if (editPurchaseItems.length === 1) {
+      alert('Un achat doit contenir au moins un article.')
+      return
+    }
+    setEditPurchaseItems((items) => items.filter((item) => item.id !== itemId))
+  }
+
+  const handleDeletePurchase = async () => {
+    if (!confirmDelete) return
+    try {
+      await deletePurchase.mutateAsync(confirmDelete.id)
+      if (detailPurchase?.id === confirmDelete.id) setDetailPurchase(null)
+      setConfirmDelete(null)
+    } catch (err) {
+      alert(err.message || 'Erreur lors de la suppression')
+    }
+  }
+
   const filtered = purchases.filter((p) => {
     const q = search.toLowerCase()
     return (
@@ -326,8 +414,20 @@ const { data: purchases = [], isLoading } = usePurchases()
                             {p.status !== 'annulee' && due > 0 && (
                               <ActionButton icon={CreditCard} title="Enregistrer un paiement" tone="emerald" onClick={() => { setPaymentOpen(p); setPaymentAmount(''); setPaymentError('') }} />
                             )}
+                            {p.status !== 'annulee' && (
+                              <ActionButton icon={Edit} title="Modifier l'achat" onClick={() => {
+                                setEditPurchase(p)
+                                setEditSupplierId(p.supplier_id || '')
+                                setEditNotes(p.notes || '')
+                                setEditPurchaseItems(p.purchase_items || [])
+                                setEditProductToAdd('')
+                              }} />
+                            )}
                             {isAdmin && p.status !== 'annulee' && (
                               <ActionButton icon={RotateCcw} title="Annuler" tone="red" onClick={() => setConfirmCancel(p)} />
+                            )}
+                            {isAdmin && p.status === 'annulee' && (
+                              <ActionButton icon={Trash2} title="Supprimer" tone="red" onClick={() => setConfirmDelete(p)} />
                             )}
                           </div>
                         </td>
@@ -372,8 +472,20 @@ const { data: purchases = [], isLoading } = usePurchases()
                       {p.status !== 'annulee' && due > 0 && (
                         <ActionButton icon={CreditCard} title="Payer" tone="emerald" onClick={() => { setPaymentOpen(p); setPaymentAmount(''); setPaymentError('') }} />
                       )}
+                      {p.status !== 'annulee' && (
+                        <ActionButton icon={Edit} title="Modifier" onClick={() => {
+                          setEditPurchase(p)
+                          setEditSupplierId(p.supplier_id || '')
+                          setEditNotes(p.notes || '')
+                          setEditPurchaseItems(p.purchase_items || [])
+                          setEditProductToAdd('')
+                        }} />
+                      )}
                       {isAdmin && p.status !== 'annulee' && (
                         <ActionButton icon={RotateCcw} title="Annuler" tone="red" onClick={() => setConfirmCancel(p)} />
+                      )}
+                      {isAdmin && p.status === 'annulee' && (
+                        <ActionButton icon={Trash2} title="Supprimer" tone="red" onClick={() => setConfirmDelete(p)} />
                       )}
                     </div>
                   </div>
@@ -483,6 +595,107 @@ const { data: purchases = [], isLoading } = usePurchases()
         </form>
       </Modal>
 
+      {/* ---- Modal: modifier un achat ---- */}
+      <Modal open={!!editPurchase} onClose={() => setEditPurchase(null)} title={`Modifier achat ${editPurchase?.purchase_number || ''}`} maxWidth="max-w-2xl">
+        {editPurchase && (
+          <form onSubmit={handleUpdatePurchase} className="space-y-4">
+            <div>
+              <label className="label">Fournisseur</label>
+              <select className="input" value={editSupplierId} onChange={(e) => setEditSupplierId(e.target.value)}>
+                <option value="">Sélectionner un fournisseur...</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}{s.phone ? ` — ${s.phone}` : ''}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="label">Ajouter un produit à l'achat</label>
+              <div className="flex gap-2">
+                <select className="input" value={editProductToAdd} onChange={(e) => setEditProductToAdd(e.target.value)}>
+                  <option value="">Sélectionner un produit...</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name} — prix d'achat actuel {currency(p.purchase_price)}</option>
+                  ))}
+                </select>
+                <button type="button" className="btn-secondary shrink-0" onClick={addEditProduct}>
+                  <Plus size={16} /> Ajouter
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Modifiez la quantité et le coût unitaire, ou supprimez des articles puis enregistrez.</p>
+            </div>
+
+            <div>
+              <label className="label">Articles de l'achat</label>
+              <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
+                {editPurchaseItems.length === 0 ? (
+                  <p className="text-sm text-gray-400 p-3">Aucun article</p>
+                ) : (
+                  editPurchaseItems.map((item) => (
+                    <div key={item.id} className="flex items-center gap-2 p-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{item.product_name}</p>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-[10px] text-gray-400">Qté</span>
+                        <input
+                          type="number"
+                          min="1"
+                          className="input w-16 text-center !py-1"
+                          value={item.quantity}
+                          onChange={(e) => handleEditPurchaseItemQuantity(item.id, Number(e.target.value))}
+                        />
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-[10px] text-gray-400">Coût unitaire</span>
+                        <input
+                          type="number"
+                          min="0"
+                          className="input w-24 text-center !py-1"
+                          value={item.unit_cost}
+                          onChange={(e) => handleEditPurchaseItemCost(item.id, Number(e.target.value))}
+                        />
+                      </div>
+                      <p className="w-24 text-right text-sm font-semibold shrink-0">{currency(item.quantity * item.unit_cost)}</p>
+                      <button
+                        type="button"
+                        className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg shrink-0"
+                        onClick={() => handleRemoveEditPurchaseItem(item.id)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="label">Notes (optionnel)</label>
+              <input className="input" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Référence bon de livraison..." />
+            </div>
+
+            <div className="border-t border-gray-200 dark:border-gray-700/60 pt-3 space-y-1">
+              <div className="flex justify-between text-lg font-bold">
+                <span>Total achat</span>
+                <span>{currency(editPurchaseItems.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unit_cost) || 0), 0))}</span>
+              </div>
+              <div className="flex justify-between text-sm text-gray-500">
+                <span>Déjà payé</span>
+                <span>{currency(editPurchase.amount_paid)}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" className="btn-secondary" onClick={() => setEditPurchase(null)}>Annuler</button>
+              <button type="submit" className="btn-primary" disabled={updatePurchaseItems.isPending || updatePurchase.isPending}>
+                {updatePurchaseItems.isPending || updatePurchase.isPending ? 'Enregistrement...' : 'Enregistrer'}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
       {/* ---- Modal: détail achat ---- */}
       <Modal open={!!detailPurchase} onClose={() => setDetailPurchase(null)} title={`Achat ${detailPurchase?.purchase_number || ''}`} maxWidth="max-w-lg">
         {detailPurchase && (
@@ -574,6 +787,14 @@ const { data: purchases = [], isLoading } = usePurchases()
         onConfirm={handleCancelPurchase}
         loading={cancelPurchase.isPending}
         message={`Annuler l'achat "${confirmCancel?.purchase_number}" ? Les quantités seront retirées du stock.`}
+      />
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={handleDeletePurchase}
+        loading={deletePurchase.isPending}
+        message={`Supprimer l'achat "${confirmDelete?.purchase_number}" ? Cette action est irréversible.`}
       />
     </div>
   )
