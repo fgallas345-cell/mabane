@@ -1,13 +1,13 @@
-# TODO — Ajout des boutons Modifier / Supprimer dans Achats fournisseurs
+# TODO — Redesign de la page Petites ventes
 
 ## Objectif
-Ajouter les boutons d'action Modifier (✏️) et Supprimer (🗑️) dans la page Achats fournisseurs, avec le modal d'édition complet et la confirmation de suppression.
+Rendre la page Petites ventes plus claire, intuitive et professionnelle : ajout rapide de produits, total à encaisser bien visible, statistiques structurées et historique amélioré.
 
 ## Étapes
-- [x] 1. Remplacer `Pencil` par `Edit` dans les imports d'icônes
-- [x] 2. Ajouter les handlers `handleUpdatePurchase`, `addEditProduct`, `handleEditPurchaseItemQuantity`, `handleEditPurchaseItemCost`, `handleRemoveEditPurchaseItem`, `handleDeletePurchase`
-- [x] 3. Ajouter le bouton Modifier (admin, non-annulé) dans la vue desktop et mobile
-- [x] 4. Ajouter le bouton Supprimer (admin, annulé) dans la vue desktop et mobile
-- [x] 5. Ajouter le modal d'édition complet (fournisseur, articles, notes)
-- [x] 6. Ajouter le ConfirmDialog de suppression
+- [x] 1. En-tête de page amélioré avec statistiques du jour (ventes, nombre, ticket moyen)
+- [x] 2. Grille de produits rapides (ajout en 1 clic) sous le sélecteur de recherche
+- [x] 3. Panier redessiné : stepper quantité (−/+), prix unitaire, sous-total par ligne
+- [x] 4. Récapitulatif avec total à encaisser mis en évidence
+- [x] 5. Colonne droite : cartes statistiques + historique récent amélioré
+- [x] 6. Feedback de succès amélioré et état vide du panier engageant
 - [x] 7. Vérifier build / lint
