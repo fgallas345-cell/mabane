@@ -221,16 +221,16 @@ language plpgsql
 as $$
 declare
   year_part text := to_char(now(), 'YYYY');
-  seq_count integer;
+  max_number integer;
   result text;
 begin
   perform pg_advisory_xact_lock(hashtext('mabane_invoice_' || year_part));
 
-  select count(*) + 1 into seq_count
+  select max( (regexp_replace(invoice_number, '^FAC-' || year_part || '-', ''))::integer ) into max_number
   from public.sales
   where invoice_number like 'FAC-' || year_part || '-%';
 
-  result := 'FAC-' || year_part || '-' || lpad(seq_count::text, 4, '0');
+  result := 'FAC-' || year_part || '-' || lpad(COALESCE(max_number + 1, 1)::text, 4, '0');
   return result;
 end;
 $$;
@@ -536,16 +536,16 @@ language plpgsql
 as $$
 declare
   year_part text := to_char(now(), 'YYYY');
-  seq_count integer;
+  max_number integer;
   result text;
 begin
   perform pg_advisory_xact_lock(hashtext('mabane_purchase_' || year_part));
 
-  select count(*) + 1 into seq_count
+  select max( (regexp_replace(purchase_number, '^ACH-' || year_part || '-', ''))::integer ) into max_number
   from public.purchases
   where purchase_number like 'ACH-' || year_part || '-%';
 
-  result := 'ACH-' || year_part || '-' || lpad(seq_count::text, 4, '0');
+  result := 'ACH-' || year_part || '-' || lpad(COALESCE(max_number + 1, 1)::text, 4, '0');
   return result;
 end;
 $$;
