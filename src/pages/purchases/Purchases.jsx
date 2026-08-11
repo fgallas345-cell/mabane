@@ -8,6 +8,7 @@ import Pagination from '../../components/Pagination'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { currency } from '../../lib/constants'
+import SearchableSelect from '../../components/SearchableSelect'
 
 // --- Helpers d'affichage ---
 
@@ -90,6 +91,39 @@ const { data: purchases = [], isLoading } = usePurchases()
   const [productToAdd, setProductToAdd] = useState('')
   const [error, setError] = useState('')
   const [paymentError, setPaymentError] = useState('')
+
+  const supplierOptions = useMemo(
+    () => suppliers.map((s) => ({
+      value: s.id,
+      label: `${s.name}${s.phone ? ` - ${s.phone}` : ''}`,
+      searchText: `${s.name || ''} ${s.phone || ''}`,
+      content: (
+        <span className="min-w-0">
+          <span className="block truncate font-medium">{s.name}</span>
+          {s.phone && <span className="block truncate text-xs text-gray-400">{s.phone}</span>}
+        </span>
+      ),
+    })),
+    [suppliers]
+  )
+
+  const productOptions = useMemo(
+    () => products.map((p) => ({
+      value: p.id,
+      label: `${p.name} - ${currency(p.purchase_price)}`,
+      searchText: `${p.name || ''} ${p.purchase_price || ''}`,
+      content: (
+        <span className="flex min-w-0 items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block truncate font-medium">{p.name}</span>
+            <span className="block truncate text-xs text-gray-400">Prix achat: {currency(p.purchase_price)}</span>
+          </span>
+          <span className="shrink-0 text-xs font-semibold tabular-nums text-gray-500 dark:text-gray-300">{currency(p.purchase_price)}</span>
+        </span>
+      ),
+    })),
+    [products]
+  )
 
   const resetForm = () => {
     setSupplierId('')
@@ -505,24 +539,28 @@ const { data: purchases = [], isLoading } = usePurchases()
 
           <div>
             <label className="label">Fournisseur</label>
-            <select required className="input" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-              <option value="">Sélectionner un fournisseur...</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}{s.phone ? ` — ${s.phone}` : ''}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={supplierId}
+              onChange={setSupplierId}
+              options={supplierOptions}
+              placeholder="Rechercher un fournisseur..."
+              emptyMessage="Aucun fournisseur trouvé"
+            />
             {suppliers.length === 0 && (
               <p className="text-xs text-amber-500 mt-1">Ajoutez d'abord un fournisseur dans la page Fournisseurs.</p>
             )}
           </div>
 
           <div className="flex gap-2">
-            <select className="input" value={productToAdd} onChange={(e) => setProductToAdd(e.target.value)}>
-              <option value="">Sélectionner un produit...</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} — prix d'achat actuel {currency(p.purchase_price)}</option>
-              ))}
-            </select>
+            <div className="flex-1 min-w-0">
+              <SearchableSelect
+                value={productToAdd}
+                onChange={setProductToAdd}
+                options={productOptions}
+                placeholder="Rechercher un produit..."
+                emptyMessage="Aucun produit trouvé"
+              />
+            </div>
             <button type="button" className="btn-secondary shrink-0" onClick={addProduct}>
               <Plus size={16} /> Ajouter
             </button>
@@ -600,24 +638,28 @@ const { data: purchases = [], isLoading } = usePurchases()
         {editPurchase && (
           <form onSubmit={handleUpdatePurchase} className="space-y-4">
             <div>
-              <label className="label">Fournisseur</label>
-              <select className="input" value={editSupplierId} onChange={(e) => setEditSupplierId(e.target.value)}>
-                <option value="">Sélectionner un fournisseur...</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}{s.phone ? ` — ${s.phone}` : ''}</option>
-                ))}
-              </select>
+                <label className="label">Fournisseur</label>
+                <SearchableSelect
+                  value={editSupplierId}
+                  onChange={setEditSupplierId}
+                  options={supplierOptions}
+                  placeholder="Rechercher un fournisseur..."
+                  emptyMessage="Aucun fournisseur trouvé"
+                />
             </div>
 
             <div>
               <label className="label">Ajouter un produit à l'achat</label>
               <div className="flex gap-2">
-                <select className="input" value={editProductToAdd} onChange={(e) => setEditProductToAdd(e.target.value)}>
-                  <option value="">Sélectionner un produit...</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name} — prix d'achat actuel {currency(p.purchase_price)}</option>
-                  ))}
-                </select>
+                <div className="flex-1 min-w-0">
+                  <SearchableSelect
+                    value={editProductToAdd}
+                    onChange={setEditProductToAdd}
+                    options={productOptions}
+                    placeholder="Rechercher un produit..."
+                    emptyMessage="Aucun produit trouvé"
+                  />
+                </div>
                 <button type="button" className="btn-secondary shrink-0" onClick={addEditProduct}>
                   <Plus size={16} /> Ajouter
                 </button>
