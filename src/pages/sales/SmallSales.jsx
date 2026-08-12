@@ -1,9 +1,11 @@
-import { useEffect, useState, useMemo, useRef } from 'react'
-import { Plus, Trash2, Search, Zap, Receipt, Minus, ShoppingBag, TrendingUp, CheckCircle2, PackageX } from 'lucide-react'
+import { useEffect, useState, useMemo } from 'react'
+import { Plus, Trash2, Search, Zap, Receipt, Minus, ShoppingBag, TrendingUp, CheckCircle2, PackageX, Pencil } from 'lucide-react'
 import { useProducts } from '../../hooks/useProducts'
-import { useSmallSales, useCreateSmallSale } from '../../hooks/useSmallSales'
+import { useSmallSales, useCreateSmallSale, useUpdateSmallSale, useDeleteSmallSale } from '../../hooks/useSmallSales'
 import { useAuth } from '../../context/AuthContext'
 import Pagination from '../../components/Pagination'
+import Modal from '../../components/Modal'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { currency } from '../../lib/constants'
 import SearchableSelect from '../../components/SearchableSelect'
 
@@ -47,17 +49,25 @@ export default function SmallSales() {
   const { user } = useAuth()
   const { data: products = [] } = useProducts()
   const { data: smallSales = [] } = useSmallSales()
-  const createSmallSale = useCreateSmallSale()
-
   const [cart, setCart] = useState([]) // {product_id, product_name, quantity, unit_price}
   const [productToAdd, setProductToAdd] = useState('')
   const [notes, setNotes] = useState('')
   const [discount, setDiscount] = useState(0)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const pageSize = 10
+  const [editSale, setEditSale] = useState(null)
+  const [editCart, setEditCart] = useState([])
+  const [editNotes, setEditNotes] = useState('')
+  const [editDiscount, setEditDiscount] = useState(0)
+  const [editError, setEditError] = useState('')
+  const [deleteSaleTarget, setDeleteSaleTarget] = useState(null)
+  const [success, setSuccess] = useState('')
+  const [error, setError] = useState('')
+
+  const updateSmallSale = useUpdateSmallSale()
+  const deleteSmallSale = useDeleteSmallSale()
+  const createSmallSale = useCreateSmallSale()
 
   const resetForm = () => {
     setCart([])
@@ -67,41 +77,82 @@ export default function SmallSales() {
     setError('')
   }
 
-  const addProduct = (id) => {
+  const getAvailableStock = (productId, currentQuantity = 0) => {
+    const product = products.find((p) => p.id === productId)
+    return Number(product?.stock || 0) + currentQuantity
+  }
+
+  const addProductToCart = (id, cartState, setCartState, setErrorState) => {
     const product = products.find((p) => p.id === id)
     if (!product) return
-    const stock = Number(product.stock || 0)
-    if (stock <= 0) {
-      setError(`Stock insuffisant pour "${product.name}"`)
-      setSuccess('')
+    const existing = cartState.find((item) => item.product_id === product.id)
+    const availableStock = getAvailableStock(product.id, existing?.quantity || 0)
+    if (availableStock <= 0) {
+      setErrorState(`Stock insuffisant pour "${product.name}"`)
       return
     }
-    setCart((c) => {
-      const existing = c.find((item) => item.product_id === product.id)
-      if (existing) {
-        if (existing.quantity + 1 > stock) {
-          setError(`Stock insuffisant pour "${product.name}" (disponible: ${stock})`)
-          setSuccess('')
+
+    setCartState((c) => {
+      const current = c.find((item) => item.product_id === product.id)
+      if (current) {
+        if (current.quantity + 1 > availableStock) {
+          setErrorState(`Stock insuffisant pour "${product.name}" (disponible: ${availableStock})`)
           return c
         }
-        return c.map((item) => (item.product_id === product.id ? { ...item, quantity: item.quantity + 1 } : item))
+        return c.map((item) =>
+          item.product_id === product.id ? { ...item, quantity: item.quantity + 1, stock: availableStock } : item
+        )
       }
-      return [...c, { product_id: product.id, product_name: product.name, quantity: 1, unit_price: Number(product.sale_price) || 0, stock }]
+
+      return [
+        ...c,
+        {
+          product_id: product.id,
+          product_name: product.name,
+          quantity: 1,
+          unit_price: Number(product.sale_price) || 0,
+          stock: availableStock,
+        },
+      ]
     })
     setProductToAdd('')
-    setError('')
+    setErrorState('')
   }
 
-  const updateQuantity = (productId, qty) => {
-    setCart((c) => c.map((item) => (item.product_id === productId ? { ...item, quantity: Math.max(1, qty) } : item)))
+  const addProduct = (id) => addProductToCart(id, cart, setCart, setError)
+  const addProductToEdit = (id) => addProductToCart(id, editCart, setEditCart, setEditError)
+
+  const updateCartQuantity = (productId, qty, cartState, setCartState, setErrorState) => {
+    const item = cartState.find((item) => item.product_id === productId)
+    if (!item) return
+    const availableStock = getAvailableStock(productId, item.quantity)
+    if (qty > availableStock) {
+      setErrorState(`Stock insuffisant pour "${item.product_name}" (disponible: ${availableStock})`)
+      return
+    }
+    setCartState((c) => c.map((item) =>
+      item.product_id === productId ? { ...item, quantity: Math.max(1, qty), stock: availableStock } : item
+    ))
+    setErrorState('')
   }
 
-  const updatePrice = (productId, price) => {
-    setCart((c) => c.map((item) => (item.product_id === productId ? { ...item, unit_price: Math.max(0, Number(price) || 0) } : item)))
+  const updateCartPrice = (productId, price, setCartState) => {
+    setCartState((c) => c.map((item) =>
+      item.product_id === productId ? { ...item, unit_price: Math.max(0, Number(price) || 0) } : item
+    ))
   }
+
+  const updateQuantity = (productId, qty) => updateCartQuantity(productId, qty, cart, setCart, setError)
+  const updatePrice = (productId, price) => updateCartPrice(productId, price, setCart)
+  const updateEditQuantity = (productId, qty) => updateCartQuantity(productId, qty, editCart, setEditCart, setEditError)
+  const updateEditPrice = (productId, price) => updateCartPrice(productId, price, setEditCart)
 
   const removeFromCart = (productId) => {
     setCart((c) => c.filter((item) => item.product_id !== productId))
+  }
+
+  const removeFromEditCart = (productId) => {
+    setEditCart((c) => c.filter((item) => item.product_id !== productId))
   }
 
   const subtotal = useMemo(() => cart.reduce((sum, item) => sum + item.quantity * item.unit_price, 0), [cart])
@@ -138,6 +189,79 @@ export default function SmallSales() {
       })
       setSuccess(`Vente de ${currency(total)} enregistrée ✅`)
       resetForm()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  const handleOpenEdit = (sale) => {
+    setEditSale(sale)
+    setEditNotes(sale.notes || '')
+    setEditDiscount(Number(sale.discount) || 0)
+    setEditCart(
+      (sale.small_sale_items || []).map((item) => ({
+        product_id: item.product_id,
+        product_name: item.product_name,
+        quantity: item.quantity,
+        unit_price: Number(item.unit_price),
+        stock: getAvailableStock(item.product_id, item.quantity),
+      }))
+    )
+    setEditError('')
+  }
+
+  const handleCloseEdit = () => {
+    setEditSale(null)
+    setEditCart([])
+    setEditNotes('')
+    setEditDiscount(0)
+    setEditError('')
+  }
+
+  const handleUpdateSubmit = async (e) => {
+    e.preventDefault()
+    setEditError('')
+    setSuccess('')
+    if (editCart.length === 0) {
+      setEditError('La vente doit contenir au moins un produit.')
+      return
+    }
+    const overStock = editCart.find((item) => item.quantity > item.stock)
+    if (overStock) {
+      setEditError(`Stock insuffisant pour "${overStock.product_name}" (disponible: ${overStock.stock})`)
+      return
+    }
+    if (Number(editDiscount || 0) > editCart.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)) {
+      setEditError('La remise ne peut pas dépasser le sous-total.')
+      return
+    }
+    try {
+      await updateSmallSale.mutateAsync({
+        saleId: editSale.id,
+        notes: editNotes,
+        discount: Number(editDiscount) || 0,
+        items: editCart.map((item) => ({
+          product_id: item.product_id,
+          product_name: item.product_name,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+        })),
+      })
+      setSuccess('Vente modifiée avec succès ✅')
+      handleCloseEdit()
+    } catch (err) {
+      setEditError(err.message)
+    }
+  }
+
+  const handleDeleteSale = async () => {
+    if (!deleteSaleTarget) return
+    setError('')
+    setSuccess('')
+    try {
+      await deleteSmallSale.mutateAsync(deleteSaleTarget.id)
+      setSuccess('Vente supprimée avec succès ✅')
+      setDeleteSaleTarget(null)
     } catch (err) {
       setError(err.message)
     }
@@ -394,7 +518,25 @@ export default function SmallSales() {
                         {s.users?.full_name || 'Vendeur'} · {new Date(s.created_at).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
-                    <span className="text-sm font-bold text-gray-700 dark:text-gray-200 tabular-nums shrink-0">{currency(s.total)}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-gray-700 dark:text-gray-200 tabular-nums shrink-0">{currency(s.total)}</span>
+                      <button
+                        type="button"
+                        className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+                        title="Modifier la vente"
+                        onClick={() => handleOpenEdit(s)}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="p-2 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-800"
+                        title="Supprimer la vente"
+                        onClick={() => setDeleteSaleTarget(s)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
@@ -403,6 +545,127 @@ export default function SmallSales() {
           </div>
         </div>
       </div>
+
+      <Modal open={!!editSale} onClose={handleCloseEdit} title={`Modifier la petite vente`} maxWidth="max-w-2xl">
+        <form onSubmit={handleUpdateSubmit} className="space-y-4">
+          {editError && (
+            <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">
+              <PackageX size={16} className="shrink-0" /> {editError}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <div className="flex-1 min-w-0">
+              <SearchableSelect
+                value={productToAdd}
+                onChange={setProductToAdd}
+                options={productOptions}
+                placeholder="Rechercher un produit..."
+                emptyMessage="Aucun produit trouvé"
+              />
+            </div>
+            <button type="button" className="btn-primary shrink-0" onClick={() => addProductToEdit(productToAdd)}>
+              <Plus size={16} /> Ajouter
+            </button>
+          </div>
+          {quickProducts.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-gray-400 mb-2">Ajout rapide — cliquez sur un produit</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {quickProducts.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => addProductToEdit(p.id)}
+                    className="text-left p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-brand-400 dark:hover:border-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 transition-colors"
+                  >
+                    <p className="text-xs font-medium truncate">{p.name}</p>
+                    <p className="text-xs font-bold text-brand-600 dark:text-brand-400 mt-0.5">{currency(p.sale_price)}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">Stock: {p.stock}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {editCart.length > 0 ? (
+            <div className="border border-gray-200 dark:border-gray-700/60 rounded-xl overflow-hidden divide-y divide-gray-100 dark:divide-gray-800">
+              {editCart.map((item) => (
+                <div key={item.product_id} className="flex items-center gap-3 p-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{item.product_name}</p>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="text-xs w-24 bg-transparent text-gray-500 dark:text-gray-400 outline-none border-b border-dashed border-gray-300 dark:border-gray-600 focus:border-brand-500"
+                      value={item.unit_price}
+                      onChange={(e) => updateEditPrice(item.product_id, Number(e.target.value))}
+                      title="Prix unitaire"
+                    />
+                  </div>
+                  <QtyStepper value={item.quantity} max={item.stock} onChange={(q) => updateEditQuantity(item.product_id, q)} />
+                  <div className="w-24 text-right shrink-0">
+                    <p className="text-sm font-semibold tabular-nums">{currency(item.quantity * item.unit_price)}</p>
+                  </div>
+                  <button type="button" className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg shrink-0" onClick={() => removeFromEditCart(item.product_id)}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl p-8 flex flex-col items-center text-center gap-2">
+              <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400">
+                <ShoppingBag size={20} />
+              </div>
+              <p className="font-medium text-sm">Le panier de la vente est vide</p>
+              <p className="text-xs text-gray-400">Ajoutez des produits pour mettre à jour la vente</p>
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+            <div className="flex-1">
+              <label className="label">Remarque (optionnel)</label>
+              <input
+                type="text"
+                className="input"
+                placeholder="Ex: vente au comptoir, réparation..."
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+              />
+            </div>
+            <div className="sm:w-40">
+              <label className="label">Remise (FCFA)</label>
+              <input type="number" min="0" max={editCart.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)} className="input text-right" value={editDiscount} onChange={(e) => setEditDiscount(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-4 space-y-1.5">
+            <div className="flex justify-between text-sm text-gray-500"><span>Sous-total</span><span>{currency(editCart.reduce((sum, item) => sum + item.quantity * item.unit_price, 0))}</span></div>
+            <div className="flex justify-between text-sm text-gray-500"><span>Remise</span><span>-{currency(editDiscount)}</span></div>
+            <div className="flex items-center justify-between pt-2 mt-1 border-t border-gray-200 dark:border-gray-700">
+              <span className="font-semibold">Total à encaisser</span>
+              <span className="text-2xl font-extrabold text-brand-600 dark:text-brand-400 tabular-nums">{currency(Math.max(0, editCart.reduce((sum, item) => sum + item.quantity * item.unit_price, 0) - Number(editDiscount || 0)))}</span>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={handleCloseEdit}>Annuler</button>
+            <button type="submit" className="btn-primary" disabled={updateSmallSale.isPending || editCart.length === 0}>
+              {updateSmallSale.isPending ? 'Enregistrement...' : 'Enregistrer les modifications'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deleteSaleTarget}
+        onClose={() => setDeleteSaleTarget(null)}
+        onConfirm={handleDeleteSale}
+        title="Supprimer la vente"
+        message="Confirmez-vous la suppression de cette petite vente ? Cette action est irréversible."
+        loading={deleteSmallSale.isPending}
+      />
     </div>
   )
 }

@@ -37,6 +37,28 @@ export function useCreateSmallSale() {
   })
 }
 
+export function useUpdateSmallSale() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ saleId, notes, discount, items }) => {
+      const { data, error } = await supabase.rpc('update_small_sale', {
+        p_sale_id: saleId,
+        p_notes: notes || null,
+        p_discount: discount || 0,
+        p_items: items,
+      })
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['small_sales'] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
 export function useDeleteSmallSale() {
   const queryClient = useQueryClient()
   return useMutation({

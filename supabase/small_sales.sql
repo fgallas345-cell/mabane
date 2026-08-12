@@ -166,5 +166,133 @@ $$;
 
 grant execute on function public.create_small_sale(jsonb, uuid, text, numeric) to authenticated;
 
+create or replace function public.update_small_sale(
+  p_sale_id uuid,
+  p_items jsonb,
+  p_notes text default null,
+  p_discount numeric default 0
+)
+returns public.small_sales
+language plpgsql
+security definer
+as $$
+declare
+  v_sale public.small_sales;
+  v_item jsonb;
+  v_old_item record;
+  v_current_stock integer;
+  v_purchase_price numeric;
+  v_new_quantity integer;
+  v_new_subtotal numeric := 0;
+  v_line_total numeric;
+begin
+  select * into v_sale
+  from public.small_sales
+  where id = p_sale_id
+  for update;
+
+  if v_sale.id is null then
+    raise exception 'Petite vente introuvable.';
+  end if;
+
+  if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'La petite vente doit contenir au moins un article.';
+  end if;
+
+  if coalesce(p_discount, 0) < 0 then
+    raise exception 'La remise ne peut pas être négative.';
+  end if;
+
+  -- Restaurer le stock des anciens articles
+  for v_old_item in
+    select id, product_id, quantity
+    from public.small_sale_items
+    where small_sale_id = p_sale_id
+  loop
+    if v_old_item.product_id is not null then
+      update public.products
+      set stock = stock + v_old_item.quantity, updated_at = now()
+      where id = v_old_item.product_id;
+
+      insert into public.stock_movements (product_id, type, quantity, reason, user_id)
+      values (
+        v_old_item.product_id,
+        'entree',
+        v_old_item.quantity,
+        'Rectification petite vente ' || p_sale_id::text,
+        auth.uid()
+      );
+    end if;
+
+    delete from public.small_sale_items where id = v_old_item.id;
+  end loop;
+
+  for v_item in select * from jsonb_array_elements(p_items)
+  loop
+    v_new_quantity := (v_item->>'quantity')::integer;
+
+    if v_new_quantity <= 0 then
+      raise exception 'La quantité doit être supérieure à zéro pour le produit %', v_item->>'product_name';
+    end if;
+
+    if (v_item->>'unit_price')::numeric < 0 then
+      raise exception 'Le prix de vente ne peut pas être négatif pour le produit %', v_item->>'product_name';
+    end if;
+
+    v_line_total := v_new_quantity * (v_item->>'unit_price')::numeric;
+    v_new_subtotal := v_new_subtotal + v_line_total;
+
+    select stock, purchase_price into v_current_stock, v_purchase_price
+    from public.products
+    where id = (v_item->>'product_id')::uuid
+    for update;
+
+    if v_current_stock is null then
+      raise exception 'Produit introuvable : %', v_item->>'product_name';
+    end if;
+
+    if v_current_stock < v_new_quantity then
+      raise exception 'Stock insuffisant pour le produit % (disponible: %)', v_item->>'product_name', v_current_stock;
+    end if;
+
+    update public.products
+    set stock = stock - v_new_quantity, updated_at = now()
+    where id = (v_item->>'product_id')::uuid;
+
+    insert into public.stock_movements (product_id, type, quantity, reason, user_id)
+    values (
+      (v_item->>'product_id')::uuid,
+      'sortie',
+      v_new_quantity,
+      'Petite vente rectifiée ' || p_sale_id::text,
+      auth.uid()
+    );
+
+    insert into public.small_sale_items (small_sale_id, product_id, product_name, quantity, purchase_price, unit_price, line_total)
+    values (
+      p_sale_id,
+      (v_item->>'product_id')::uuid,
+      v_item->>'product_name',
+      v_new_quantity,
+      coalesce(v_purchase_price, 0),
+      (v_item->>'unit_price')::numeric,
+      v_line_total
+    );
+  end loop;
+
+  update public.small_sales
+  set notes = nullif(p_notes, ''),
+      discount = coalesce(p_discount, 0),
+      subtotal = v_new_subtotal,
+      total = v_new_subtotal - coalesce(p_discount, 0)
+  where id = p_sale_id
+  returning * into v_sale;
+
+  return v_sale;
+end;
+$$;
+
+grant execute on function public.update_small_sale(uuid, jsonb, text, numeric) to authenticated;
+
 notify pgrst, 'reload schema';
 
