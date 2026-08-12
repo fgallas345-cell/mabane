@@ -3,6 +3,7 @@ import { Plus, Pencil, Trash2, Search, Package, ImagePlus, FileSpreadsheet, Aler
 import { useProducts, uploadProductImage } from '../../hooks/useProducts'
 import { useCategories } from '../../hooks/useEntities'
 import { usePurchases } from '../../hooks/usePurchases'
+import { useToast } from '../../context/ToastContext'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Pagination from '../../components/Pagination'
@@ -116,6 +117,7 @@ function ActionButton({ icon: Icon, title, onClick, tone = 'gray' }) {
 }
 
 export default function Products() {
+  const toast = useToast()
   const { data: products = [], isLoading, createItem, updateItem, deleteItem } = useProducts()
   const { data: categories = [] } = useCategories()
   const { data: purchases = [] } = usePurchases()
@@ -159,7 +161,7 @@ export default function Products() {
       const url = await uploadProductImage(file)
       setForm((f) => ({ ...f, image_url: url }))
     } catch (err) {
-      alert("Erreur lors de l'upload de l'image : " + err.message)
+      toast.error("Erreur lors de l'upload de l'image : " + err.message)
     } finally {
       setUploading(false)
     }

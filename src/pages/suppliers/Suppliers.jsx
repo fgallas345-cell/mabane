@@ -3,6 +3,7 @@ import { Plus, Pencil, Trash2, Search, Phone, Truck, Mail, MapPin, User, Package
 import { useSuppliers } from '../../hooks/useEntities'
 import { useProducts } from '../../hooks/useProducts'
 import { usePurchases, useAddPurchasePayment } from '../../hooks/usePurchases'
+import { useToast } from '../../context/ToastContext'
 import { supabase } from '../../lib/supabase'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -44,6 +45,7 @@ export default function Suppliers() {
   const { data: suppliers = [], isLoading, createItem, updateItem, deleteItem, invalidate } = useSuppliers()
   const { data: products = [] } = useProducts()
   const { data: purchases = [] } = usePurchases()
+  const toast = useToast()
   const addPayment = useAddPurchasePayment()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -72,11 +74,15 @@ export default function Suppliers() {
     setPaymentError('')
     const due = payingPurchase.total - payingPurchase.amount_paid
     if (!paymentAmount || Number(paymentAmount) <= 0) {
-      setPaymentError('Entrez un montant valide.')
+      const message = 'Entrez un montant valide.'
+      setPaymentError(message)
+      toast.error(message)
       return
     }
     if (Number(paymentAmount) > due) {
-      setPaymentError(`Le paiement dépasse le solde dû (${currency(due)}).`)
+      const message = `Le paiement dépasse le solde dû (${currency(due)}).`
+      setPaymentError(message)
+      toast.error(message)
       return
     }
     try {
@@ -84,7 +90,9 @@ export default function Suppliers() {
       setPayingPurchase(null)
       setPaymentAmount('')
     } catch (err) {
-      setPaymentError(err.message)
+      const message = err.message || 'Erreur lors de l’ajout du paiement.'
+      setPaymentError(message)
+      toast.error(message)
     }
   }
 
@@ -142,7 +150,9 @@ export default function Suppliers() {
     setError('')
 
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-      setError('L’adresse email n’est pas valide.')
+      const message = 'L’adresse email n’est pas valide.'
+      setError(message)
+      toast.error(message)
       return
     }
 
@@ -173,7 +183,9 @@ export default function Suppliers() {
       await invalidate()
       setModalOpen(false)
     } catch (err) {
-      setError(err.message || 'Une erreur est survenue lors de l’enregistrement du fournisseur.')
+      const message = err.message || 'Une erreur est survenue lors de l’enregistrement du fournisseur.'
+      setError(message)
+      toast.error(message)
     }
   }
 
@@ -182,7 +194,9 @@ export default function Suppliers() {
       await deleteItem.mutateAsync(confirmDelete.id)
       setConfirmDelete(null)
     } catch (err) {
-      setError(err.message || 'Impossible de supprimer ce fournisseur.')
+      const message = err.message || 'Impossible de supprimer ce fournisseur.'
+      setError(message)
+      toast.error(message)
     }
   }
 

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabase'
 
 export function useSales() {
@@ -33,6 +34,7 @@ export function useSale(saleId) {
 
 export function useCreateSale() {
   const queryClient = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async ({ clientId, userId, discount, items, amountPaid }) => {
       const { data, error } = await supabase.rpc('create_sale', {
@@ -46,16 +48,21 @@ export function useCreateSale() {
       return data
     },
     onSuccess: () => {
+      toast.success('Vente créée avec succès.')
       queryClient.invalidateQueries({ queryKey: ['sales'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de la création de la vente.')
     },
   })
 }
 
 export function useAddSalePayment() {
   const queryClient = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async ({ saleId, amount }) => {
       const { data, error } = await supabase.rpc('add_sale_payment', {
@@ -66,14 +73,19 @@ export function useAddSalePayment() {
       return data
     },
     onSuccess: () => {
+      toast.success('Paiement ajouté avec succès.')
       queryClient.invalidateQueries({ queryKey: ['sales'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de l’ajout du paiement.')
     },
   })
 }
 
 export function useCancelSale() {
   const queryClient = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async ({ saleId, userId }) => {
       const { error } = await supabase.rpc('cancel_sale', {
@@ -83,10 +95,14 @@ export function useCancelSale() {
       if (error) throw error
     },
     onSuccess: () => {
+      toast.success('Vente annulée avec succès.')
       queryClient.invalidateQueries({ queryKey: ['sales'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de l’annulation de la vente.')
     },
   })
 }
@@ -108,6 +124,7 @@ export function useStockMovements() {
 
 export function useAddStockEntry() {
   const queryClient = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async ({ productId, quantity, reason, userId }) => {
       const { error } = await supabase.rpc('add_stock_entry', {
@@ -119,15 +136,20 @@ export function useAddStockEntry() {
       if (error) throw error
     },
     onSuccess: () => {
+      toast.success('Stock mis à jour avec succès.')
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de la mise à jour du stock.')
     },
   })
 }
 
 export function useUpdateStockMovement() {
   const queryClient = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async ({ movementId, productId, type, quantity, reason, userId }) => {
       const { error } = await supabase.rpc('update_stock_movement', {
@@ -141,15 +163,20 @@ export function useUpdateStockMovement() {
       if (error) throw error
     },
     onSuccess: () => {
+      toast.success('Mouvement de stock mis à jour.')
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de la mise à jour du mouvement de stock.')
     },
   })
 }
 
 export function useDeleteStockMovement() {
   const queryClient = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async (movementId) => {
       const { error } = await supabase.rpc('delete_stock_movement', {
@@ -158,15 +185,20 @@ export function useDeleteStockMovement() {
       if (error) throw error
     },
     onSuccess: () => {
+      toast.success('Mouvement de stock supprimé.')
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de la suppression du mouvement de stock.')
     },
   })
 }
 
 export function useUpdateSale() {
   const queryClient = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async ({ saleId, clientId, discount }) => {
       const { data, error } = await supabase
@@ -179,14 +211,19 @@ export function useUpdateSale() {
       return data
     },
     onSuccess: () => {
+      toast.success('Facture mise à jour avec succès.')
       queryClient.invalidateQueries({ queryKey: ['sales'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de la mise à jour de la facture.')
     },
   })
 }
 
 export function useUpdateSaleItems() {
   const queryClient = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async ({ saleId, items }) => {
       const { data, error } = await supabase.rpc('update_sale_items', {
@@ -197,26 +234,35 @@ export function useUpdateSaleItems() {
       return data
     },
     onSuccess: () => {
+      toast.success('Articles de facture mis à jour.')
       queryClient.invalidateQueries({ queryKey: ['sales'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de la mise à jour des articles de facture.')
     },
   })
 }
 
 export function useDeleteSale() {
   const queryClient = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async (saleId) => {
       const { error } = await supabase.from('sales').delete().eq('id', saleId)
       if (error) throw error
     },
     onSuccess: () => {
+      toast.success('Facture supprimée avec succès.')
       queryClient.invalidateQueries({ queryKey: ['sales'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de la suppression de la facture.')
     },
   })
 }

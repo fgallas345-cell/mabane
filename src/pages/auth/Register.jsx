@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Store, UserPlus } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import { SHOP } from '../../lib/constants'
 
 export default function Register() {
   const { signUp } = useAuth()
+  const toast = useToast()
   const navigate = useNavigate()
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
@@ -22,8 +24,10 @@ export default function Register() {
     setLoading(false)
     if (error) {
       setError(error.message)
+      toast.error(error.message)
     } else {
       setSuccess(true)
+      toast.success('Compte créé avec succès !')
       setTimeout(() => navigate('/login'), 2500)
     }
   }

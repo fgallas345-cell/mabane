@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabase'
 import { SHOP, syncShopSettings } from '../lib/constants'
 
@@ -28,6 +29,7 @@ export function useShopSettings() {
 
 export function useUpdateShopSettings() {
   const queryClient = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async (payload) => {
       const { data, error } = await supabase
@@ -42,6 +44,10 @@ export function useUpdateShopSettings() {
     onSuccess: (data) => {
       syncShopSettings(data)
       queryClient.setQueryData(['shop_settings'], data)
+      toast.success('Paramètres enregistrés avec succès.')
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de l’enregistrement des paramètres.')
     },
   })
 }

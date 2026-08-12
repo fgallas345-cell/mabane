@@ -3,6 +3,7 @@ import { Plus, Trash2, Search, Zap, Receipt, Minus, ShoppingBag, TrendingUp, Che
 import { useProducts } from '../../hooks/useProducts'
 import { useSmallSales, useCreateSmallSale, useUpdateSmallSale, useDeleteSmallSale } from '../../hooks/useSmallSales'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import Pagination from '../../components/Pagination'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -47,6 +48,7 @@ function QtyStepper({ value, onChange, max }) {
 
 export default function SmallSales() {
   const { user } = useAuth()
+  const toast = useToast()
   const { data: products = [] } = useProducts()
   const { data: smallSales = [] } = useSmallSales()
   const [cart, setCart] = useState([]) // {product_id, product_name, quantity, unit_price}
@@ -163,16 +165,22 @@ export default function SmallSales() {
     setError('')
     setSuccess('')
     if (cart.length === 0) {
-      setError('Ajoutez au moins un produit à la vente.')
+      const message = 'Ajoutez au moins un produit à la vente.'
+      setError(message)
+      toast.error(message)
       return
     }
     const overStock = cart.find((item) => item.quantity > item.stock)
     if (overStock) {
-      setError(`Stock insuffisant pour "${overStock.product_name}" (disponible: ${overStock.stock})`)
+      const message = `Stock insuffisant pour "${overStock.product_name}" (disponible: ${overStock.stock})`
+      setError(message)
+      toast.error(message)
       return
     }
     if (Number(discount || 0) > subtotal) {
-      setError('La remise ne peut pas dépasser le sous-total.')
+      const message = 'La remise ne peut pas dépasser le sous-total.'
+      setError(message)
+      toast.error(message)
       return
     }
     try {
@@ -187,10 +195,14 @@ export default function SmallSales() {
           unit_price: c.unit_price,
         })),
       })
-      setSuccess(`Vente de ${currency(total)} enregistrée ✅`)
+      const message = `Vente de ${currency(total)} enregistrée ✅`
+      setSuccess(message)
+      toast.success(message)
       resetForm()
     } catch (err) {
-      setError(err.message)
+      const message = err.message || 'Erreur lors de l’enregistrement de la vente.'
+      setError(message)
+      toast.error(message)
     }
   }
 
@@ -223,16 +235,22 @@ export default function SmallSales() {
     setEditError('')
     setSuccess('')
     if (editCart.length === 0) {
-      setEditError('La vente doit contenir au moins un produit.')
+      const message = 'La vente doit contenir au moins un produit.'
+      setEditError(message)
+      toast.error(message)
       return
     }
     const overStock = editCart.find((item) => item.quantity > item.stock)
     if (overStock) {
-      setEditError(`Stock insuffisant pour "${overStock.product_name}" (disponible: ${overStock.stock})`)
+      const message = `Stock insuffisant pour "${overStock.product_name}" (disponible: ${overStock.stock})`
+      setEditError(message)
+      toast.error(message)
       return
     }
     if (Number(editDiscount || 0) > editCart.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)) {
-      setEditError('La remise ne peut pas dépasser le sous-total.')
+      const message = 'La remise ne peut pas dépasser le sous-total.'
+      setEditError(message)
+      toast.error(message)
       return
     }
     try {
@@ -250,7 +268,9 @@ export default function SmallSales() {
       setSuccess('Vente modifiée avec succès ✅')
       handleCloseEdit()
     } catch (err) {
-      setEditError(err.message)
+      const message = err.message || 'Erreur lors de la mise à jour de la vente.'
+      setEditError(message)
+      toast.error(message)
     }
   }
 
@@ -260,10 +280,14 @@ export default function SmallSales() {
     setSuccess('')
     try {
       await deleteSmallSale.mutateAsync(deleteSaleTarget.id)
-      setSuccess('Vente supprimée avec succès ✅')
+      const message = 'Vente supprimée avec succès ✅'
+      setSuccess(message)
+      toast.success(message)
       setDeleteSaleTarget(null)
     } catch (err) {
-      setError(err.message)
+      const message = err.message || 'Erreur lors de la suppression de la vente.'
+      setError(message)
+      toast.error(message)
     }
   }
 

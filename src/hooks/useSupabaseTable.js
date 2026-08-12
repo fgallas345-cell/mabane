@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabase'
 
 /**
@@ -9,6 +10,7 @@ import { supabase } from '../lib/supabase'
  */
 export function useSupabaseTable(table, selectQuery = '*', options = {}) {
   const queryClient = useQueryClient()
+  const toast = useToast()
   const { orderBy = 'created_at', ascending = false } = options
 
   const listQuery = useQuery({
@@ -29,7 +31,13 @@ export function useSupabaseTable(table, selectQuery = '*', options = {}) {
       if (error) throw error
       return data
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      toast.success('Enregistrement créé avec succès.')
+      invalidate()
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de la création de l’enregistrement.')
+    },
   })
 
   const updateItem = useMutation({
@@ -38,7 +46,13 @@ export function useSupabaseTable(table, selectQuery = '*', options = {}) {
       if (error) throw error
       return data
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      toast.success('Enregistrement mis à jour avec succès.')
+      invalidate()
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de la mise à jour de l’enregistrement.')
+    },
   })
 
   const deleteItem = useMutation({
@@ -47,7 +61,13 @@ export function useSupabaseTable(table, selectQuery = '*', options = {}) {
       if (error) throw error
       return id
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      toast.success('Suppression effectuée.')
+      invalidate()
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de la suppression de l’enregistrement.')
+    },
   })
 
   return { ...listQuery, createItem, updateItem, deleteItem, invalidate }

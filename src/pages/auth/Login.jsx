@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, LogIn } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import { SHOP } from '../../lib/constants'
 
 export default function Login() {
   const { signIn } = useAuth()
+  const toast = useToast()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -20,7 +22,9 @@ export default function Login() {
     const { error } = await signIn(email, password)
     setLoading(false)
     if (error) {
-      setError("Email ou mot de passe incorrect.")
+      const message = "Email ou mot de passe incorrect."
+      setError(message)
+      toast.error(message)
     } else {
       navigate('/')
     }

@@ -4,6 +4,7 @@ import { useProducts } from '../../hooks/useProducts'
 import { useClients } from '../../hooks/useEntities'
 import { useSales, useCreateSale, useCancelSale, useAddSalePayment, useUpdateSale, useDeleteSale, useUpdateSaleItems } from '../../hooks/useSales'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import Pagination from '../../components/Pagination'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -99,6 +100,7 @@ function ActionButton({ icon: Icon, title, onClick, disabled, tone = 'gray' }) {
 
 export default function Sales() {
   const { user, isAdmin } = useAuth()
+  const toast = useToast()
   const { data: products = [] } = useProducts()
   const { data: clients = [] } = useClients()
   const { data: sales = [], isLoading } = useSales()
@@ -171,24 +173,34 @@ export default function Sales() {
     e.preventDefault()
     setError('')
     if (cart.length === 0) {
-      setError('Ajoutez au moins un produit à la facture.')
+      const message = 'Ajoutez au moins un produit à la facture.'
+      setError(message)
+      toast.error(message)
       return
     }
     const overStock = cart.find((item) => item.quantity > item.stock)
     if (overStock) {
-      setError(`Stock insuffisant pour "${overStock.product_name}" (disponible: ${overStock.stock})`)
+      const message = `Stock insuffisant pour "${overStock.product_name}" (disponible: ${overStock.stock})`
+      setError(message)
+      toast.error(message)
       return
     }
     if (Number(discount || 0) > subtotal) {
-      setError('La remise ne peut pas dépasser le sous-total.')
+      const message = 'La remise ne peut pas dépasser le sous-total.'
+      setError(message)
+      toast.error(message)
       return
     }
     if (partialPayment && Number(amountPaid || 0) > total) {
-      setError('Le montant payé ne peut pas dépasser le total de la facture.')
+      const message = 'Le montant payé ne peut pas dépasser le total de la facture.'
+      setError(message)
+      toast.error(message)
       return
     }
     if (partialPayment && !clientId) {
-      setError('Sélectionnez un client pour une vente à crédit ou avec avance (pour pouvoir suivre sa dette).')
+      const message = 'Sélectionnez un client pour une vente à crédit ou avec avance (pour pouvoir suivre sa dette).'
+      setError(message)
+      toast.error(message)
       return
     }
     try {
@@ -207,7 +219,9 @@ export default function Sales() {
       setNewSaleOpen(false)
       resetForm()
     } catch (err) {
-      setError(err.message)
+      const message = err.message || 'Erreur lors de la création de la facture.'
+      setError(message)
+      toast.error(message)
     }
   }
 
@@ -216,11 +230,15 @@ export default function Sales() {
     setPaymentError('')
     const due = paymentOpen.total - paymentOpen.amount_paid
     if (!paymentAmount || Number(paymentAmount) <= 0) {
-      setPaymentError('Entrez un montant valide.')
+      const message = 'Entrez un montant valide.'
+      setPaymentError(message)
+      toast.error(message)
       return
     }
     if (Number(paymentAmount) > due) {
-      setPaymentError(`Le paiement dépasse le solde restant dû (${currency(due)}).`)
+      const message = `Le paiement dépasse le solde restant dû (${currency(due)}).`
+      setPaymentError(message)
+      toast.error(message)
       return
     }
     try {
@@ -228,7 +246,9 @@ export default function Sales() {
       setPaymentOpen(null)
       setPaymentAmount('')
     } catch (err) {
-      setPaymentError(err.message)
+      const message = err.message || 'Erreur lors de l’ajout du paiement.'
+      setPaymentError(message)
+      toast.error(message)
     }
   }
 
@@ -246,12 +266,12 @@ export default function Sales() {
 
     // --- Validation ---
     if (editSaleItems.length === 0) {
-      alert('Une facture doit contenir au moins un article.')
+      toast.error('Une facture doit contenir au moins un article.')
       return
     }
     const newSubtotal = editSaleItems.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
     if (Number(editDiscount || 0) > newSubtotal) {
-      alert('La remise ne peut pas dépasser le sous-total de la facture.')
+      toast.error('La remise ne peut pas dépasser le sous-total de la facture.')
       return
     }
     // Stock max disponible : le stock actuel + les quantités rendues depuis la facture d'origine
@@ -269,7 +289,7 @@ export default function Sales() {
       return item.quantity > available
     })
     if (overStock) {
-      alert(`Stock insuffisant pour "${overStock.product_name}" (disponible: ${Number(products.find((p) => p.id === overStock.product_id)?.stock || 0) + (originalByProductId[overStock.product_id] || 0)})`)
+      toast.error(`Stock insuffisant pour "${overStock.product_name}" (disponible: ${Number(products.find((p) => p.id === overStock.product_id)?.stock || 0) + (originalByProductId[overStock.product_id] || 0)})`)
       return
     }
 
@@ -292,7 +312,7 @@ export default function Sales() {
         setDetailSale(null) // Force refresh by closing detail
       }
     } catch (err) {
-      alert(err.message || 'Erreur lors de la mise à jour de la facture')
+      toast.error(err.message || 'Erreur lors de la mise à jour de la facture')
     }
   }
 
@@ -345,7 +365,7 @@ export default function Sales() {
 
   const handleRemoveEditSaleItem = (itemId) => {
     if (editSaleItems.length === 1) {
-      alert('Une facture doit contenir au moins un article.')
+      toast.error('Une facture doit contenir au moins un article.')
       return
     }
     setEditSaleItems(items => items.filter(item => item.id !== itemId))
@@ -358,7 +378,7 @@ export default function Sales() {
       if (detailSale?.id === confirmDelete.id) setDetailSale(null)
       setConfirmDelete(null)
     } catch (err) {
-      alert(err.message || 'Erreur lors de la suppression')
+      toast.error(err.message || 'Erreur lors de la suppression')
     }
   }
 

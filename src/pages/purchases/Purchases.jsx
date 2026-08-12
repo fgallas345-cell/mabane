@@ -4,6 +4,7 @@ import { useProducts } from '../../hooks/useProducts'
 import { useSuppliers } from '../../hooks/useEntities'
 import { usePurchases, useCreatePurchase, useAddPurchasePayment, useCancelPurchase, useUpdatePurchase, useUpdatePurchaseItems, useDeletePurchase } from '../../hooks/usePurchases'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import Pagination from '../../components/Pagination'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -60,7 +61,8 @@ export default function Purchases() {
   const { user, isAdmin } = useAuth()
   const { data: products = [] } = useProducts()
   const { data: suppliers = [] } = useSuppliers()
-const { data: purchases = [], isLoading } = usePurchases()
+  const { data: purchases = [], isLoading } = usePurchases()
+  const toast = useToast()
   const createPurchase = useCreatePurchase()
   const addPayment = useAddPurchasePayment()
   const cancelPurchase = useCancelPurchase()
@@ -163,15 +165,21 @@ const { data: purchases = [], isLoading } = usePurchases()
     e.preventDefault()
     setError('')
     if (!supplierId) {
-      setError('Sélectionnez un fournisseur.')
+      const message = 'Sélectionnez un fournisseur.'
+      setError(message)
+      toast.error(message)
       return
     }
     if (cart.length === 0) {
-      setError('Ajoutez au moins un produit à cet achat.')
+      const message = 'Ajoutez au moins un produit à cet achat.'
+      setError(message)
+      toast.error(message)
       return
     }
     if (Number(amountPaid || 0) > subtotal) {
-      setError('Le montant payé ne peut pas dépasser le total de l’achat.')
+      const message = 'Le montant payé ne peut pas dépasser le total de l’achat.'
+      setError(message)
+      toast.error(message)
       return
     }
     try {
@@ -190,7 +198,9 @@ const { data: purchases = [], isLoading } = usePurchases()
       setNewPurchaseOpen(false)
       resetForm()
     } catch (err) {
-      setError(err.message)
+      const message = err.message || 'Erreur lors de la création de l’achat.'
+      setError(message)
+      toast.error(message)
     }
   }
 
@@ -205,11 +215,15 @@ const { data: purchases = [], isLoading } = usePurchases()
     setPaymentError('')
     const due = paymentOpen.total - paymentOpen.amount_paid
     if (!paymentAmount || Number(paymentAmount) <= 0) {
-      setPaymentError('Entrez un montant valide.')
+      const message = 'Entrez un montant valide.'
+      setPaymentError(message)
+      toast.error(message)
       return
     }
     if (Number(paymentAmount) > due) {
-      setPaymentError(`Le paiement dépasse le solde restant dû (${currency(due)}).`)
+      const message = `Le paiement dépasse le solde restant dû (${currency(due)}).`
+      setPaymentError(message)
+      toast.error(message)
       return
     }
     try {
@@ -217,7 +231,9 @@ const { data: purchases = [], isLoading } = usePurchases()
       setPaymentOpen(null)
       setPaymentAmount('')
     } catch (err) {
-      setPaymentError(err.message)
+      const message = err.message || 'Erreur lors de l’ajout du paiement.'
+      setPaymentError(message)
+      toast.error(message)
     }
   }
 
@@ -227,12 +243,12 @@ const { data: purchases = [], isLoading } = usePurchases()
     if (!editPurchase) return
 
     if (editPurchaseItems.length === 0) {
-      alert('Un achat doit contenir au moins un article.')
+      toast.error('Un achat doit contenir au moins un article.')
       return
     }
     const invalid = editPurchaseItems.find((item) => Number(item.quantity) <= 0 || Number(item.unit_cost) < 0)
     if (invalid) {
-      alert(`Quantité ou coût invalide pour "${invalid.product_name}".`)
+      toast.error(`Quantité ou coût invalide pour "${invalid.product_name}".`)
       return
     }
 
@@ -249,7 +265,7 @@ const { data: purchases = [], isLoading } = usePurchases()
       setEditProductToAdd('')
       if (detailPurchase?.id === editPurchase.id) setDetailPurchase(null)
     } catch (err) {
-      alert(err.message || 'Erreur lors de la mise à jour de l\'achat')
+      toast.error(err.message || 'Erreur lors de la mise à jour de l\'achat')
     }
   }
 
@@ -292,7 +308,7 @@ const { data: purchases = [], isLoading } = usePurchases()
 
   const handleRemoveEditPurchaseItem = (itemId) => {
     if (editPurchaseItems.length === 1) {
-      alert('Un achat doit contenir au moins un article.')
+      toast.error('Un achat doit contenir au moins un article.')
       return
     }
     setEditPurchaseItems((items) => items.filter((item) => item.id !== itemId))
@@ -305,7 +321,7 @@ const { data: purchases = [], isLoading } = usePurchases()
       if (detailPurchase?.id === confirmDelete.id) setDetailPurchase(null)
       setConfirmDelete(null)
     } catch (err) {
-      alert(err.message || 'Erreur lors de la suppression')
+      toast.error(err.message || 'Erreur lors de la suppression')
     }
   }
 
