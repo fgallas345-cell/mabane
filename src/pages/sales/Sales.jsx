@@ -1,8 +1,8 @@
-import { useEffect, useState, useMemo, useRef } from 'react'
-import { Plus, Trash2, Edit, ShoppingCart, Download, MessageCircle, Eye, Search, Receipt, FileText, RotateCcw, CreditCard, Wallet } from 'lucide-react'
+import { useEffect, useState, useMemo } from 'react'
+import { Plus, Trash2, Edit, ShoppingCart, Download, MessageCircle, Eye, Search, Receipt, FileText, RotateCcw, CreditCard, Wallet, Truck } from 'lucide-react'
 import { useProducts } from '../../hooks/useProducts'
 import { useClients } from '../../hooks/useEntities'
-import { useSales, useCreateSale, useCancelSale, useAddSalePayment, useUpdateSale, useDeleteSale, useUpdateSaleItems } from '../../hooks/useSales'
+import { useSales, useCreateSale, useCancelSale, useAddSalePayment, useUpdateSale, useDeleteSale, useUpdateSaleItems, useDeliveries, useCreateDelivery } from '../../hooks/useSales'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import Pagination from '../../components/Pagination'
@@ -10,6 +10,7 @@ import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { currency } from '../../lib/constants'
 import { downloadInvoicePDF } from '../../utils/invoicePdf'
+import { downloadDeliveryPDF } from '../../utils/deliveryPdf'
 import { sendInvoiceViaWhatsApp } from '../../utils/whatsapp'
 import SearchableSelect from '../../components/SearchableSelect'
 
@@ -21,6 +22,16 @@ function StatusBadge({ status }) {
     annulee: { label: 'Annulée', cls: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400' },
   }
   const s = map[status] || map.payee
+  return <span className={`badge ${s.cls}`}>{s.label}</span>
+}
+
+function DeliveryStatusBadge({ deliveryStatus }) {
+  const map = {
+    en_attente: { label: 'En attente', cls: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' },
+    partielle: { label: 'Partiellement livrée', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' },
+    livree: { label: 'Livrée', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' },
+  }
+  const s = map[deliveryStatus] || map.en_attente
   return <span className={`badge ${s.cls}`}>{s.label}</span>
 }
 
@@ -127,11 +138,18 @@ export default function Sales() {
   const [page, setPage] = useState(1)
   const pageSize = 10
 
+  const createDelivery = useCreateDelivery()
+  const [newDeliveryOpen, setNewDeliveryOpen] = useState(false)
+  const [deliverySale, setDeliverySale] = useState(null)
+  const [deliveryItems, setDeliveryItems] = useState([])
+  const [deliveryNotes, setDeliveryNotes] = useState('')
+
   // --- Form state for new sale ---
   const [clientId, setClientId] = useState('')
   const [discount, setDiscount] = useState(0)
   const [amountPaid, setAmountPaid] = useState('')
   const [partialPayment, setPartialPayment] = useState(false)
+  const [deliveryMode, setDeliveryMode] = useState('immediate')
   const [cart, setCart] = useState([]) // {product_id, product_name, quantity, unit_price, stock}
   const [productToAdd, setProductToAdd] = useState('')
   const [error, setError] = useState('')
@@ -141,6 +159,7 @@ export default function Sales() {
     setDiscount(0)
     setAmountPaid('')
     setPartialPayment(false)
+    setDeliveryMode('immediate')
     setCart([])
     setProductToAdd('')
     setError('')
@@ -215,6 +234,7 @@ export default function Sales() {
           quantity: c.quantity,
           unit_price: c.unit_price,
         })),
+        deliveryMode: deliveryMode,
       })
       setNewSaleOpen(false)
       resetForm()
@@ -382,6 +402,66 @@ export default function Sales() {
     }
   }
 
+  const { data: deliveries = [], isLoading: deliveriesLoading } = useDeliveries(deliverySale?.id)
+
+  const handleCreateDelivery = async (e) => {
+    e.preventDefault()
+    if (!deliverySale) return
+    const validItems = deliveryItems.filter(item => item.quantity_delivered > 0)
+    if (validItems.length === 0) {
+      toast.error('Sélectionnez au moins un article à livrer.')
+      return
+    }
+    try {
+      await createDelivery.mutateAsync({
+        saleId: deliverySale.id,
+        items: validItems.map(item => ({
+          sale_item_id: item.sale_item_id,
+          quantity_delivered: item.quantity_delivered,
+        })),
+        notes: deliveryNotes || null,
+      })
+      setNewDeliveryOpen(false)
+      setDeliveryItems([])
+      setDeliveryNotes('')
+    } catch (err) {
+      toast.error(err.message || 'Erreur lors de la création du bon de livraison')
+    }
+  }
+
+  const handleDeliveryItemQuantity = (saleItemId, qty) => {
+    setDeliveryItems(items =>
+      items.map(item =>
+        item.sale_item_id === saleItemId
+          ? { ...item, quantity_delivered: Math.max(0, Math.min(qty, item.available)) }
+          : item
+      )
+    )
+  }
+
+  const openNewDelivery = () => {
+    if (!deliverySale) return
+    const deliveredByItem = {}
+    ;(deliveries || []).forEach(d => {
+      ;(d.delivery_items || []).forEach(di => {
+        deliveredByItem[di.sale_item_id] = (deliveredByItem[di.sale_item_id] || 0) + di.quantity_delivered
+      })
+    })
+    const undelivered = (deliverySale.sale_items || []).map(item => {
+      const delivered = deliveredByItem[item.id] || 0
+      return {
+        sale_item_id: item.id,
+        product_name: item.product_name,
+        quantity: item.quantity,
+        quantity_delivered: Math.max(0, item.quantity - delivered),
+        available: item.quantity - delivered,
+      }
+    })
+    setDeliveryItems(undelivered.filter(i => i.available > 0))
+    setDeliveryNotes('')
+    setNewDeliveryOpen(true)
+  }
+
   const filteredSales = sales.filter(
     (s) =>
       s.invoice_number.toLowerCase().includes(search.toLowerCase()) ||
@@ -531,7 +611,8 @@ export default function Sales() {
                     <th className="table-th">Date</th>
                     <th className="table-th text-right">Total</th>
                     <th className="table-th text-right">Reste dû</th>
-                    <th className="table-th">Statut</th>
+                    <th className="table-th">Paiement</th>
+                    <th className="table-th">Livraison</th>
                     <th className="table-th text-right">Actions</th>
                   </tr>
                 </thead>
@@ -580,6 +661,7 @@ export default function Sales() {
                           {due > 0 ? <span className="text-red-500 font-medium">{currency(due)}</span> : <span className="text-gray-400">—</span>}
                         </td>
                         <td className="table-td"><StatusBadge status={s.status} /></td>
+                        <td className="table-td"><DeliveryStatusBadge deliveryStatus={s.delivery_status} /></td>
                         <td className="table-td">
                           <div className="flex justify-end gap-1">
                             <ActionButton icon={Eye} title="Voir le détail" onClick={() => setDetailSale(s)} />
@@ -591,6 +673,9 @@ export default function Sales() {
                               onClick={() => sendInvoiceViaWhatsApp(s)}
                               tone="emerald"
                             />
+                            {s.delivery_status !== 'livree' && s.status !== 'annulee' && (
+                              <ActionButton icon={Truck} title="Gérer les livraisons" tone="brand" onClick={() => setDeliverySale(s)} />
+                            )}
                             {s.status !== 'annulee' && due > 0 && (
                               <ActionButton icon={CreditCard} title="Enregistrer un paiement" tone="emerald" onClick={() => { setPaymentOpen(s); setPaymentAmount(''); setPaymentError('') }} />
                             )}
@@ -660,8 +745,12 @@ export default function Sales() {
                         </span>
                       )}
                       <StatusBadge status={s.status} />
+                      <DeliveryStatusBadge deliveryStatus={s.delivery_status} />
                     </div>
                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                      {s.delivery_status !== 'livree' && s.status !== 'annulee' && (
+                        <ActionButton icon={Truck} title="Livraison" tone="brand" onClick={() => setDeliverySale(s)} />
+                      )}
                       {s.status !== 'annulee' && due > 0 && (
                         <ActionButton icon={CreditCard} title="Payer" tone="emerald" onClick={() => { setPaymentOpen(s); setPaymentAmount(''); setPaymentError('') }} />
                       )}
@@ -762,6 +851,19 @@ export default function Sales() {
               onChange={(e) => { setPartialPayment(e.target.checked); setAmountPaid('') }}
             />
             <span className="text-sm font-medium">Vente à crédit / avance (le client paiera le reste plus tard)</span>
+          </label>
+
+          <label className="flex items-center gap-2.5 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/60 cursor-pointer">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={deliveryMode === 'staged'}
+              onChange={(e) => setDeliveryMode(e.target.checked ? 'staged' : 'immediate')}
+            />
+            <div>
+              <span className="text-sm font-medium">Livraison échelonnée</span>
+              <p className="text-xs text-gray-400">Le stock ne sera pas décrémenté immédiatement. Vous livrerez la marchandise étape par étape.</p>
+            </div>
           </label>
 
           {partialPayment && (
@@ -902,6 +1004,97 @@ export default function Sales() {
         )}
       </Modal>
 
+      {/* ---- Modal: gestion des livraisons ---- */}
+      <Modal open={!!deliverySale} onClose={() => { setDeliverySale(null); setNewDeliveryOpen(false) }} title={deliverySale ? `Livraisons - Facture ${deliverySale.invoice_number}` : ''} maxWidth="max-w-2xl">
+        {deliverySale && (
+          <div className="space-y-4">
+            {deliveriesLoading && <p className="text-sm text-gray-400">Chargement...</p>}
+
+            {!deliveriesLoading && deliveries.length > 0 && (
+              <div className="space-y-2">
+                <label className="label">Bons de livraison existants</label>
+                <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
+                  {deliveries.map((delivery) => (
+                    <div key={delivery.id} className="p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <span className="text-sm font-semibold">{delivery.delivery_number}</span>
+                          <span className="text-xs text-gray-400 ml-2">{new Date(delivery.created_at).toLocaleString('fr-FR')}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="text-xs btn-secondary py-1 px-2"
+                          onClick={() => downloadDeliveryPDF(delivery)}
+                        >
+                          <Download size={12} /> PDF
+                        </button>
+                      </div>
+                      {delivery.notes && <p className="text-xs text-gray-500 mb-1">{delivery.notes}</p>}
+                      <div className="space-y-1">
+                        {delivery.delivery_items?.map((di) => (
+                          <div key={di.id} className="flex justify-between text-xs text-gray-600 dark:text-gray-300">
+                            <span>{di.sale_items?.product_name || 'Article'}</span>
+                            <span className="font-medium">× {di.quantity_delivered}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!newDeliveryOpen ? (
+              <button
+                type="button"
+                className="btn-primary w-full"
+                disabled={deliverySale.delivery_status === 'livree'}
+                onClick={() => openNewDelivery()}
+              >
+                <Truck size={16} /> {deliverySale.delivery_status === 'livree' ? 'Livraison complète' : 'Nouvelle livraison'}
+              </button>
+            ) : (
+              <form onSubmit={handleCreateDelivery} className="space-y-3 border border-gray-200 dark:border-gray-700/60 rounded-lg p-3">
+                <label className="label">Articles à livrer maintenant</label>
+                {deliveryItems.length === 0 && <p className="text-xs text-gray-400">Tous les articles ont déjà été livrés.</p>}
+                {deliveryItems.map((item) => (
+                  <div key={item.sale_item_id} className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{item.product_name}</p>
+                      <p className="text-xs text-gray-400">Quantité commandée : {item.quantity}</p>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      max={item.available}
+                      className="input w-20 text-center"
+                      value={item.quantity_delivered}
+                      onChange={(e) => handleDeliveryItemQuantity(item.sale_item_id, Number(e.target.value))}
+                    />
+                  </div>
+                ))}
+                <div>
+                  <label className="label">Notes (optionnel)</label>
+                  <textarea
+                    className="input"
+                    rows="2"
+                    placeholder="Ex: Livré au comptoir, transporteur..."
+                    value={deliveryNotes}
+                    onChange={(e) => setDeliveryNotes(e.target.value)}
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button type="button" className="btn-secondary" onClick={() => setNewDeliveryOpen(false)}>Annuler</button>
+                  <button type="submit" className="btn-primary" disabled={createDelivery.isPending}>
+                    {createDelivery.isPending ? 'Création...' : 'Créer le bon de livraison'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
+      </Modal>
+
       <ConfirmDialog
         open={!!confirmDelete}
         onClose={() => setConfirmDelete(null)}
@@ -941,6 +1134,14 @@ export default function Sales() {
             </div>
             {detailSale.status === 'annulee' && (
               <p className="text-xs text-red-500 text-center font-medium">Facture annulée - stock réintégré.</p>
+            )}
+            {detailSale.delivery_status !== 'livree' && detailSale.status !== 'annulee' && (
+              <button
+                className="btn-success w-full"
+                onClick={() => setDeliverySale(detailSale)}
+              >
+                <Truck size={15} /> Gérer les livraisons
+              </button>
             )}
             {detailSale.status !== 'annulee' && Number(detailSale.total) - Number(detailSale.amount_paid) > 0 && (
               <button

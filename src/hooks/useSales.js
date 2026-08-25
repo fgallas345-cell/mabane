@@ -36,13 +36,14 @@ export function useCreateSale() {
   const queryClient = useQueryClient()
   const toast = useToast()
   return useMutation({
-    mutationFn: async ({ clientId, userId, discount, items, amountPaid }) => {
+    mutationFn: async ({ clientId, userId, discount, items, amountPaid, deliveryMode }) => {
       const { data, error } = await supabase.rpc('create_sale', {
         p_client_id: clientId || null,
         p_user_id: userId || null,
         p_discount: discount || 0,
         p_items: items,
         p_amount_paid: amountPaid === undefined || amountPaid === null ? null : amountPaid,
+        p_delivery_mode: deliveryMode || 'immediate',
       })
       if (error) throw error
       return data
@@ -263,6 +264,49 @@ export function useDeleteSale() {
     },
     onError: (error) => {
       toast.error(error?.message || 'Erreur lors de la suppression de la facture.')
+    },
+  })
+}
+
+export function useDeliveries(saleId) {
+  return useQuery({
+    queryKey: ['deliveries', saleId],
+    enabled: !!saleId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('deliveries')
+        .select('*, delivery_items(*, sale_items(product_name, quantity))')
+        .eq('sale_id', saleId)
+        .order('created_at', { ascending: true })
+      if (error) throw error
+      return data
+    },
+  })
+}
+
+export function useCreateDelivery() {
+  const queryClient = useQueryClient()
+  const toast = useToast()
+  return useMutation({
+    mutationFn: async ({ saleId, items, notes }) => {
+      const { data, error } = await supabase.rpc('create_delivery', {
+        p_sale_id: saleId,
+        p_items: items,
+        p_notes: notes || null,
+      })
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      toast.success('Bon de livraison créé avec succès.')
+      queryClient.invalidateQueries({ queryKey: ['sales'] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
+      queryClient.invalidateQueries({ queryKey: ['deliveries'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de la création du bon de livraison.')
     },
   })
 }

@@ -139,6 +139,7 @@ create table if not exists public.sales (
   total numeric(12,2) not null default 0,
   amount_paid numeric(12,2) not null default 0,
   status text not null default 'payee' check (status in ('payee', 'partielle', 'credit', 'annulee')),
+  delivery_status text not null default 'livree' check (delivery_status in ('en_attente', 'partielle', 'livree')),
   created_at timestamptz default now()
 );
 
@@ -147,6 +148,7 @@ alter table public.sales add column if not exists amount_paid numeric(12,2) not 
 update public.sales set amount_paid = total where status = 'payee' and amount_paid = 0 and total > 0;
 alter table public.sales drop constraint if exists sales_status_check;
 alter table public.sales add constraint sales_status_check check (status in ('payee', 'partielle', 'credit', 'annulee'));
+alter table public.sales add column if not exists delivery_status text not null default 'livree' check (delivery_status in ('en_attente', 'partielle', 'livree'));
 
 -- ============================================================================
 -- 7. TABLE sale_items (lignes de facture)
@@ -164,6 +166,34 @@ create table if not exists public.sale_items (
 
 alter table public.sale_items
   add column if not exists purchase_price numeric(12,2) not null default 0;
+
+-- ============================================================================
+-- 8. TABLE deliveries (bons de livraison)
+-- ============================================================================
+create table if not exists public.deliveries (
+  id uuid primary key default uuid_generate_v4(),
+  sale_id uuid references public.sales(id) on delete cascade,
+  delivery_number text not null unique,
+  notes text,
+  created_by uuid references public.users(id) on delete set null,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_deliveries_sale on public.deliveries(sale_id);
+
+-- ============================================================================
+-- 9. TABLE delivery_items (lignes de bon de livraison)
+-- ============================================================================
+create table if not exists public.delivery_items (
+  id uuid primary key default uuid_generate_v4(),
+  delivery_id uuid references public.deliveries(id) on delete cascade,
+  sale_item_id uuid references public.sale_items(id) on delete cascade,
+  product_id uuid references public.products(id) on delete set null,
+  quantity_delivered integer not null check (quantity_delivered > 0)
+);
+
+create index if not exists idx_delivery_items_delivery on public.delivery_items(delivery_id);
+create index if not exists idx_delivery_items_sale_item on public.delivery_items(sale_item_id);
 
 -- ============================================================================
 -- 8. TABLE stock_movements (historique des entrées / sorties)
@@ -238,13 +268,15 @@ $$;
 -- ============================================================================
 -- FONCTION RPC : créer une vente complète (facture + lignes + stock) de façon atomique
 -- items = jsonb array: [{product_id, product_name, quantity, unit_price}, ...]
+-- p_delivery_mode = 'immediate' (défaut) ou 'staged' (livraison échelonnée)
 -- ============================================================================
 create or replace function public.create_sale(
   p_client_id uuid,
   p_user_id uuid,
   p_discount numeric,
   p_items jsonb,
-  p_amount_paid numeric default null
+  p_amount_paid numeric default null,
+  p_delivery_mode text default 'immediate'
 )
 returns public.sales
 language plpgsql
@@ -261,16 +293,20 @@ declare
   v_total numeric;
   v_amount_paid numeric;
   v_status text;
+  v_delivery_status text;
 begin
   if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
     raise exception 'La vente doit contenir au moins un article.';
+  end if;
+
+  if p_delivery_mode not in ('immediate', 'staged') then
+    raise exception 'Mode de livraison invalide : % (immediate ou staged)', p_delivery_mode;
   end if;
 
   if coalesce(p_discount, 0) < 0 then
     raise exception 'La remise ne peut pas être négative.';
   end if;
 
-  -- Calcul du sous-total
   for v_item in select * from jsonb_array_elements(p_items)
   loop
     if (v_item->>'quantity')::integer <= 0 then
@@ -288,7 +324,6 @@ begin
 
   v_total := v_subtotal - coalesce(p_discount, 0);
 
-  -- Si aucun montant payé n'est précisé, on considère la vente payée intégralement (comportement historique)
   v_amount_paid := coalesce(p_amount_paid, v_total);
 
   if v_amount_paid < 0 then
@@ -304,9 +339,11 @@ begin
     else 'credit'
   end;
 
+  v_delivery_status := case when p_delivery_mode = 'staged' then 'en_attente' else 'livree' end;
+
   v_invoice_number := public.next_invoice_number();
 
-  insert into public.sales (invoice_number, client_id, user_id, subtotal, discount, total, amount_paid, status)
+  insert into public.sales (invoice_number, client_id, user_id, subtotal, discount, total, amount_paid, status, delivery_status)
   values (
     v_invoice_number,
     p_client_id,
@@ -315,7 +352,8 @@ begin
     coalesce(p_discount, 0),
     v_total,
     v_amount_paid,
-    v_status
+    v_status,
+    v_delivery_status
   )
   returning * into v_sale;
 
@@ -323,45 +361,44 @@ begin
   loop
     v_line_total := (v_item->>'quantity')::integer * (v_item->>'unit_price')::numeric;
 
-    -- Verrouiller le produit pour éviter deux ventes concurrentes sur le même stock
-    select stock, purchase_price into v_current_stock, v_purchase_price
-    from public.products
-    where id = (v_item->>'product_id')::uuid
-    for update;
-
-    if v_current_stock is null then
-      raise exception 'Produit introuvable : %', v_item->>'product_name';
-    end if;
-
-    if v_current_stock < (v_item->>'quantity')::integer then
-      raise exception 'Stock insuffisant pour le produit %', v_item->>'product_name';
-    end if;
-
     insert into public.sale_items (sale_id, product_id, product_name, quantity, purchase_price, unit_price, line_total)
     values (
       v_sale.id,
       (v_item->>'product_id')::uuid,
       v_item->>'product_name',
       (v_item->>'quantity')::integer,
-      coalesce(v_purchase_price, 0),
+      coalesce((v_item->>'purchase_price')::numeric, 0),
       (v_item->>'unit_price')::numeric,
       v_line_total
     );
 
-    -- Décrémenter le stock
-    update public.products
-    set stock = stock - (v_item->>'quantity')::integer, updated_at = now()
-    where id = (v_item->>'product_id')::uuid;
+    if p_delivery_mode = 'immediate' then
+      select stock, purchase_price into v_current_stock, v_purchase_price
+      from public.products
+      where id = (v_item->>'product_id')::uuid
+      for update;
 
-    -- Historiser le mouvement de stock
-    insert into public.stock_movements (product_id, type, quantity, reason, user_id)
-    values (
-      (v_item->>'product_id')::uuid,
-      'sortie',
-      (v_item->>'quantity')::integer,
-      'Vente ' || v_invoice_number,
-      p_user_id
-    );
+      if v_current_stock is null then
+        raise exception 'Produit introuvable : %', v_item->>'product_name';
+      end if;
+
+      if v_current_stock < (v_item->>'quantity')::integer then
+        raise exception 'Stock insuffisant pour le produit %', v_item->>'product_name';
+      end if;
+
+      update public.products
+      set stock = stock - (v_item->>'quantity')::integer, updated_at = now()
+      where id = (v_item->>'product_id')::uuid;
+
+      insert into public.stock_movements (product_id, type, quantity, reason, user_id)
+      values (
+        (v_item->>'product_id')::uuid,
+        'sortie',
+        (v_item->>'quantity')::integer,
+        'Vente ' || v_invoice_number,
+        p_user_id
+      );
+    end if;
   end loop;
 
   return v_sale;
@@ -400,8 +437,119 @@ end;
 $$;
 
 -- ============================================================================
--- FONCTION RPC : modifier un mouvement de stock et réajuster le stock
+-- FONCTION RPC : créer un bon de livraison (livraison partielle ou totale)
+-- items = jsonb array: [{sale_item_id, quantity_delivered}, ...]
 -- ============================================================================
+create or replace function public.create_delivery(
+  p_sale_id uuid,
+  p_items jsonb,
+  p_notes text default null
+)
+returns public.deliveries
+language plpgsql
+security definer
+as $$
+declare
+  v_delivery public.deliveries;
+  v_item jsonb;
+  v_sale_item record;
+  v_already_delivered integer;
+  v_remaining_to_deliver integer;
+  v_current_stock integer;
+  v_delivery_number text;
+begin
+  select * into v_sale_item from public.sales where id = p_sale_id for update;
+  if v_sale_item.id is null then
+    raise exception 'Facture introuvable.';
+  end if;
+
+  if v_sale_item.status = 'annulee' then
+    raise exception 'Impossible de livrer une facture annulée.';
+  end if;
+
+  if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'La livraison doit contenir au moins un article.';
+  end if;
+
+  v_delivery_number := public.next_delivery_number();
+
+  insert into public.deliveries (sale_id, delivery_number, notes, created_by)
+  values (p_sale_id, v_delivery_number, nullif(p_notes, ''), auth.uid())
+  returning * into v_delivery;
+
+  for v_item in select * from jsonb_array_elements(p_items) loop
+    if (v_item->>'quantity_delivered')::integer <= 0 then
+      raise exception 'La quantité livrée doit être supérieure à zéro.';
+    end if;
+
+    select quantity into v_remaining_to_deliver
+    from public.sale_items
+    where id = (v_item->>'sale_item_id')::uuid;
+
+    if v_remaining_to_deliver is null then
+      raise exception 'Article de facture introuvable.';
+    end if;
+
+    select coalesce(sum(quantity_delivered), 0) into v_already_delivered
+    from public.delivery_items di
+    join public.deliveries d on d.id = di.delivery_id
+    where d.sale_id = p_sale_id
+      and di.sale_item_id = (v_item->>'sale_item_id')::uuid;
+
+    if v_already_delivered + (v_item->>'quantity_delivered')::integer > v_remaining_to_deliver then
+      raise exception 'Quantité livrée dépasse la quantité commandée pour l''article %', v_remaining_to_deliver;
+    end if;
+
+    select stock into v_current_stock
+    from public.products
+    where id = (select product_id from public.sale_items where id = (v_item->>'sale_item_id')::uuid)
+    for update;
+
+    if v_current_stock is null then
+      raise exception 'Produit introuvable.';
+    end if;
+
+    if v_current_stock < (v_item->>'quantity_delivered')::integer then
+      raise exception 'Stock insuffisant pour la livraison (disponible: %).', v_current_stock;
+    end if;
+
+    update public.products
+    set stock = stock - (v_item->>'quantity_delivered')::integer, updated_at = now()
+    where id = (select product_id from public.sale_items where id = (v_item->>'sale_item_id')::uuid);
+
+    insert into public.stock_movements (product_id, type, quantity, reason, user_id)
+    values (
+      (select product_id from public.sale_items where id = (v_item->>'sale_item_id')::uuid),
+      'sortie',
+      (v_item->>'quantity_delivered')::integer,
+      'Livraison ' || v_delivery_number,
+      auth.uid()
+    );
+
+    insert into public.delivery_items (delivery_id, sale_item_id, product_id, quantity_delivered)
+    values (
+      v_delivery.id,
+      (v_item->>'sale_item_id')::uuid,
+      (select product_id from public.sale_items where id = (v_item->>'sale_item_id')::uuid),
+      (v_item->>'quantity_delivered')::integer
+    );
+  end loop;
+
+  update public.sales
+  set delivery_status = case
+    when (select sum(quantity) from public.sale_items where sale_id = p_sale_id)
+         <= (select coalesce(sum(di.quantity_delivered), 0)
+             from public.delivery_items di
+             join public.deliveries d on d.id = di.delivery_id
+             where d.sale_id = p_sale_id)
+    then 'livree'
+    else 'partielle'
+  end
+  where id = p_sale_id;
+
+  return v_delivery;
+end;
+$$;
 drop function if exists public.update_stock_movement(uuid, uuid, text, integer, text, uuid);
 drop function if exists public.update_stock_movement(uuid, uuid, integer, text, text, uuid);
 
@@ -546,6 +694,31 @@ begin
   where purchase_number like 'ACH-' || year_part || '-%';
 
   result := 'ACH-' || year_part || '-' || lpad(COALESCE(max_number + 1, 1)::text, 4, '0');
+  return result;
+end;
+$$;
+
+-- ============================================================================
+-- FONCTION : générer le prochain numéro de bon de livraison (BL-2026-0001)
+-- ============================================================================
+create sequence if not exists public.delivery_number_seq;
+
+create or replace function public.next_delivery_number()
+returns text
+language plpgsql
+as $$
+declare
+  year_part text := to_char(now(), 'YYYY');
+  max_number integer;
+  result text;
+begin
+  perform pg_advisory_xact_lock(hashtext('mabane_delivery_' || year_part));
+
+  select max( (regexp_replace(delivery_number, '^BL-' || year_part || '-', ''))::integer ) into max_number
+  from public.deliveries
+  where delivery_number like 'BL-' || year_part || '-%';
+
+  result := 'BL-' || year_part || '-' || lpad(COALESCE(max_number + 1, 1)::text, 4, '0');
   return result;
 end;
 $$;
@@ -826,6 +999,9 @@ as $$
 declare
   v_sale public.sales;
   v_item record;
+  v_delivered integer;
+  v_undelivered integer;
+  v_current_stock integer;
 begin
   if not exists (select 1 from public.users where id = auth.uid() and role = 'admin') then
     raise exception 'Seul un administrateur peut annuler une vente.';
@@ -845,22 +1021,42 @@ begin
   end if;
 
   for v_item in
-    select product_id, product_name, quantity
-    from public.sale_items
-    where sale_id = p_sale_id and product_id is not null
+    select si.id, si.product_id, si.product_name, si.quantity
+    from public.sale_items si
+    where si.sale_id = p_sale_id and si.product_id is not null
   loop
-    update public.products
-    set stock = stock + v_item.quantity, updated_at = now()
-    where id = v_item.product_id;
+    if v_sale.delivery_status = 'en_attente' then
+      v_undelivered := 0;
+    else
+      select coalesce(sum(di.quantity_delivered), 0) into v_delivered
+      from public.delivery_items di
+      join public.deliveries d on d.id = di.delivery_id
+      where d.sale_id = p_sale_id
+        and di.sale_item_id = v_item.id;
 
-    insert into public.stock_movements (product_id, type, quantity, reason, user_id)
-    values (
-      v_item.product_id,
-      'entree',
-      v_item.quantity,
-      'Annulation vente ' || v_sale.invoice_number || ' - ' || v_item.product_name,
-      p_user_id
-    );
+      v_undelivered := v_item.quantity - v_delivered;
+    end if;
+
+    if v_undelivered > 0 then
+      select stock into v_current_stock from public.products where id = v_item.product_id for update;
+
+      if v_current_stock is null or v_current_stock < v_undelivered then
+        raise exception 'Impossible d''annuler : le produit "%" a déjà été vendu ou son stock a changé.', v_item.product_name;
+      end if;
+
+      update public.products
+      set stock = stock + v_undelivered, updated_at = now()
+      where id = v_item.product_id;
+
+      insert into public.stock_movements (product_id, type, quantity, reason, user_id)
+      values (
+        v_item.product_id,
+        'entree',
+        v_undelivered,
+        'Annulation vente ' || v_sale.invoice_number || ' - ' || v_item.product_name,
+        p_user_id
+      );
+    end if;
   end loop;
 
   update public.sales
@@ -1029,6 +1225,19 @@ create policy "Authenticated update expenses" on public.expenses for update usin
 drop policy if exists "Authenticated delete expenses" on public.expenses;
 create policy "Authenticated delete expenses" on public.expenses for delete using (public.is_admin());
 
+drop policy if exists "Authenticated read deliveries" on public.deliveries;
+create policy "Authenticated read deliveries" on public.deliveries for select using (auth.role() = 'authenticated');
+drop policy if exists "Authenticated write deliveries" on public.deliveries;
+create policy "Authenticated write deliveries" on public.deliveries for insert with check (auth.role() = 'authenticated');
+
+drop policy if exists "Authenticated read delivery_items" on public.delivery_items;
+create policy "Authenticated read delivery_items" on public.delivery_items for select using (auth.role() = 'authenticated');
+drop policy if exists "Authenticated write delivery_items" on public.delivery_items;
+create policy "Authenticated write delivery_items" on public.delivery_items for insert with check (auth.role() = 'authenticated');
+
+alter table public.deliveries enable row level security;
+alter table public.delivery_items enable row level security;
+
 alter table public.shop_settings enable row level security;
 drop policy if exists "Public read shop_settings" on public.shop_settings;
 create policy "Public read shop_settings" on public.shop_settings for select using (true);
@@ -1102,7 +1311,24 @@ end $$;
 -- ============================================================================
 -- Note: les tables sont ajoutées à la publication supabase_realtime pour l'écoute en temps réel
 -- L'utilisation de SET TABLE est totalement idempotente (peut être exécutée plusieurs fois)
-alter publication supabase_realtime set table public.products, public.sales, public.stock_movements, public.purchases;
+alter publication supabase_realtime set table public.products, public.sales, public.stock_movements, public.purchases, public.deliveries;
+
+-- ============================================================================
+-- GRANTS : fonctions RPC
+-- ============================================================================
+grant execute on function public.next_invoice_number() to authenticated;
+grant execute on function public.next_purchase_number() to authenticated;
+grant execute on function public.next_delivery_number() to authenticated;
+grant execute on function public.create_sale(uuid, uuid, numeric, jsonb, numeric, text) to authenticated;
+grant execute on function public.create_delivery(uuid, jsonb, text) to authenticated;
+grant execute on function public.add_sale_payment(uuid, numeric) to authenticated;
+grant execute on function public.cancel_sale(uuid, uuid) to authenticated;
+grant execute on function public.add_purchase_payment(uuid, numeric) to authenticated;
+grant execute on function public.cancel_purchase(uuid, uuid) to authenticated;
+grant execute on function public.add_stock_entry(uuid, integer, text, uuid) to authenticated;
+grant execute on function public.update_stock_movement(uuid, uuid, integer, text, text, uuid) to authenticated;
+grant execute on function public.delete_stock_movement(uuid) to authenticated;
+notify pgrst, 'reload schema';
 
 -- ============================================================================
 -- DONNÉES DE DÉMARRAGE (catégories par défaut)

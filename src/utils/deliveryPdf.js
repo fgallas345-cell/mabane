@@ -91,13 +91,10 @@ function setFontSafe(doc, style) {
 }
 
 /**
- * Génère le PDF de facture pour une vente et retourne le doc jsPDF.
- * Toutes les dimensions sont en millimètres réels (pas de conversion px->mm
- * appliquée aux hauteurs de blocs, source du chevauchement précédent).
- * @param {object} sale - { invoice_number, created_at, clients: {name, phone}, sale_items: [...], subtotal, discount, total }
+ * Génère le PDF du bon de livraison pour une livraison.
+ * @param {object} delivery - { delivery_number, created_at, notes, sale: { invoice_number, clients: {name, phone} }, delivery_items: [{ sale_items: {product_name, quantity}, quantity_delivered }] }
  */
-export async function generateInvoicePDF(sale) {
-  // ---- Constantes de mise en page (mm) ----
+export async function generateDeliveryPDF(delivery) {
   const MARGIN = 5
   const PAGE_W = 120
   const NUM_ROWS = 10
@@ -105,9 +102,9 @@ export async function generateInvoicePDF(sale) {
 
   const HEADER_TITLE_H = 11
   const HEADER_SUB_H = 7
-  const INFO_H = 18 // 3 lignes de texte + marges
-  const GAP_S = 3   // petit espace
-  const GAP_M = 4   // espace moyen
+  const INFO_H = 18
+  const GAP_S = 3
+  const GAP_M = 4
   const DATE_H = 6
   const TITLE_H = 9
   const CLIENT_H = 7
@@ -116,6 +113,8 @@ export async function generateInvoicePDF(sale) {
   const ARRETE_H = 5
   const UNDERLINE_GAP = 6
 
+  const sale = delivery.sale || {}
+  const items = delivery.delivery_items || []
   const contentHeight =
     HEADER_TITLE_H + HEADER_SUB_H + GAP_S +
     INFO_H + GAP_M +
@@ -140,7 +139,6 @@ export async function generateInvoicePDF(sale) {
   const innerY = MARGIN
   const innerW = PAGE_W - MARGIN * 2
 
-  // Cadre extérieur
   doc.setFillColor(253, 251, 245)
   doc.setDrawColor(26, 79, 160)
   doc.setLineWidth(0.5)
@@ -149,7 +147,6 @@ export async function generateInvoicePDF(sale) {
 
   let y = innerY
 
-  // Bandeau titre
   doc.setFillColor(26, 79, 160)
   doc.rect(innerX, y, innerW, HEADER_TITLE_H, 'F')
   setFontSafe(doc, 'bold')
@@ -158,7 +155,6 @@ export async function generateInvoicePDF(sale) {
   doc.text(safeText(SHOP.name), innerX + innerW / 2, y + HEADER_TITLE_H / 2 + 1.5, { align: 'center' })
   y += HEADER_TITLE_H
 
-  // Sous-bandeau Gérant
   doc.setFillColor(26, 79, 160)
   doc.rect(innerX, y, innerW, HEADER_SUB_H, 'F')
   doc.setDrawColor(255, 255, 255)
@@ -169,7 +165,6 @@ export async function generateInvoicePDF(sale) {
   doc.text(safeText(`Gérant : ${SHOP.owner}`), innerX + innerW / 2, y + HEADER_SUB_H / 2 + 1, { align: 'center' })
   y += HEADER_SUB_H + GAP_S
 
-  // Boîtes d'infos (2 colonnes)
   const halfW = innerW / 2 - 1.5
   doc.setDrawColor(26, 79, 160)
   doc.setLineWidth(0.4)
@@ -181,7 +176,6 @@ export async function generateInvoicePDF(sale) {
   doc.setFontSize(7.5)
   doc.setTextColor(26, 79, 160)
 
-  // Colonne gauche : activités
   const leftX = innerX + 3
   let ty = y + 5
   const activities = SHOP.activities || ['Vente Ciment, Fer', 'Béton, Matériel Electrique', 'Plomberie & Divers']
@@ -190,7 +184,6 @@ export async function generateInvoicePDF(sale) {
     ty += lineH
   })
 
-  // Colonne droite : téléphones + localisation
   const rightX = innerX + innerW / 2 + 3
   ty = y + 5
   const phones = SHOP.phones || []
@@ -207,7 +200,6 @@ export async function generateInvoicePDF(sale) {
 
   y += INFO_H + GAP_M
 
-  // Ligne Date
   setFontSafe(doc, 'normal')
   doc.setFontSize(8.5)
   doc.setTextColor(34, 34, 34)
@@ -215,9 +207,9 @@ export async function generateInvoicePDF(sale) {
 
   const dateUnderlineX = innerX + 16
   const dateUnderlineW = 50
-  const invoiceDate = sale.created_at ? new Date(sale.created_at).toLocaleDateString('fr-FR') : ''
-  if (invoiceDate) {
-    doc.text(invoiceDate, dateUnderlineX, y + DATE_H / 2 + 1)
+  const deliveryDate = delivery.created_at ? new Date(delivery.created_at).toLocaleDateString('fr-FR') : ''
+  if (deliveryDate) {
+    doc.text(deliveryDate, dateUnderlineX, y + DATE_H / 2 + 1)
   }
   doc.setDrawColor(120)
   doc.setLineWidth(0.25)
@@ -227,11 +219,10 @@ export async function generateInvoicePDF(sale) {
 
   y += DATE_H + GAP_S
 
-  // Titre FACTURE + N°
   setFontSafe(doc, 'bold')
   doc.setTextColor(26, 79, 160)
   doc.setFontSize(15)
-  doc.text('FACTURE', innerX + 5, y + TITLE_H / 2 + 2)
+  doc.text('BON DE LIVRAISON', innerX + 5, y + TITLE_H / 2 + 2)
 
   doc.setTextColor(192, 57, 43)
   doc.setFontSize(7.5)
@@ -244,41 +235,31 @@ export async function generateInvoicePDF(sale) {
   doc.line(noX, y + TITLE_H / 2 + 2, noX + noUnderlineW, y + TITLE_H / 2 + 2)
 
   doc.setFontSize(8.5)
-  doc.text(String(safeText(sale.invoice_number || '')), noX + noUnderlineW - 0.5, y + TITLE_H / 2 + 1, { align: 'right' })
+  doc.text(String(safeText(delivery.delivery_number || '')), noX + noUnderlineW - 0.5, y + TITLE_H / 2 + 1, { align: 'right' })
 
   y += TITLE_H + GAP_S
 
-  // Ligne Client
   setFontSafe(doc, 'normal')
   doc.setFontSize(8.5)
   doc.setTextColor(34, 34, 34)
   doc.text('Client :', innerX + 3, y + CLIENT_H / 2 + 1)
   setFontSafe(doc, 'bold')
   doc.text(safeText(sale.clients?.name || ''), innerX + 18, y + CLIENT_H / 2 + 1)
-  doc.text('DOIT', innerX + innerW - 14, y + CLIENT_H / 2 + 1)
+  doc.text('Facture :', innerX + innerW - 42, y + CLIENT_H / 2 + 1)
 
-  const clientUnderlineX = innerX + 16
-  const clientUnderlineW = innerW - 45
+  const factureUnderlineX = innerX + innerW - 30
+  const factureUnderlineW = 25
   doc.setDrawColor(120)
   doc.setLineWidth(0.25)
   doc.setLineDashPattern([1, 1], 0)
-  doc.line(clientUnderlineX, y + CLIENT_H / 2 + 2, clientUnderlineX + clientUnderlineW, y + CLIENT_H / 2 + 2)
+  doc.line(factureUnderlineX, y + CLIENT_H / 2 + 2, factureUnderlineX + factureUnderlineW, y + CLIENT_H / 2 + 2)
   doc.setLineDashPattern([], 0)
 
-  y += CLIENT_H + GAP_S
+  doc.setFontSize(8.5)
+  doc.text(String(safeText(sale.invoice_number || '')), factureUnderlineX + factureUnderlineW - 0.5, y + CLIENT_H / 2 + 1, { align: 'right' })
 
-  if (sale.delivery_status && sale.delivery_status !== 'livree') {
-    setFontSafe(doc, 'normal')
-    doc.setFontSize(7.5)
-    doc.setTextColor(34, 34, 34)
-    const deliveryLabel = sale.delivery_status === 'en_attente' ? 'Livraison : En attente' : 'Livraison : Partiellement livrée'
-    doc.text(deliveryLabel, innerX + 3, y + 4)
-    y += GAP_S
-  }
+  y += CLIENT_H + GAP_M
 
-  y += GAP_M - GAP_S
-
-  // ---- Tableau ----
   const qteW = 16
   const punitW = 24
   const totalW = 24
@@ -303,7 +284,6 @@ export async function generateInvoicePDF(sale) {
   setFontSafe(doc, 'normal')
   doc.setFontSize(7)
   doc.setTextColor(0)
-  const items = sale.sale_items || []
   for (let i = 0; i < NUM_ROWS; i++) {
     const rowY = tableY + TABLE_HEADER_H + ROW_H * i
     doc.setDrawColor(26, 79, 160)
@@ -315,10 +295,12 @@ export async function generateInvoicePDF(sale) {
 
     const item = items[i]
     if (item) {
-      const lineTotal = Number(item.quantity || 0) * Number(item.unit_price || 0)
-      doc.text(String(item.quantity || ''), innerX + qteW / 2, rowY + ROW_H / 2 + 1.5, { align: 'center' })
-      doc.text(safeText(item.product_name || ''), innerX + qteW + 2, rowY + ROW_H / 2 + 1.5)
-      doc.text(currency(item.unit_price), innerX + qteW + designationW + punitW - 2, rowY + ROW_H / 2 + 1.5, { align: 'right' })
+      const saleItem = item.sale_items || {}
+      const unitPrice = Number(saleItem.unit_price || 0)
+      const lineTotal = Number(item.quantity_delivered || 0) * unitPrice
+      doc.text(String(item.quantity_delivered || ''), innerX + qteW / 2, rowY + ROW_H / 2 + 1.5, { align: 'center' })
+      doc.text(safeText(saleItem.product_name || ''), innerX + qteW + 2, rowY + ROW_H / 2 + 1.5)
+      doc.text(currency(unitPrice), innerX + qteW + designationW + punitW - 2, rowY + ROW_H / 2 + 1.5, { align: 'right' })
       doc.text(currency(lineTotal), innerX + qteW + designationW + punitW + totalW - 2, rowY + ROW_H / 2 + 1.5, { align: 'right' })
     }
   }
@@ -333,15 +315,15 @@ export async function generateInvoicePDF(sale) {
   doc.setFontSize(8.5)
   doc.setTextColor(26, 79, 160)
   doc.text('MONTANT TOTAL', innerX + (qteW + designationW + punitW) / 2, totalRowY + TOTAL_ROW_H / 2 + 1.5, { align: 'center' })
-  doc.text(currency(sale.total || 0), innerX + qteW + designationW + punitW + totalW / 2, totalRowY + TOTAL_ROW_H / 2 + 1.5, { align: 'center' })
+  const totalDelivered = items.reduce((sum, item) => sum + Number(item.quantity_delivered || 0) * Number(item.sale_items?.unit_price || 0), 0)
+  doc.text(currency(totalDelivered), innerX + qteW + designationW + punitW + totalW / 2, totalRowY + TOTAL_ROW_H / 2 + 1.5, { align: 'center' })
 
   y = totalRowY + TOTAL_ROW_H + GAP_M
 
-  // Texte "Arrêtée à présente facture..."
   setFontSafe(doc, 'normal')
   doc.setFontSize(7)
   doc.setTextColor(51, 51, 51)
-  doc.text('Arrêtée à présente facture à la somme de', innerX + 2, y + ARRETE_H / 2)
+  doc.text('Arrêtée à présente livraison à la somme de', innerX + 2, y + ARRETE_H / 2)
 
   doc.setDrawColor(120)
   doc.setLineWidth(0.25)
@@ -352,17 +334,17 @@ export async function generateInvoicePDF(sale) {
   return doc
 }
 
-export async function downloadInvoicePDF(sale) {
-  const doc = await generateInvoicePDF(sale)
+export async function downloadDeliveryPDF(delivery) {
+  const doc = await generateDeliveryPDF(delivery)
   if (doc && typeof doc.save === 'function') {
-    doc.save(`${sale.invoice_number}.pdf`)
+    doc.save(`${delivery.delivery_number}.pdf`)
   } else {
     console.error('Could not save PDF - doc is invalid', doc)
   }
 }
 
-export async function getInvoicePDFBlob(sale) {
-  const doc = await generateInvoicePDF(sale)
+export async function getDeliveryPDFBlob(delivery) {
+  const doc = await generateDeliveryPDF(delivery)
   if (doc && typeof doc.output === 'function') return doc.output('blob')
   throw new Error('Could not produce blob from PDF document')
 }
