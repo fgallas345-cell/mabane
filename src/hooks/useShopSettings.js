@@ -8,6 +8,8 @@ export const DEFAULT_SHOP_SETTINGS = {
   name: SHOP.name,
   owner: SHOP.owner,
   address: SHOP.address,
+  location: SHOP.location,
+  activities: SHOP.activities,
   phone1: SHOP.phones[0] || '',
   phone2: SHOP.phones[1] || '',
   phone3: SHOP.phones[2] || '',

@@ -1,4 +1,10 @@
--- Execute this file in Supabase SQL Editor to enable editing/deleting stock movements.
+-- ============================================================================
+-- ⚠️  CE FICHIER EST OBSOLÈTE — NE PAS EXÉCUTER
+-- La version définitive de update_stock_movement / delete_stock_movement a été
+-- intégrée directement dans supabase/schema.sql.
+-- Exécutez uniquement schema.sql lors d'un nouveau déploiement.
+-- ============================================================================
+-- Anciennement : Execute this file in Supabase SQL Editor to enable editing/deleting stock movements.
 -- It creates the RPC functions used by the Stock page and reloads PostgREST schema cache.
 
 drop function if exists public.update_stock_movement(uuid, uuid, text, integer, text, uuid);

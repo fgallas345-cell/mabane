@@ -2,6 +2,8 @@ export const SHOP = {
   name: 'QUINCAILLERIE MABANE',
   owner: 'MAMADOU FAYE Alias MOMO FAYE',
   address: 'DIOUROUP - SENEGAL',
+  location: 'DIOUROUP - SENEGAL',
+  activities: 'Quincaillerie, matériaux de construction, électricité, plomberie',
   phones: ['+221 77 845 28 72', '+221 78 213 33 12', '+221 77 979 20 90'],
 }
 
@@ -12,8 +14,11 @@ export function syncShopSettings(settings) {
   if (!settings) return
   if (settings.name) SHOP.name = settings.name
   if (settings.owner) SHOP.owner = settings.owner
-  if (settings.address) SHOP.address = settings.address
-  SHOP.location = settings.address || SHOP.location
+  if (settings.address) {
+    SHOP.address = settings.address
+    SHOP.location = settings.address
+  }
+  if (settings.activities) SHOP.activities = settings.activities
   const phones = [settings.phone1, settings.phone2, settings.phone3].filter(Boolean)
   if (phones.length) SHOP.phones = phones
 }

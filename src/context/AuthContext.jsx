@@ -57,14 +57,6 @@ export function AuthProvider({ children }) {
       password,
       options: { data: { full_name: fullName, role } },
     })
-    if (!error && data.user) {
-      await supabase.from('users').insert({
-        id: data.user.id,
-        full_name: fullName,
-        email,
-        role,
-      })
-    }
     return { data, error }
   }
 

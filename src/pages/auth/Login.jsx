@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { Eye, EyeOff, LogIn } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
@@ -82,12 +82,12 @@ export default function Login() {
           </button>
         </form>
 
-        {/* <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-6">
-          Première utilisation ?{' '}
-          <Link to="/register" className="text-brand-600 font-medium hover:underline">
-            Créer le compte administrateur
-          </Link>
-        </p> */}
+         <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-6">
+           Première utilisation ?{' '}
+           <Link to="/register" className="text-brand-600 font-medium hover:underline">
+             Créer le compte administrateur
+           </Link>
+         </p>
       </div>
     </div>
   )

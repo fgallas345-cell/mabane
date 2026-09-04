@@ -32,11 +32,13 @@ Stack : **React (Vite) + Tailwind CSS + React Query + Supabase (PostgreSQL/Auth/
 ### 2. Créer le projet Supabase
 1. Créez un nouveau projet sur [supabase.com](https://supabase.com).
 2. Allez dans **SQL Editor** et exécutez tout le contenu du fichier [`supabase/schema.sql`](./supabase/schema.sql). Cela crée :
-   - toutes les tables (users, products, categories, clients, suppliers, sales, sale_items, stock_movements, expenses)
-   - les fonctions (numérotation de facture, création de vente atomique, entrée de stock)
-   - les policies RLS
+   - toutes les tables (users, categories, products, clients, suppliers, supplier_products, purchases, purchase_items, sales, sale_items, deliveries, delivery_items, stock_movements, expenses, shop_settings, small_sales, small_sale_items)
+   - les fonctions RPC (numérotation de facture/achat/BL, création de vente/achat/petite vente atomique, confirmation/annulation de devis, entrée/sortie de stock, paiement partiel, création de bon de livraison, mise à jour de lignes de facture/achat, suppression de mouvement de stock)
+   - les policies RLS (chiffrement au niveau des lignes)
    - le bucket de stockage `product-images` pour les photos produits
    - les catégories par défaut (Ciment, Fer, Électricité, Plomberie, Divers)
+
+> ⚠️ **Note de sécurité** : le fichier `.env` contient la clé API Supabase. Il est ignoré par git grâce à `.gitignore` et **ne doit jamais être commité**. Copiez-le depuis `.env.example` et remplissez-le avec les valeurs de votre propre projet.
 
 ### 3. Configurer les variables d'environnement
 ```bash
@@ -56,9 +58,9 @@ npm run dev
 L'application est disponible sur `http://localhost:5173`.
 
 ### 5. Créer le premier compte administrateur
-1. Ouvrez l'application → cliquez sur **"Créer le compte administrateur"** depuis la page de connexion.
-2. Renseignez vos informations. Le compte est automatiquement créé avec le rôle `admin`.
-3. Pour créer d'autres comptes (caissier, employé), l'administrateur doit aller dans **Supabase → Authentication → Users → Add user**, puis assigner le rôle voulu depuis la page **Utilisateurs** de l'application.
+1. Depuis la page de connexion, cliquez sur **"Créer le compte administrateur"**.
+2. Renseignez vos informations. Le compte est automatiquement créé avec le rôle `admin` (le trigger SQL détecte qu’il s’agit du premier utilisateur).
+3. Les autres comptes (caissier, employé) sont créés par l’administrateur depuis la page **Utilisateurs** de l’application.
 
 ## 📲 Envoi de factures via WhatsApp
 
@@ -75,15 +77,26 @@ Pour un envoi **totalement automatique côté serveur** (sans aucun clic), un mo
 ```
 src/
   components/     → Layout, Sidebar, Topbar, Modal, ConfirmDialog, StatCard, ThemeToggle...
-  context/        → AuthContext (session/rôle), ThemeContext (clair/sombre)
+  context/        → AuthContext (session/rôle), ThemeContext (clair/sombre), ToastContext
   hooks/          → hooks React Query par entité (produits, ventes, stock, dashboard...)
   lib/            → client Supabase, constantes (infos boutique, rôles)
   pages/          → une page par module (auth, dashboard, products, sales, stock...)
   utils/          → génération PDF factures, envoi WhatsApp, export Excel
 supabase/
-  schema.sql              → schéma complet + RLS + fonctions + bucket storage
+  schema.sql              → schéma complet + petites ventes + RPCs + RLS + bucket storage (tout-en-un)
   functions/send-whatsapp → fonction Edge optionnelle (API Meta WhatsApp Cloud)
 ```
+
+## 🧪 Tests & lint
+
+```bash
+npm run lint     # vérifie la qualité du code (oxc)
+npm run build    # vérifie que le build de production réussit
+```
+
+## 📞 Contact Quincaillerie Mabane
+Mamadou Faye (Momo Faye) — Diouroup, Sénégal
++221 77 845 28 72 · +221 78 213 33 12 · +221 77 979 20 90
 
 ## 🏗️ Build de production
 
@@ -101,4 +114,3 @@ Le dossier `dist/` peut être déployé sur Vercel, Netlify, ou tout hébergeur 
 ## 📞 Contact Quincaillerie Mabane
 Mamadou Faye (Momo Faye) — Diouroup, Sénégal
 +221 77 845 28 72 · +221 78 213 33 12 · +221 77 979 20 90
-dev-gallas98 : supabase

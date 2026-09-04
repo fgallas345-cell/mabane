@@ -280,7 +280,7 @@ export default function SmallSales() {
     setSuccess('')
     try {
       await deleteSmallSale.mutateAsync(deleteSaleTarget.id)
-      const message = 'Vente supprimée avec succès ✅'
+      const message = 'Vente annulée et stock restitué ✅'
       setSuccess(message)
       toast.success(message)
       setDeleteSaleTarget(null)
@@ -687,7 +687,7 @@ export default function SmallSales() {
         onClose={() => setDeleteSaleTarget(null)}
         onConfirm={handleDeleteSale}
         title="Supprimer la vente"
-        message="Confirmez-vous la suppression de cette petite vente ? Cette action est irréversible."
+        message="Confirmez-vous l'annulation de cette petite vente ? Le stock sera restitué automatiquement."
         loading={deleteSmallSale.isPending}
       />
     </div>

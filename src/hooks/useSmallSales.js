@@ -75,12 +75,17 @@ export function useDeleteSmallSale() {
   const toast = useToast()
   return useMutation({
     mutationFn: async (saleId) => {
-      const { error } = await supabase.from('small_sales').delete().eq('id', saleId)
+      const { error } = await supabase.rpc('cancel_small_sale', {
+        p_sale_id: saleId,
+      })
       if (error) throw error
     },
     onSuccess: () => {
-      toast.success('Petite vente supprimée.')
+      toast.success('Petite vente annulée et supprimée.')
       queryClient.invalidateQueries({ queryKey: ['small_sales'] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
     onError: (error) => {
       toast.error(error?.message || 'Erreur lors de la suppression de la petite vente.')

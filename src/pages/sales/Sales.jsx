@@ -186,7 +186,7 @@ export default function Sales() {
     if (cart.find((c) => c.product_id === product.id)) {
       setCart((c) => c.map((item) => (item.product_id === product.id ? { ...item, quantity: item.quantity + 1 } : item)))
     } else {
-      setCart((c) => [...c, { product_id: product.id, product_name: product.name, quantity: 1, unit_price: product.sale_price, stock: product.stock }])
+       setCart((c) => [...c, { product_id: product.id, product_name: product.name, quantity: 1, unit_price: product.sale_price, purchase_price: Number(product.purchase_price) || 0, stock: product.stock }])
     }
     setProductToAdd('')
   }
@@ -244,12 +244,13 @@ export default function Sales() {
         userId: user?.id,
         discount: Number(discount) || 0,
         amountPaid: isDraft ? 0 : (partialPayment ? Number(amountPaid) || 0 : total),
-        items: cart.map((c) => ({
-          product_id: c.product_id,
-          product_name: c.product_name,
-          quantity: c.quantity,
-          unit_price: c.unit_price,
-        })),
+         items: cart.map((c) => ({
+           product_id: c.product_id,
+           product_name: c.product_name,
+           quantity: c.quantity,
+           unit_price: c.unit_price,
+           purchase_price: c.purchase_price || 0,
+         })),
         deliveryMode: isDraft ? 'staged' : deliveryMode,
         quoteStatus: isDraft ? 'draft' : 'confirmed',
       })

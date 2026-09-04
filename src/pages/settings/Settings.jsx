@@ -35,6 +35,7 @@ export default function Settings() {
         name: form.name,
         owner: form.owner,
         address: form.address,
+        activities: form.activities || null,
         phone1: form.phone1 || null,
         phone2: form.phone2 || null,
         phone3: form.phone3 || null,
@@ -120,6 +121,7 @@ export default function Settings() {
             <p className="font-semibold text-base">{isLoading ? '...' : shop.name}</p>
             <p>Gérant : {shop.owner}</p>
             <p className="flex items-center gap-1.5"><MapPin size={14} /> {shop.address}</p>
+            {shop.activities && <p className="text-xs text-gray-500 dark:text-gray-400">{shop.activities}</p>}
             {phones.map((p) => (
               <p key={p} className="flex items-center gap-1.5"><Phone size={14} /> {p}</p>
             ))}
@@ -141,6 +143,10 @@ export default function Settings() {
             <div>
               <label className="label">Adresse</label>
               <input required className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Activités / Secteurs d'activité</label>
+              <input className="input" placeholder="Ex: Quincaillerie, électricité, plomberie..." value={form.activities || ''} onChange={(e) => setForm({ ...form, activities: e.target.value })} />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>

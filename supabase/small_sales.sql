@@ -1,5 +1,10 @@
 -- ============================================================================
--- QUINCAILLERIE MABANE — Petites ventes (ventes rapides SANS facture)
+-- ⚠️  CE FICHIER EST OBSOLÈTE — NE PAS EXÉCUTER
+-- Le contenu de ce fichier (tables small_sales, small_sale_items + RPCs
+-- create_small_sale / update_small_sale) a été intégré dans supabase/schema.sql.
+-- Exécutez uniquement schema.sql lors d'un nouveau déploiement.
+-- ============================================================================
+-- Anciennement : QUINCAILLERIE MABANE — Petites ventes (ventes rapides SANS facture)
 -- À exécuter dans Supabase SQL Editor (Project > SQL Editor > New query)
 -- ============================================================================
 

@@ -21,6 +21,9 @@ export function useSupabaseTable(table, selectQuery = '*', options = {}) {
       if (error) throw error
       return data
     },
+   onError: (error) => {
+      toast.error(error?.message || `Erreur lors du chargement des ${table}.`)
+    },
   })
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: [table] })

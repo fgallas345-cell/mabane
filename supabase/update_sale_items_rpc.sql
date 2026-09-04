@@ -1,4 +1,9 @@
--- RPC function to update sale items and manage stock accordingly
+-- ============================================================================
+-- ⚠️  CE FICHIER EST OBSOLÈTE — NE PAS EXÉCUTER
+-- Cette RPC (update_sale_items) a été intégrée dans supabase/schema.sql.
+-- Exécutez uniquement schema.sql lors d'un nouveau déploiement.
+-- ============================================================================
+-- Anciennement : RPC function to update sale items and manage stock accordingly
 -- Execute this in Supabase SQL Editor
 
 create or replace function public.update_sale_items(
