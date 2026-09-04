@@ -25,12 +25,14 @@ export function useDashboard() {
           .from("sales")
           .select("total, created_at")
           .gte("created_at", startOfToday.toISOString())
-          .neq("status", "annulee"),
+          .neq("status", "annulee")
+          .neq("quote_status", "draft"),
         supabase
           .from("sales")
           .select("total, created_at")
           .gte("created_at", startOfMonth.toISOString())
-          .neq("status", "annulee"),
+          .neq("status", "annulee")
+          .neq("quote_status", "draft"),
         supabase
           .from("products")
           .select("id, name, stock, alert_threshold, sale_price"),
@@ -41,10 +43,11 @@ export function useDashboard() {
         supabase
           .from("sale_items")
           .select(
-            "product_name, quantity, unit_price, purchase_price, line_total, sales!inner(id, created_at, discount, status)",
+            "product_name, quantity, unit_price, purchase_price, line_total, sales!inner(id, created_at, discount, status, quote_status)",
           )
           .gte("sales.created_at", startOfMonth.toISOString())
-          .neq("sales.status", "annulee"),
+          .neq("sales.status", "annulee")
+          .neq("sales.quote_status", "draft"),
         supabase
           .from("small_sales")
           .select("total, created_at")

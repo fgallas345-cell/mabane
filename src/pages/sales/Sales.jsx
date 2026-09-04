@@ -1,8 +1,8 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Plus, Trash2, Edit, ShoppingCart, Download, MessageCircle, Eye, Search, Receipt, FileText, RotateCcw, CreditCard, Wallet, Truck } from 'lucide-react'
+import { Plus, Trash2, Edit, Download, MessageCircle, Eye, Search, Receipt, FileText, RotateCcw, CreditCard, Wallet, Truck } from 'lucide-react'
 import { useProducts } from '../../hooks/useProducts'
 import { useClients } from '../../hooks/useEntities'
-import { useSales, useCreateSale, useCancelSale, useAddSalePayment, useUpdateSale, useDeleteSale, useUpdateSaleItems, useDeliveries, useCreateDelivery } from '../../hooks/useSales'
+import { useSales, useCreateSale, useCancelSale, useAddSalePayment, useUpdateSale, useDeleteSale, useUpdateSaleItems, useDeliveries, useCreateDelivery, useConfirmQuote } from '../../hooks/useSales'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import Pagination from '../../components/Pagination'
@@ -32,6 +32,16 @@ function DeliveryStatusBadge({ deliveryStatus }) {
     livree: { label: 'Livrée', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' },
   }
   const s = map[deliveryStatus] || map.en_attente
+  return <span className={`badge ${s.cls}`}>{s.label}</span>
+}
+
+function QuoteStatusBadge({ quoteStatus }) {
+  const map = {
+    draft: { label: 'Devis', cls: 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-400' },
+    confirmed: { label: 'Confirmé', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' },
+    cancelled: { label: 'Annulé', cls: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400' },
+  }
+  const s = map[quoteStatus] || map.confirmed
   return <span className={`badge ${s.cls}`}>{s.label}</span>
 }
 
@@ -121,8 +131,10 @@ export default function Sales() {
   const updateSale = useUpdateSale()
   const updateSaleItems = useUpdateSaleItems()
   const deleteSale = useDeleteSale()
+  const confirmQuote = useConfirmQuote()
 
   const [newSaleOpen, setNewSaleOpen] = useState(false)
+  const [newQuoteOpen, setNewQuoteOpen] = useState(false)
   const [detailSale, setDetailSale] = useState(null)
   const [editSale, setEditSale] = useState(null)
   const [editClientId, setEditClientId] = useState('')
@@ -144,12 +156,13 @@ export default function Sales() {
   const [deliveryItems, setDeliveryItems] = useState([])
   const [deliveryNotes, setDeliveryNotes] = useState('')
 
-  // --- Form state for new sale ---
+  // --- Form state for new sale / quote ---
   const [clientId, setClientId] = useState('')
   const [discount, setDiscount] = useState(0)
   const [amountPaid, setAmountPaid] = useState('')
   const [partialPayment, setPartialPayment] = useState(false)
   const [deliveryMode, setDeliveryMode] = useState('immediate')
+  const [isDraft, setIsDraft] = useState(false)
   const [cart, setCart] = useState([]) // {product_id, product_name, quantity, unit_price, stock}
   const [productToAdd, setProductToAdd] = useState('')
   const [error, setError] = useState('')
@@ -160,6 +173,7 @@ export default function Sales() {
     setAmountPaid('')
     setPartialPayment(false)
     setDeliveryMode('immediate')
+    setIsDraft(false)
     setCart([])
     setProductToAdd('')
     setError('')
@@ -197,12 +211,14 @@ export default function Sales() {
       toast.error(message)
       return
     }
-    const overStock = cart.find((item) => item.quantity > item.stock)
-    if (overStock) {
-      const message = `Stock insuffisant pour "${overStock.product_name}" (disponible: ${overStock.stock})`
-      setError(message)
-      toast.error(message)
-      return
+    if (!isDraft) {
+      const overStock = cart.find((item) => item.quantity > item.stock)
+      if (overStock) {
+        const message = `Stock insuffisant pour "${overStock.product_name}" (disponible: ${overStock.stock})`
+        setError(message)
+        toast.error(message)
+        return
+      }
     }
     if (Number(discount || 0) > subtotal) {
       const message = 'La remise ne peut pas dépasser le sous-total.'
@@ -210,13 +226,13 @@ export default function Sales() {
       toast.error(message)
       return
     }
-    if (partialPayment && Number(amountPaid || 0) > total) {
+    if (!isDraft && partialPayment && Number(amountPaid || 0) > total) {
       const message = 'Le montant payé ne peut pas dépasser le total de la facture.'
       setError(message)
       toast.error(message)
       return
     }
-    if (partialPayment && !clientId) {
+    if (!isDraft && partialPayment && !clientId) {
       const message = 'Sélectionnez un client pour une vente à crédit ou avec avance (pour pouvoir suivre sa dette).'
       setError(message)
       toast.error(message)
@@ -227,16 +243,18 @@ export default function Sales() {
         clientId: clientId || null,
         userId: user?.id,
         discount: Number(discount) || 0,
-        amountPaid: partialPayment ? Number(amountPaid) || 0 : total,
+        amountPaid: isDraft ? 0 : (partialPayment ? Number(amountPaid) || 0 : total),
         items: cart.map((c) => ({
           product_id: c.product_id,
           product_name: c.product_name,
           quantity: c.quantity,
           unit_price: c.unit_price,
         })),
-        deliveryMode: deliveryMode,
+        deliveryMode: isDraft ? 'staged' : deliveryMode,
+        quoteStatus: isDraft ? 'draft' : 'confirmed',
       })
       setNewSaleOpen(false)
+      setNewQuoteOpen(false)
       resetForm()
     } catch (err) {
       const message = err.message || 'Erreur lors de la création de la facture.'
@@ -478,7 +496,7 @@ export default function Sales() {
   const paginatedSales = filteredSales.slice((page - 1) * pageSize, page * pageSize)
 
   const totalDette = sales
-    .filter((s) => s.status !== 'annulee')
+    .filter((s) => s.status !== 'annulee' && s.quote_status !== 'draft')
     .reduce((sum, s) => sum + (Number(s.total) - Number(s.amount_paid)), 0)
 
   const clientOptions = useMemo(
@@ -526,15 +544,26 @@ export default function Sales() {
           <h1 className="text-2xl font-bold">Ventes / Facturation</h1>
           <p className="text-gray-500 dark:text-gray-400 text-sm">Créez des factures et consultez l'historique des ventes</p>
         </div>
-        <button
-          className="btn-primary"
-          onClick={() => {
-            resetForm()
-            setNewSaleOpen(true)
-          }}
-        >
-          <Plus size={16} /> Nouvelle vente
-        </button>
+        <div className="flex gap-2">
+          <button
+            className="btn-primary"
+            onClick={() => {
+              resetForm()
+              setNewSaleOpen(true)
+            }}
+          >
+            <Plus size={16} /> Nouvelle vente
+          </button>
+          <button
+            className="btn-secondary"
+            onClick={() => {
+              resetForm()
+              setNewQuoteOpen(true)
+            }}
+          >
+            <FileText size={16} /> Nouveau devis
+          </button>
+        </div>
       </div>
 
       {totalDette > 0 && (
@@ -613,6 +642,7 @@ export default function Sales() {
                     <th className="table-th text-right">Reste dû</th>
                     <th className="table-th">Paiement</th>
                     <th className="table-th">Livraison</th>
+                    <th className="table-th">Devis</th>
                     <th className="table-th text-right">Actions</th>
                   </tr>
                 </thead>
@@ -662,38 +692,49 @@ export default function Sales() {
                         </td>
                         <td className="table-td"><StatusBadge status={s.status} /></td>
                         <td className="table-td"><DeliveryStatusBadge deliveryStatus={s.delivery_status} /></td>
+                        <td className="table-td"><QuoteStatusBadge quoteStatus={s.quote_status} /></td>
                         <td className="table-td">
                           <div className="flex justify-end gap-1">
                             <ActionButton icon={Eye} title="Voir le détail" onClick={() => setDetailSale(s)} />
-                            <ActionButton icon={Download} title="Télécharger le PDF" onClick={() => downloadInvoicePDF(s)} tone="brand" />
-                            <ActionButton
-                              icon={MessageCircle}
-                              title={s.clients?.phone ? 'Envoyer via WhatsApp' : 'Aucun numéro WhatsApp'}
-                              disabled={!s.clients?.phone}
-                              onClick={() => sendInvoiceViaWhatsApp(s)}
-                              tone="emerald"
-                            />
-                            {s.delivery_status !== 'livree' && s.status !== 'annulee' && (
-                              <ActionButton icon={Truck} title="Gérer les livraisons" tone="brand" onClick={() => setDeliverySale(s)} />
+                            {s.quote_status === 'draft' && (
+                              <>
+                                <ActionButton icon={FileText} title="Confirmer le devis" tone="emerald" onClick={() => confirmQuote.mutateAsync({ saleId: s.id, userId: user?.id }).then(() => setDetailSale(null))} />
+                                <ActionButton icon={RotateCcw} title="Annuler le devis" tone="red" onClick={() => setConfirmCancel(s)} />
+                              </>
                             )}
-                            {s.status !== 'annulee' && due > 0 && (
-                              <ActionButton icon={CreditCard} title="Enregistrer un paiement" tone="emerald" onClick={() => { setPaymentOpen(s); setPaymentAmount(''); setPaymentError('') }} />
-                            )}
-                            {isAdmin && s.status !== 'annulee' && (
-                              <ActionButton icon={RotateCcw} title="Annuler et remettre en stock" onClick={() => setConfirmCancel(s)} tone="red" />
-                            )}
-                            {isAdmin && s.status !== 'annulee' && (
-                              <ActionButton
-                                icon={Edit}
-                                title="Modifier la facture"
-                                onClick={() => {
-                                  setEditSale(s)
-                                  setEditClientId(s.client_id || '')
-                                  setEditDiscount(s.discount || 0)
-                                  setEditSaleItems(s.sale_items || [])
-                                  setEditProductToAdd('')
-                                }}
-                              />
+                            {s.quote_status !== 'draft' && (
+                              <>
+                                <ActionButton icon={Download} title="Télécharger le PDF" onClick={() => downloadInvoicePDF(s)} tone="brand" />
+                                <ActionButton
+                                  icon={MessageCircle}
+                                  title={s.clients?.phone ? 'Envoyer via WhatsApp' : 'Aucun numéro WhatsApp'}
+                                  disabled={!s.clients?.phone}
+                                  onClick={() => sendInvoiceViaWhatsApp(s)}
+                                  tone="emerald"
+                                />
+                                {s.delivery_status !== 'livree' && s.status !== 'annulee' && (
+                                  <ActionButton icon={Truck} title="Gérer les livraisons" tone="brand" onClick={() => setDeliverySale(s)} />
+                                )}
+                                {s.status !== 'annulee' && due > 0 && (
+                                  <ActionButton icon={CreditCard} title="Enregistrer un paiement" tone="emerald" onClick={() => { setPaymentOpen(s); setPaymentAmount(''); setPaymentError('') }} />
+                                )}
+                                {isAdmin && s.status !== 'annulee' && (
+                                  <ActionButton icon={RotateCcw} title="Annuler et remettre en stock" onClick={() => setConfirmCancel(s)} tone="red" />
+                                )}
+                                {isAdmin && s.status !== 'annulee' && (
+                                  <ActionButton
+                                    icon={Edit}
+                                    title="Modifier la facture"
+                                    onClick={() => {
+                                      setEditSale(s)
+                                      setEditClientId(s.client_id || '')
+                                      setEditDiscount(s.discount || 0)
+                                      setEditSaleItems(s.sale_items || [])
+                                      setEditProductToAdd('')
+                                    }}
+                                  />
+                                )}
+                              </>
                             )}
                             {isAdmin && s.status === 'annulee' && (
                               <ActionButton icon={Trash2} title="Supprimer la facture" onClick={() => setConfirmDelete(s)} tone="red" />
@@ -746,27 +787,37 @@ export default function Sales() {
                       )}
                       <StatusBadge status={s.status} />
                       <DeliveryStatusBadge deliveryStatus={s.delivery_status} />
+                      <QuoteStatusBadge quoteStatus={s.quote_status} />
                     </div>
                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                      {s.delivery_status !== 'livree' && s.status !== 'annulee' && (
-                        <ActionButton icon={Truck} title="Livraison" tone="brand" onClick={() => setDeliverySale(s)} />
-                      )}
-                      {s.status !== 'annulee' && due > 0 && (
-                        <ActionButton icon={CreditCard} title="Payer" tone="emerald" onClick={() => { setPaymentOpen(s); setPaymentAmount(''); setPaymentError('') }} />
-                      )}
-                      <ActionButton icon={Download} title="Télécharger le PDF" onClick={() => downloadInvoicePDF(s)} tone="brand" />
-                      <ActionButton
-                        icon={MessageCircle}
-                        title={s.clients?.phone ? 'Envoyer via WhatsApp' : 'Aucun numéro WhatsApp'}
-                        disabled={!s.clients?.phone}
-                        onClick={() => sendInvoiceViaWhatsApp(s)}
-                        tone="emerald"
-                      />
-                      {isAdmin && s.status !== 'annulee' && (
-                        <ActionButton icon={RotateCcw} title="Annuler" onClick={() => setConfirmCancel(s)} tone="red" />
-                      )}
-                      {isAdmin && s.status !== 'annulee' && (
-                        <ActionButton icon={Edit} title="Modifier" onClick={() => { setEditSale(s); setEditClientId(s.client_id || ''); setEditDiscount(s.discount || 0); setEditSaleItems(s.sale_items || []); setEditProductToAdd('') }} />
+                      {s.quote_status === 'draft' ? (
+                        <>
+                          <ActionButton icon={FileText} title="Confirmer" tone="emerald" onClick={() => confirmQuote.mutateAsync({ saleId: s.id, userId: user?.id }).then(() => setDetailSale(null))} />
+                          <ActionButton icon={RotateCcw} title="Annuler" tone="red" onClick={() => setConfirmCancel(s)} />
+                        </>
+                      ) : (
+                        <>
+                          {s.delivery_status !== 'livree' && s.status !== 'annulee' && (
+                            <ActionButton icon={Truck} title="Livraison" tone="brand" onClick={() => setDeliverySale(s)} />
+                          )}
+                          {s.status !== 'annulee' && due > 0 && (
+                            <ActionButton icon={CreditCard} title="Payer" tone="emerald" onClick={() => { setPaymentOpen(s); setPaymentAmount(''); setPaymentError('') }} />
+                          )}
+                          <ActionButton icon={Download} title="Télécharger le PDF" onClick={() => downloadInvoicePDF(s)} tone="brand" />
+                          <ActionButton
+                            icon={MessageCircle}
+                            title={s.clients?.phone ? 'Envoyer via WhatsApp' : 'Aucun numéro WhatsApp'}
+                            disabled={!s.clients?.phone}
+                            onClick={() => sendInvoiceViaWhatsApp(s)}
+                            tone="emerald"
+                          />
+                          {isAdmin && s.status !== 'annulee' && (
+                            <ActionButton icon={RotateCcw} title="Annuler" onClick={() => setConfirmCancel(s)} tone="red" />
+                          )}
+                          {isAdmin && s.status !== 'annulee' && (
+                            <ActionButton icon={Edit} title="Modifier" onClick={() => { setEditSale(s); setEditClientId(s.client_id || ''); setEditDiscount(s.discount || 0); setEditSaleItems(s.sale_items || []); setEditProductToAdd('') }} />
+                          )}
+                        </>
                       )}
                       {isAdmin && s.status === 'annulee' && (
                         <ActionButton icon={Trash2} title="Supprimer" onClick={() => setConfirmDelete(s)} tone="red" />
@@ -782,8 +833,8 @@ export default function Sales() {
         </>
       )}
 
-      {/* ---- Modal: nouvelle vente ---- */}
-      <Modal open={newSaleOpen} onClose={() => setNewSaleOpen(false)} title="Nouvelle facture" maxWidth="max-w-2xl">
+      {/* ---- Modal: nouvelle vente / devis ---- */}
+      <Modal open={newSaleOpen || newQuoteOpen} onClose={() => { setNewSaleOpen(false); setNewQuoteOpen(false) }} title={isDraft ? 'Nouveau devis (brouillon)' : 'Nouvelle facture'} maxWidth="max-w-2xl">
         <form onSubmit={handleCreateSale} className="space-y-4">
           {error && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">{error}</div>}
 
@@ -843,15 +894,36 @@ export default function Sales() {
             <input type="number" min="0" max={subtotal} className="input w-32 text-right" value={discount} onChange={(e) => setDiscount(e.target.value)} />
           </div>
 
-          <label className="flex items-center gap-2.5 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/60 cursor-pointer">
+          <label className="flex items-center gap-2.5 p-3 rounded-lg bg-purple-50 dark:bg-purple-500/10 cursor-pointer border border-purple-200 dark:border-purple-500/30">
             <input
               type="checkbox"
               className="h-4 w-4"
-              checked={partialPayment}
-              onChange={(e) => { setPartialPayment(e.target.checked); setAmountPaid('') }}
+              checked={isDraft}
+              onChange={(e) => {
+                setIsDraft(e.target.checked)
+                if (e.target.checked) {
+                  setPartialPayment(false)
+                  setAmountPaid('')
+                }
+              }}
             />
-            <span className="text-sm font-medium">Vente à crédit / avance (le client paiera le reste plus tard)</span>
+            <div>
+              <span className="text-sm font-medium text-purple-700 dark:text-purple-300">Enregistrer comme devis (brouillon)</span>
+              <p className="text-xs text-purple-500 dark:text-purple-400">Ne pas décrémenter le stock. Ce devis pourra être confirmé plus tard en facture.</p>
+            </div>
           </label>
+
+          {!isDraft && (
+            <label className="flex items-center gap-2.5 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/60 cursor-pointer">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={partialPayment}
+                onChange={(e) => { setPartialPayment(e.target.checked); setAmountPaid('') }}
+              />
+              <span className="text-sm font-medium">Vente à crédit / avance (le client paiera le reste plus tard)</span>
+            </label>
+          )}
 
           <label className="flex items-center gap-2.5 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/60 cursor-pointer">
             <input
@@ -891,9 +963,9 @@ export default function Sales() {
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className="btn-secondary" onClick={() => setNewSaleOpen(false)}>Annuler</button>
-            <button type="submit" className="btn-primary" disabled={createSale.isPending}>
-              <ShoppingCart size={16} /> {createSale.isPending ? 'Création...' : 'Créer la facture'}
+            <button type="button" className="btn-secondary" onClick={() => { setNewSaleOpen(false); setNewQuoteOpen(false) }}>Annuler</button>
+            <button type="submit" className={isDraft ? 'btn-secondary' : 'btn-primary'} disabled={createSale.isPending}>
+              {createSale.isPending ? (isDraft ? 'Création...' : 'Création...') : (isDraft ? 'Enregistrer le devis' : 'Créer la facture')}
             </button>
           </div>
         </form>
@@ -1104,7 +1176,7 @@ export default function Sales() {
       />
 
       {/* ---- Modal: détail vente ---- */}
-      <Modal open={!!detailSale} onClose={() => setDetailSale(null)} title={`Facture ${detailSale?.invoice_number || ''}`} maxWidth="max-w-lg">
+      <Modal open={!!detailSale} onClose={() => setDetailSale(null)} title={detailSale?.quote_status === 'draft' ? `Devis ${detailSale?.invoice_number || ''}` : `Facture ${detailSale?.invoice_number || ''}`} maxWidth="max-w-lg">
         {detailSale && (
           <div className="space-y-4">
             <div className="flex items-center gap-3">
@@ -1114,6 +1186,12 @@ export default function Sales() {
                 <p className="text-xs text-gray-400">{new Date(detailSale.created_at).toLocaleString('fr-FR')}</p>
               </div>
             </div>
+            {detailSale.quote_status === 'draft' && (
+              <div className="p-3 rounded-lg bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30">
+                <p className="text-sm font-medium text-purple-700 dark:text-purple-300">Ceci est un devis (brouillon).</p>
+                <p className="text-xs text-purple-500 dark:text-purple-400 mt-1">Il n'affecte pas le stock et ne compte pas dans le chiffre d'affaires.</p>
+              </div>
+            )}
             <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
               {detailSale.sale_items?.map((item) => (
                 <div key={item.id} className="flex justify-between p-3 text-sm">
@@ -1124,42 +1202,68 @@ export default function Sales() {
             </div>
             <div className="space-y-1">
               <div className="flex justify-between text-sm text-gray-500"><span>Total</span><span>{currency(detailSale.total)}</span></div>
-              <div className="flex justify-between text-sm text-gray-500"><span>Payé</span><span>{currency(detailSale.amount_paid)}</span></div>
-              <div className="flex justify-between text-lg font-bold">
-                <span>Reste dû</span>
-                <span className={Number(detailSale.total) - Number(detailSale.amount_paid) > 0 ? 'text-red-500' : ''}>
-                  {currency(Number(detailSale.total) - Number(detailSale.amount_paid))}
-                </span>
-              </div>
+              {detailSale.quote_status !== 'draft' && (
+                <>
+                  <div className="flex justify-between text-sm text-gray-500"><span>Payé</span><span>{currency(detailSale.amount_paid)}</span></div>
+                  <div className="flex justify-between text-lg font-bold">
+                    <span>Reste dû</span>
+                    <span className={Number(detailSale.total) - Number(detailSale.amount_paid) > 0 ? 'text-red-500' : ''}>
+                      {currency(Number(detailSale.total) - Number(detailSale.amount_paid))}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
             {detailSale.status === 'annulee' && (
               <p className="text-xs text-red-500 text-center font-medium">Facture annulée - stock réintégré.</p>
             )}
-            {detailSale.delivery_status !== 'livree' && detailSale.status !== 'annulee' && (
-              <button
-                className="btn-success w-full"
-                onClick={() => setDeliverySale(detailSale)}
-              >
-                <Truck size={15} /> Gérer les livraisons
-              </button>
-            )}
-            {detailSale.status !== 'annulee' && Number(detailSale.total) - Number(detailSale.amount_paid) > 0 && (
-              <button
-                className="btn-success w-full"
-                onClick={() => { setPaymentOpen(detailSale); setPaymentAmount(''); setPaymentError('') }}
-              >
-                <CreditCard size={15} /> Enregistrer un paiement
-              </button>
+            {detailSale.quote_status === 'draft' ? (
+              <div className="flex gap-2">
+                <button
+                  className="btn-success flex-1"
+                  onClick={() => confirmQuote.mutateAsync({ saleId: detailSale.id, userId: user?.id }).then(() => setDetailSale(null))}
+                  disabled={confirmQuote.isPending}
+                >
+                  <FileText size={15} /> Confirmer le devis
+                </button>
+                <button
+                  className="btn-secondary flex-1"
+                  onClick={() => { setDetailSale(null); setConfirmCancel(detailSale) }}
+                >
+                  Annuler le devis
+                </button>
+              </div>
+            ) : (
+              <>
+                {detailSale.delivery_status !== 'livree' && detailSale.status !== 'annulee' && (
+                  <button
+                    className="btn-success w-full"
+                    onClick={() => setDeliverySale(detailSale)}
+                  >
+                    <Truck size={15} /> Gérer les livraisons
+                  </button>
+                )}
+                {detailSale.status !== 'annulee' && Number(detailSale.total) - Number(detailSale.amount_paid) > 0 && (
+                  <button
+                    className="btn-success w-full"
+                    onClick={() => { setPaymentOpen(detailSale); setPaymentAmount(''); setPaymentError('') }}
+                  >
+                    <CreditCard size={15} /> Enregistrer un paiement
+                  </button>
+                )}
+              </>
             )}
             <div className="flex gap-2">
               <button className="btn-secondary flex-1" onClick={() => downloadInvoicePDF(detailSale)}>
                 <Download size={15} /> Télécharger PDF
               </button>
-              <button className="btn-success flex-1" disabled={!detailSale.clients?.phone} onClick={() => sendInvoiceViaWhatsApp(detailSale)}>
-                <MessageCircle size={15} /> Envoyer WhatsApp
-              </button>
+              {detailSale.quote_status !== 'draft' && (
+                <button className="btn-success flex-1" disabled={!detailSale.clients?.phone} onClick={() => sendInvoiceViaWhatsApp(detailSale)}>
+                  <MessageCircle size={15} /> Envoyer WhatsApp
+                </button>
+              )}
             </div>
-            {!detailSale.clients?.phone && (
+            {!detailSale.clients?.phone && detailSale.quote_status !== 'draft' && (
               <p className="text-xs text-amber-500 text-center">Ce client n'a pas de numéro WhatsApp enregistré.</p>
             )}
           </div>

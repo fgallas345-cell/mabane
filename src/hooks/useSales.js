@@ -36,7 +36,7 @@ export function useCreateSale() {
   const queryClient = useQueryClient()
   const toast = useToast()
   return useMutation({
-    mutationFn: async ({ clientId, userId, discount, items, amountPaid, deliveryMode }) => {
+    mutationFn: async ({ clientId, userId, discount, items, amountPaid, deliveryMode, quoteStatus }) => {
       const { data, error } = await supabase.rpc('create_sale', {
         p_client_id: clientId || null,
         p_user_id: userId || null,
@@ -44,6 +44,7 @@ export function useCreateSale() {
         p_items: items,
         p_amount_paid: amountPaid === undefined || amountPaid === null ? null : amountPaid,
         p_delivery_mode: deliveryMode || 'immediate',
+        p_quote_status: quoteStatus || 'confirmed',
       })
       if (error) throw error
       return data
@@ -307,6 +308,54 @@ export function useCreateDelivery() {
     },
     onError: (error) => {
       toast.error(error?.message || 'Erreur lors de la création du bon de livraison.')
+    },
+  })
+}
+
+export function useConfirmQuote() {
+  const queryClient = useQueryClient()
+  const toast = useToast()
+  return useMutation({
+    mutationFn: async ({ saleId, userId }) => {
+      const { data, error } = await supabase.rpc('confirm_quote', {
+        p_sale_id: saleId,
+        p_user_id: userId || null,
+      })
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      toast.success('Devis confirmé et transformé en facture.')
+      queryClient.invalidateQueries({ queryKey: ['sales'] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de la confirmation du devis.')
+    },
+  })
+}
+
+export function useCancelQuote() {
+  const queryClient = useQueryClient()
+  const toast = useToast()
+  return useMutation({
+    mutationFn: async ({ saleId, userId }) => {
+      const { data, error } = await supabase.rpc('cancel_quote', {
+        p_sale_id: saleId,
+        p_user_id: userId || null,
+      })
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      toast.success('Devis annulé avec succès.')
+      queryClient.invalidateQueries({ queryKey: ['sales'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de l\'annulation du devis.')
     },
   })
 }

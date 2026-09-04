@@ -231,20 +231,27 @@ export async function generateInvoicePDF(sale) {
   setFontSafe(doc, 'bold')
   doc.setTextColor(26, 79, 160)
   doc.setFontSize(15)
-  doc.text('FACTURE', innerX + 5, y + TITLE_H / 2 + 2)
+  const isDraft = sale.quote_status === 'draft'
+  doc.text(isDraft ? 'DEVIS' : 'FACTURE', innerX + 5, y + TITLE_H / 2 + 2)
 
-  doc.setTextColor(192, 57, 43)
-  doc.setFontSize(7.5)
-  doc.text('N°', innerX + innerW - 42, y + TITLE_H / 2 + 1)
+  if (isDraft) {
+    doc.setTextColor(128, 0, 128)
+    doc.setFontSize(8)
+    doc.text('BROUILLON', innerX + innerW - 25, y + TITLE_H / 2 + 1, { align: 'right' })
+  } else {
+    doc.setTextColor(192, 57, 43)
+    doc.setFontSize(7.5)
+    doc.text('N°', innerX + innerW - 42, y + TITLE_H / 2 + 1)
 
-  doc.setDrawColor(192, 57, 43)
-  doc.setLineWidth(0.4)
-  const noX = innerX + innerW - 34
-  const noUnderlineW = 30
-  doc.line(noX, y + TITLE_H / 2 + 2, noX + noUnderlineW, y + TITLE_H / 2 + 2)
+    doc.setDrawColor(192, 57, 43)
+    doc.setLineWidth(0.4)
+    const noX = innerX + innerW - 34
+    const noUnderlineW = 30
+    doc.line(noX, y + TITLE_H / 2 + 2, noX + noUnderlineW, y + TITLE_H / 2 + 2)
 
-  doc.setFontSize(8.5)
-  doc.text(String(safeText(sale.invoice_number || '')), noX + noUnderlineW - 0.5, y + TITLE_H / 2 + 1, { align: 'right' })
+    doc.setFontSize(8.5)
+    doc.text(String(safeText(sale.invoice_number || '')), noX + noUnderlineW - 0.5, y + TITLE_H / 2 + 1, { align: 'right' })
+  }
 
   y += TITLE_H + GAP_S
 

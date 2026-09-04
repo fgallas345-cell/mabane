@@ -140,6 +140,7 @@ create table if not exists public.sales (
   amount_paid numeric(12,2) not null default 0,
   status text not null default 'payee' check (status in ('payee', 'partielle', 'credit', 'annulee')),
   delivery_status text not null default 'livree' check (delivery_status in ('en_attente', 'partielle', 'livree')),
+  quote_status text not null default 'confirmed' check (quote_status in ('draft', 'confirmed', 'cancelled')),
   created_at timestamptz default now()
 );
 
@@ -149,6 +150,7 @@ update public.sales set amount_paid = total where status = 'payee' and amount_pa
 alter table public.sales drop constraint if exists sales_status_check;
 alter table public.sales add constraint sales_status_check check (status in ('payee', 'partielle', 'credit', 'annulee'));
 alter table public.sales add column if not exists delivery_status text not null default 'livree' check (delivery_status in ('en_attente', 'partielle', 'livree'));
+alter table public.sales add column if not exists quote_status text not null default 'confirmed' check (quote_status in ('draft', 'confirmed', 'cancelled'));
 
 -- ============================================================================
 -- 7. TABLE sale_items (lignes de facture)
@@ -269,6 +271,7 @@ $$;
 -- FONCTION RPC : créer une vente complète (facture + lignes + stock) de façon atomique
 -- items = jsonb array: [{product_id, product_name, quantity, unit_price}, ...]
 -- p_delivery_mode = 'immediate' (défaut) ou 'staged' (livraison échelonnée)
+-- p_quote_status = 'confirmed' (défaut) ou 'draft' (brouillon / devis)
 -- ============================================================================
 create or replace function public.create_sale(
   p_client_id uuid,
@@ -276,7 +279,8 @@ create or replace function public.create_sale(
   p_discount numeric,
   p_items jsonb,
   p_amount_paid numeric default null,
-  p_delivery_mode text default 'immediate'
+  p_delivery_mode text default 'immediate',
+  p_quote_status text default 'confirmed'
 )
 returns public.sales
 language plpgsql
@@ -294,6 +298,7 @@ declare
   v_amount_paid numeric;
   v_status text;
   v_delivery_status text;
+  v_is_draft boolean;
 begin
   if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
     raise exception 'La vente doit contenir au moins un article.';
@@ -302,6 +307,12 @@ begin
   if p_delivery_mode not in ('immediate', 'staged') then
     raise exception 'Mode de livraison invalide : % (immediate ou staged)', p_delivery_mode;
   end if;
+
+  if p_quote_status not in ('draft', 'confirmed', 'cancelled') then
+    raise exception 'Statut de devis invalide : % (draft, confirmed ou cancelled)', p_quote_status;
+  end if;
+
+  v_is_draft := p_quote_status = 'draft';
 
   if coalesce(p_discount, 0) < 0 then
     raise exception 'La remise ne peut pas être négative.';
@@ -324,26 +335,32 @@ begin
 
   v_total := v_subtotal - coalesce(p_discount, 0);
 
-  v_amount_paid := coalesce(p_amount_paid, v_total);
+  if v_is_draft then
+    v_amount_paid := 0;
+    v_status := 'credit';
+    v_delivery_status := 'en_attente';
+  else
+    v_amount_paid := coalesce(p_amount_paid, v_total);
 
-  if v_amount_paid < 0 then
-    raise exception 'Le montant payé ne peut pas être négatif.';
+    if v_amount_paid < 0 then
+      raise exception 'Le montant payé ne peut pas être négatif.';
+    end if;
+    if v_amount_paid > v_total then
+      raise exception 'Le montant payé ne peut pas dépasser le total de la facture.';
+    end if;
+
+    v_status := case
+      when v_amount_paid >= v_total and v_total > 0 then 'payee'
+      when v_amount_paid > 0 then 'partielle'
+      else 'credit'
+    end;
+
+    v_delivery_status := case when p_delivery_mode = 'staged' then 'en_attente' else 'livree' end;
   end if;
-  if v_amount_paid > v_total then
-    raise exception 'Le montant payé ne peut pas dépasser le total de la facture.';
-  end if;
-
-  v_status := case
-    when v_amount_paid >= v_total and v_total > 0 then 'payee'
-    when v_amount_paid > 0 then 'partielle'
-    else 'credit'
-  end;
-
-  v_delivery_status := case when p_delivery_mode = 'staged' then 'en_attente' else 'livree' end;
 
   v_invoice_number := public.next_invoice_number();
 
-  insert into public.sales (invoice_number, client_id, user_id, subtotal, discount, total, amount_paid, status, delivery_status)
+  insert into public.sales (invoice_number, client_id, user_id, subtotal, discount, total, amount_paid, status, delivery_status, quote_status)
   values (
     v_invoice_number,
     p_client_id,
@@ -353,7 +370,8 @@ begin
     v_total,
     v_amount_paid,
     v_status,
-    v_delivery_status
+    v_delivery_status,
+    p_quote_status
   )
   returning * into v_sale;
 
@@ -372,7 +390,7 @@ begin
       v_line_total
     );
 
-    if p_delivery_mode = 'immediate' then
+    if not v_is_draft and p_delivery_mode = 'immediate' then
       select stock, purchase_price into v_current_stock, v_purchase_price
       from public.products
       where id = (v_item->>'product_id')::uuid
@@ -400,6 +418,130 @@ begin
       );
     end if;
   end loop;
+
+  return v_sale;
+end;
+$$;
+
+-- ============================================================================
+-- FONCTION RPC : confirmer un devis (brouillon) et transformer en facture
+-- Décremente le stock selon le mode de livraison de la vente
+-- ============================================================================
+create or replace function public.confirm_quote(
+  p_sale_id uuid,
+  p_user_id uuid
+)
+returns public.sales
+language plpgsql
+security definer
+as $$
+declare
+  v_sale public.sales;
+  v_item record;
+  v_current_stock integer;
+  v_purchase_price numeric;
+begin
+  select * into v_sale from public.sales where id = p_sale_id for update;
+  if v_sale.id is null then
+    raise exception 'Devis introuvable.';
+  end if;
+
+  if v_sale.quote_status = 'confirmed' then
+    raise exception 'Ce devis est déjà confirmé.';
+  end if;
+
+  if v_sale.quote_status = 'cancelled' then
+    raise exception 'Impossible de confirmer un devis annulé.';
+  end if;
+
+  if v_sale.status = 'annulee' then
+    raise exception 'Cette facture est annulée.';
+  end if;
+
+  for v_item in
+    select si.id, si.product_id, si.product_name, si.quantity
+    from public.sale_items si
+    where si.sale_id = p_sale_id and si.product_id is not null
+  loop
+    if v_sale.delivery_status = 'en_attente' then
+      select stock, purchase_price into v_current_stock, v_purchase_price
+      from public.products
+      where id = v_item.product_id
+      for update;
+
+      if v_current_stock is null then
+        raise exception 'Produit introuvable : %', v_item.product_name;
+      end if;
+
+      if v_current_stock < v_item.quantity then
+        raise exception 'Stock insuffisant pour le produit % (disponible: %)', v_item.product_name, v_current_stock;
+      end if;
+
+      update public.products
+      set stock = stock - v_item.quantity, updated_at = now()
+      where id = v_item.product_id;
+
+      insert into public.stock_movements (product_id, type, quantity, reason, user_id)
+      values (
+        v_item.product_id,
+        'sortie',
+        v_item.quantity,
+        'Confirmation devis ' || v_sale.invoice_number,
+        p_user_id
+      );
+    end if;
+  end loop;
+
+  update public.sales
+  set quote_status = 'confirmed',
+      status = case
+        when total > 0 and amount_paid >= total then 'payee'
+        when amount_paid > 0 then 'partielle'
+        else 'credit'
+      end
+  where id = p_sale_id
+  returning * into v_sale;
+
+  return v_sale;
+end;
+$$;
+
+-- ============================================================================
+-- FONCTION RPC : annuler un devis (brouillon)
+-- Aucun effet sur le stock car un brouillon ne décrémente pas le stock
+-- ============================================================================
+create or replace function public.cancel_quote(
+  p_sale_id uuid,
+  p_user_id uuid
+)
+returns public.sales
+language plpgsql
+security definer
+as $$
+declare
+  v_sale public.sales;
+begin
+  if not exists (select 1 from public.users where id = auth.uid() and role = 'admin') then
+    raise exception 'Seul un administrateur peut annuler un devis.';
+  end if;
+
+  select * into v_sale from public.sales where id = p_sale_id for update;
+  if v_sale.id is null then
+    raise exception 'Devis introuvable.';
+  end if;
+
+  if v_sale.quote_status = 'confirmed' then
+    raise exception 'Impossible d''annuler un devis confirmé. Utilisez l''annulation de facture.';
+  end if;
+
+  if v_sale.quote_status = 'cancelled' then
+    raise exception 'Ce devis est déjà annulé.';
+  end if;
+
+  update public.sales
+  set quote_status = 'cancelled'
+  where id = p_sale_id
+  returning * into v_sale;
 
   return v_sale;
 end;
@@ -1020,6 +1162,11 @@ begin
     raise exception 'Cette vente est déjà annulée.';
   end if;
 
+  if v_sale.quote_status = 'draft' then
+    update public.sales set status = 'annulee' where id = p_sale_id;
+    return;
+  end if;
+
   for v_item in
     select si.id, si.product_id, si.product_name, si.quantity
     from public.sale_items si
@@ -1319,7 +1466,9 @@ alter publication supabase_realtime set table public.products, public.sales, pub
 grant execute on function public.next_invoice_number() to authenticated;
 grant execute on function public.next_purchase_number() to authenticated;
 grant execute on function public.next_delivery_number() to authenticated;
-grant execute on function public.create_sale(uuid, uuid, numeric, jsonb, numeric, text) to authenticated;
+grant execute on function public.create_sale(uuid, uuid, numeric, jsonb, numeric, text, text) to authenticated;
+grant execute on function public.confirm_quote(uuid, uuid) to authenticated;
+grant execute on function public.cancel_quote(uuid, uuid) to authenticated;
 grant execute on function public.create_delivery(uuid, jsonb, text) to authenticated;
 grant execute on function public.add_sale_payment(uuid, numeric) to authenticated;
 grant execute on function public.cancel_sale(uuid, uuid) to authenticated;
