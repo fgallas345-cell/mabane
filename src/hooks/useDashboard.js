@@ -12,8 +12,10 @@ export function useDashboard() {
       startOfMonth.setHours(0, 0, 0, 0);
 
       const [
-        salesToday,
-        salesMonth,
+        salesTodayCount,
+        salesTodayRevenue,
+        salesMonthCount,
+        salesMonthRevenue,
         products,
         expensesMonth,
         saleItemsMonth,
@@ -23,18 +25,28 @@ export function useDashboard() {
       ] = await Promise.all([
         supabase
           .from("sales")
+          .select("id", { count: "exact", head: true })
+          .gte("created_at", startOfToday.toISOString())
+          .neq("status", "annulee")
+          .neq("quote_status", "draft"),
+        supabase
+          .from("sales")
           .select("amount_paid, created_at")
           .gte("created_at", startOfToday.toISOString())
           .neq("status", "annulee")
-          .neq("quote_status", "draft")
-          .neq("delivery_status", "en_attente"),
+          .neq("quote_status", "draft"),
+        supabase
+          .from("sales")
+          .select("id", { count: "exact", head: true })
+          .gte("created_at", startOfMonth.toISOString())
+          .neq("status", "annulee")
+          .neq("quote_status", "draft"),
         supabase
           .from("sales")
           .select("amount_paid, created_at")
           .gte("created_at", startOfMonth.toISOString())
           .neq("status", "annulee")
-          .neq("quote_status", "draft")
-          .neq("delivery_status", "en_attente"),
+          .neq("quote_status", "draft"),
         supabase
           .from("products")
           .select("id, name, stock, alert_threshold, sale_price"),
@@ -67,8 +79,10 @@ export function useDashboard() {
           .gte("small_sales.created_at", startOfMonth.toISOString()),
       ]);
 
-      if (salesToday.error) throw salesToday.error;
-      if (salesMonth.error) throw salesMonth.error;
+      if (salesTodayCount.error) throw salesTodayCount.error;
+      if (salesTodayRevenue.error) throw salesTodayRevenue.error;
+      if (salesMonthCount.error) throw salesMonthCount.error;
+      if (salesMonthRevenue.error) throw salesMonthRevenue.error;
       if (products.error) throw products.error;
       if (expensesMonth.error) throw expensesMonth.error;
       if (saleItemsMonth.error) throw saleItemsMonth.error;
@@ -77,10 +91,10 @@ export function useDashboard() {
       if (smallSaleItemsMonth.error) throw smallSaleItemsMonth.error;
 
       const totalToday =
-        salesToday.data.reduce((sum, s) => sum + Number(s.amount_paid || 0), 0) +
+        salesTodayRevenue.data.reduce((sum, s) => sum + Number(s.amount_paid || 0), 0) +
         smallSalesToday.data.reduce((sum, s) => sum + Number(s.total || 0), 0);
       const totalMonth =
-        salesMonth.data.reduce((sum, s) => sum + Number(s.amount_paid || 0), 0) +
+        salesMonthRevenue.data.reduce((sum, s) => sum + Number(s.amount_paid || 0), 0) +
         smallSalesMonth.data.reduce((sum, s) => sum + Number(s.total || 0), 0);
       const totalExpensesMonth = expensesMonth.data.reduce(
         (sum, e) => sum + Number(e.amount),
@@ -155,9 +169,9 @@ export function useDashboard() {
         .slice(0, 5);
 
       return {
-        salesTodayCount: salesToday.data.length + smallSalesToday.data.length,
+        salesTodayCount: (salesTodayCount.count || 0) + smallSalesToday.data.length,
         totalToday,
-        salesMonthCount: salesMonth.data.length + smallSalesMonth.data.length,
+        salesMonthCount: (salesMonthCount.count || 0) + smallSalesMonth.data.length,
         totalMonth,
         totalExpensesMonth,
         grossMarginMonth: grossMargin,

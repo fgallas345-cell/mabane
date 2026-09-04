@@ -1187,8 +1187,8 @@ begin
     if v_undelivered > 0 then
       select stock into v_current_stock from public.products where id = v_item.product_id for update;
 
-      if v_current_stock is null or v_current_stock < v_undelivered then
-        raise exception 'Impossible d''annuler : le produit "%" a déjà été vendu ou son stock a changé.', v_item.product_name;
+      if v_current_stock is null then
+        raise exception 'Produit introuvable : %', v_item.product_name;
       end if;
 
       update public.products
