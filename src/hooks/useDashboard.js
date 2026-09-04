@@ -23,16 +23,18 @@ export function useDashboard() {
       ] = await Promise.all([
         supabase
           .from("sales")
-          .select("total, created_at")
+          .select("amount_paid, created_at")
           .gte("created_at", startOfToday.toISOString())
           .neq("status", "annulee")
-          .neq("quote_status", "draft"),
+          .neq("quote_status", "draft")
+          .neq("delivery_status", "en_attente"),
         supabase
           .from("sales")
-          .select("total, created_at")
+          .select("amount_paid, created_at")
           .gte("created_at", startOfMonth.toISOString())
           .neq("status", "annulee")
-          .neq("quote_status", "draft"),
+          .neq("quote_status", "draft")
+          .neq("delivery_status", "en_attente"),
         supabase
           .from("products")
           .select("id, name, stock, alert_threshold, sale_price"),
@@ -43,11 +45,12 @@ export function useDashboard() {
         supabase
           .from("sale_items")
           .select(
-            "product_name, quantity, unit_price, purchase_price, line_total, sales!inner(id, created_at, discount, status, quote_status)",
+            "product_name, quantity, unit_price, purchase_price, line_total, sales!inner(id, created_at, discount, status, quote_status, delivery_status)",
           )
           .gte("sales.created_at", startOfMonth.toISOString())
           .neq("sales.status", "annulee")
-          .neq("sales.quote_status", "draft"),
+          .neq("sales.quote_status", "draft")
+          .neq("sales.delivery_status", "en_attente"),
         supabase
           .from("small_sales")
           .select("total, created_at")
@@ -74,10 +77,10 @@ export function useDashboard() {
       if (smallSaleItemsMonth.error) throw smallSaleItemsMonth.error;
 
       const totalToday =
-        salesToday.data.reduce((sum, s) => sum + Number(s.total || 0), 0) +
+        salesToday.data.reduce((sum, s) => sum + Number(s.amount_paid || 0), 0) +
         smallSalesToday.data.reduce((sum, s) => sum + Number(s.total || 0), 0);
       const totalMonth =
-        salesMonth.data.reduce((sum, s) => sum + Number(s.total || 0), 0) +
+        salesMonth.data.reduce((sum, s) => sum + Number(s.amount_paid || 0), 0) +
         smallSalesMonth.data.reduce((sum, s) => sum + Number(s.total || 0), 0);
       const totalExpensesMonth = expensesMonth.data.reduce(
         (sum, e) => sum + Number(e.amount),

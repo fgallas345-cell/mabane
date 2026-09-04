@@ -64,10 +64,14 @@ export default function Dashboard() {
   ]
 
   // --- Données pour le top produits (triées, top 6 max pour rester lisible) ---
-  const topProductsData = (data.topProducts || [])
-    .slice(0, 6)
-    .map((p) => ({ name: p.name, quantite: p.quantity, revenue: p.revenue }))
-    .reverse() // pour que le #1 apparaisse en haut du bar chart horizontal
+      const topProductsData = (data.topProducts || [])
+        .slice(0, 6)
+        .map((p) => ({ name: p.name, quantite: p.quantity, revenue: p.revenue }))
+        .reverse()
+
+      const lowStockList = (data.lowStock || [])
+        .slice()
+        .sort((a, b) => (a.stock ?? 0) - (b.stock ?? 0))
 
   // --- Données pour le donut "santé du stock" ---
   const healthyCount = Math.max((data.totalProducts || 0) - (data.lowStock?.length || 0), 0)
@@ -198,14 +202,17 @@ export default function Dashboard() {
       {/* Alertes de stock + Top produits */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card p-5">
-          <h3 className="font-semibold mb-4 flex items-center gap-2">
+          <h3 className="font-semibold mb-1 flex items-center gap-2">
             <AlertTriangle size={18} className="text-amber-500" /> Alertes de stock
           </h3>
-          {data.lowStock.length === 0 ? (
-            <p className="text-sm text-gray-400">Aucun produit en dessous du seuil d'alerte. 👍</p>
+          <p className="text-xs text-gray-400 mb-3">
+            {data.lowStock.length === 0 ? 'Aucun produit en dessous du seuil d’alerte.' : `${data.lowStock.length} produit${data.lowStock.length > 1 ? 's' : ''} en alerte`}
+          </p>
+          {lowStockList.length === 0 ? (
+            <p className="text-sm text-gray-400">Aucun produit en dessous du seuil d’alerte. 👍</p>
           ) : (
             <div className="space-y-2">
-              {data.lowStock.map((p) => (
+              {lowStockList.slice(0, 10).map((p) => (
                 <div
                   key={p.id}
                   className="flex items-center justify-between p-3 rounded-lg bg-amber-50 dark:bg-amber-500/10"
@@ -216,6 +223,11 @@ export default function Dashboard() {
                   </span>
                 </div>
               ))}
+              {lowStockList.length > 10 && (
+                <p className="text-xs text-gray-400 text-center pt-1">
+                  + {lowStockList.length - 10} autre{lowStockList.length - 10 > 1 ? 's' : ''} produit{lowStockList.length - 10 > 1 ? 's' : ''} en alerte
+                </p>
+              )}
             </div>
           )}
         </div>
