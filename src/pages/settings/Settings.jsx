@@ -146,7 +146,13 @@ export default function Settings() {
             </div>
             <div>
               <label className="label">Activités / Secteurs d'activité</label>
-              <input className="input" placeholder="Ex: Quincaillerie, électricité, plomberie..." value={form.activities || ''} onChange={(e) => setForm({ ...form, activities: e.target.value })} />
+              <textarea
+                className="input"
+                rows={2}
+                placeholder="Ex: Quincaillerie, Ciment & Fer, Matériel Electrique, Plomberie"
+                value={form.activities || (Array.isArray(shop.activities) ? shop.activities.join(', ') : shop.activities || '')}
+                onChange={(e) => setForm({ ...form, activities: e.target.value })}
+              />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>

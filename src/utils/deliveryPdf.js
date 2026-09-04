@@ -16,9 +16,9 @@ function arrayBufferToBase64(buffer) {
 async function ensureFont(doc) {
   if (_fontEmbedded) return true
   try {
-    const fonts = [
-      { url: '/fonts/NotoSans-Regular.ttf', fileName: 'NotoSans-Regular.ttf', style: 'normal' },
-      { url: '/fonts/NotoSans-Bold.ttf', fileName: 'NotoSans-Bold.ttf', style: 'bold' },
+       const fonts = [
+      { url: '/fonts/NotoSans-Regular.woff2', fileName: 'NotoSans-Regular.woff2', style: 'normal' },
+      { url: '/fonts/NotoSans-Bold.woff2', fileName: 'NotoSans-Bold.woff2', style: 'bold' },
     ]
 
     for (const f of fonts) {
@@ -31,7 +31,8 @@ async function ensureFont(doc) {
         const isLikelyFont =
           (header[0] === 0x00 && header[1] === 0x01 && header[2] === 0x00 && header[3] === 0x00) ||
           headerStr === 'OTTO' ||
-          headerStr === 'ttcf'
+          headerStr === 'ttcf' ||
+          headerStr === 'wOF2'
 
         if (!isLikelyFont) {
           console.warn('Fetched file does not look like a TTF/OTF, skipping:', f.url)
@@ -61,7 +62,7 @@ async function ensureFont(doc) {
 
     if (doc.internal && doc.internal.collections && doc.internal.collections.VFS) {
       const vfs = doc.internal.collections.VFS
-      if (vfs['NotoSans-Regular.ttf']) {
+      if (vfs['NotoSans-Regular.woff2']) {
         _fontEmbedded = true
         return true
       }

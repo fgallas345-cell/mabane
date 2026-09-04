@@ -3,7 +3,7 @@ export const SHOP = {
   owner: 'MAMADOU FAYE Alias MOMO FAYE',
   address: 'DIOUROUP - SENEGAL',
   location: 'DIOUROUP - SENEGAL',
-  activities: 'Quincaillerie, matériaux de construction, électricité, plomberie',
+  activities: ['Quincaillerie', 'Ciment, Fer, Béton', 'Matériel Électrique', 'Plomberie & Divers'],
   phones: ['+221 77 845 28 72', '+221 78 213 33 12', '+221 77 979 20 90'],
 }
 
@@ -18,7 +18,11 @@ export function syncShopSettings(settings) {
     SHOP.address = settings.address
     SHOP.location = settings.address
   }
-  if (settings.activities) SHOP.activities = settings.activities
+  if (settings.activities) {
+    SHOP.activities = Array.isArray(settings.activities)
+      ? settings.activities
+      : settings.activities.split(',').map((s) => s.trim()).filter(Boolean)
+  }
   const phones = [settings.phone1, settings.phone2, settings.phone3].filter(Boolean)
   if (phones.length) SHOP.phones = phones
 }

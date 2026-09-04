@@ -9,7 +9,7 @@ export const DEFAULT_SHOP_SETTINGS = {
   owner: SHOP.owner,
   address: SHOP.address,
   location: SHOP.location,
-  activities: SHOP.activities,
+  activities: Array.isArray(SHOP.activities) ? SHOP.activities.join(', ') : SHOP.activities,
   phone1: SHOP.phones[0] || '',
   phone2: SHOP.phones[1] || '',
   phone3: SHOP.phones[2] || '',

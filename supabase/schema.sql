@@ -241,12 +241,12 @@ create table if not exists public.shop_settings (
   constraint shop_settings_singleton check (id)
 );
 
+-- Migration idempotente pour les bases existantes : la colonne activities peut manquer
+alter table public.shop_settings add column if not exists activities text not null default 'Quincaillerie, matériaux de construction, électricité, plomberie';
+
 insert into public.shop_settings (id, name, owner, address, activities, phone1, phone2, phone3)
 values (true, 'QUINCAILLERIE MABANE', 'MAMADOU FAYE Alias MOMO FAYE', 'DIOUROUP - SENEGAL', 'Quincaillerie, matériaux de construction, électricité, plomberie', '+221 77 845 28 72', '+221 78 213 33 12', '+221 77 979 20 90')
 on conflict (id) do nothing;
-
--- Migration idempotente pour les bases existantes
-alter table public.shop_settings add column if not exists activities text not null default 'Quincaillerie, matériaux de construction, électricité, plomberie';
 
 -- ============================================================================
 -- 11. TABLE small_sales (ventes rapides sans facture)
