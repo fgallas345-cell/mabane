@@ -82,12 +82,7 @@ export default function Login() {
           </button>
         </form>
 
-         <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-6">
-           Première utilisation ?{' '}
-           <Link to="/register" className="text-brand-600 font-medium hover:underline">
-             Créer le compte administrateur
-           </Link>
-         </p>
+        
       </div>
     </div>
   )
