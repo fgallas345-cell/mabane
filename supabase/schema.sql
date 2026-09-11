@@ -151,7 +151,11 @@ alter table public.sales drop constraint if exists sales_status_check;
 alter table public.sales add constraint sales_status_check check (status in ('payee', 'partielle', 'credit', 'annulee'));
 alter table public.sales add column if not exists delivery_status text not null default 'livree' check (delivery_status in ('en_attente', 'partielle', 'livree'));
 alter table public.sales add column if not exists quote_status text not null default 'confirmed' check (quote_status in ('draft', 'confirmed', 'cancelled'));
-alter table public.sales add column if not exists payment_method text default 'especes' check (payment_method is null or payment_method in ('especes', 'mobile_money', 'virement', 'cheque', 'carte'));
+update public.sales set payment_method = 'especes' where payment_method is null;
+alter table public.sales alter column payment_method set default 'especes';
+alter table public.sales alter column payment_method set not null;
+alter table public.sales drop constraint if exists sales_payment_method_check;
+alter table public.sales add constraint sales_payment_method_check check (payment_method in ('especes', 'mobile_money', 'virement', 'cheque', 'carte'));
 alter table public.sales add column if not exists receipt_number text;
 alter table public.sales add column if not exists last_payment_at timestamptz;
 alter table public.sales add column if not exists updated_at timestamptz default now();
@@ -442,7 +446,7 @@ begin
     v_status,
     v_delivery_status,
     p_quote_status,
-    case when v_amount_paid > 0 then 'especes' else null end,
+    'especes',
     v_receipt_number,
     case when v_amount_paid > 0 then now() else null end,
     now()
