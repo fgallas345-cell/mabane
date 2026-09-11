@@ -109,10 +109,8 @@ export async function generatePaymentReceiptPDF({
   createdAt,
 }) {
   const MARGIN = 6
-  const PAGE_W = 100
-  const CONTENT_H = 78
-
-  const PAGE_H = MARGIN * 2 + CONTENT_H
+  const PAGE_W = 110
+  const PAGE_H = 122
 
   const doc = new jsPDF({ unit: 'mm', format: [PAGE_W, PAGE_H] })
   await ensureFont(doc)
@@ -121,78 +119,148 @@ export async function generatePaymentReceiptPDF({
   const innerY = MARGIN
   const innerW = PAGE_W - MARGIN * 2
 
-  doc.setFillColor(253, 251, 245)
-  doc.setDrawColor(26, 79, 160)
-  doc.setLineWidth(0.6)
-  doc.rect(innerX, innerY, innerW, CONTENT_H, 'FD')
+  const drawField = (label, value, x, y, width, labelWidth = 26) => {
+    setFontSafe(doc, 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(96, 109, 134)
+    doc.text(`${label} :`, x, y)
 
-  let y = innerY + 2
+    const valueText = safeText(String(value ?? ''))
+    const valueLines = doc.splitTextToSize(valueText, width - labelWidth - 3) || [valueText]
 
-  doc.setFillColor(26, 79, 160)
-  doc.rect(innerX, y, innerW, 8, 'F')
-  setFontSafe(doc, 'bold')
-  doc.setTextColor(255, 255, 255)
-  doc.setFontSize(14)
-  doc.text(safeText(SHOP.name), innerX + innerW / 2, y + 8 / 2 + 1.5, { align: 'center' })
-
-  y += 10
-  setFontSafe(doc, 'bold')
-  doc.setFontSize(11)
-  doc.setTextColor(26, 79, 160)
-  doc.text('REÇU DE PAIEMENT', innerX + innerW / 2, y + 3, { align: 'center' })
-
-  y += 7
-  doc.setTextColor(34, 34, 34)
-  setFontSafe(doc, 'normal')
-  doc.setFontSize(9)
-
-  const line = (label, value, bold = false) => {
-    setFontSafe(doc, bold ? 'bold' : 'normal')
-    doc.text(`${label} :`, innerX + 3, y + 3)
-    doc.text(safeText(value || ''), innerX + 35, y + 3)
-    y += 5.5
+    doc.setTextColor(31, 41, 55)
+    doc.text(valueLines, x + labelWidth + 2, y)
   }
 
-  line('N° reçu', receiptNumber, true)
-  line('Facture', invoiceNumber)
-  line('Date', createdAt ? new Date(createdAt).toLocaleDateString('fr-FR') : '')
-  line('Client', clientName || 'Client comptoir')
-  line('Mode', method)
-  if (reference) line('Référence', reference)
-  if (notes) line('Note', notes)
+  // Fond général
+  doc.setFillColor(250, 252, 255)
+  doc.setDrawColor(180, 197, 219)
+  doc.setLineWidth(0.5)
+  doc.rect(innerX, innerY, innerW, PAGE_H - MARGIN * 2, 'FD')
 
-  y += 2
-  doc.setDrawColor(120)
-  doc.setLineWidth(0.25)
-  doc.line(innerX + 3, y, innerX + innerW - 3, y)
+  let y = innerY + 1
 
-  y += 5
+  // Bandeau supérieur
+  doc.setFillColor(24, 92, 170)
+  doc.rect(innerX, y, innerW, 15, 'F')
   setFontSafe(doc, 'bold')
-  doc.setFontSize(10)
-  doc.setTextColor(26, 79, 160)
-  doc.text('MONTANT PAYÉ', innerX + innerW / 2, y + 3, { align: 'center' })
+  doc.setTextColor(255, 255, 255)
+  doc.setFontSize(13)
+  doc.text(safeText(SHOP.name), innerX + innerW / 2, y + 5.5, { align: 'center' })
+  doc.setFontSize(8.5)
+  doc.text('REÇU DE PAIEMENT', innerX + innerW / 2, y + 11.5, { align: 'center' })
 
-  y += 7
-  doc.setTextColor(0, 100, 0)
-  doc.setFontSize(14)
-  doc.text(currency(Number(amount || 0)), innerX + innerW / 2, y + 4, { align: 'center' })
+  y += 15
 
-  y += 9
-  doc.setTextColor(34, 34, 34)
+  // Bloc d'informations rapides
+  doc.setFillColor(240, 246, 255)
+  doc.setDrawColor(158, 177, 208)
+  doc.rect(innerX + 1, y, innerW - 2, 12, 'FD')
+
+  setFontSafe(doc, 'bold')
+  doc.setTextColor(24, 92, 170)
+  doc.setFontSize(8)
+  doc.text('REÇU', innerX + 3, y + 4)
+
+  setFontSafe(doc, 'bold')
+  doc.setTextColor(31, 41, 55)
   doc.setFontSize(9)
-  doc.text(`Total facture : ${currency(Number(total || 0))}`, innerX + 3, y + 3)
-  doc.text(`Reste à payer : ${currency(Number(remaining || 0))}`, innerX + innerW / 2, y + 3, { align: 'right' })
+  doc.text(safeText(String(receiptNumber || '')), innerX + 15, y + 4)
 
-  y += 7
-  doc.setDrawColor(120)
-  doc.setLineWidth(0.25)
+  setFontSafe(doc, 'normal')
+  doc.setTextColor(96, 109, 134)
+  doc.setFontSize(7.5)
+  doc.text('Facture', innerX + innerW - 32, y + 4)
+  doc.setTextColor(31, 41, 55)
+  doc.text(safeText(String(invoiceNumber || '')), innerX + innerW - 12, y + 4, { align: 'right' })
+
+  const paymentDate = createdAt ? new Date(createdAt).toLocaleDateString('fr-FR') : ''
+  doc.setTextColor(96, 109, 134)
+  doc.setFontSize(7.5)
+  doc.text('Date', innerX + 3, y + 9)
+  doc.setTextColor(31, 41, 55)
+  doc.text(paymentDate, innerX + 15, y + 9)
+
+  y += 13
+
+  // Bloc client / paiement
+  doc.setDrawColor(158, 177, 208)
+  doc.setFillColor(255, 255, 255)
+  doc.rect(innerX + 1, y, innerW - 2, 26, 'FD')
+
+  doc.setTextColor(24, 92, 170)
+  setFontSafe(doc, 'bold')
+  doc.setFontSize(8)
+  doc.text('CLIENT', innerX + 3, y + 4)
+
+  setFontSafe(doc, 'bold')
+  doc.setTextColor(31, 41, 55)
+  doc.setFontSize(8.5)
+  const clientLine = doc.splitTextToSize(safeText(clientName || 'Client comptoir'), innerW - 12)
+  doc.text(clientLine, innerX + 3, y + 8)
+
+  drawField('Mode', method || '', innerX + 3, y + 16, innerW - 6, 17)
+  if (reference) {
+    drawField('Réf.', reference, innerX + 3, y + 21, innerW - 6, 17)
+  }
+
+  y += 27
+
+  // Bloc montant principal
+  doc.setFillColor(232, 245, 233)
+  doc.setDrawColor(89, 164, 116)
+  doc.rect(innerX + 1, y, innerW - 2, 17, 'FD')
+
+  setFontSafe(doc, 'bold')
+  doc.setTextColor(44, 125, 70)
+  doc.setFontSize(8)
+  doc.text('MONTANT PAYÉ', innerX + innerW / 2, y + 5, { align: 'center' })
+
+  setFontSafe(doc, 'bold')
+  doc.setTextColor(33, 128, 67)
+  doc.setFontSize(14)
+  doc.text(currency(Number(amount || 0)), innerX + innerW / 2, y + 12.5, { align: 'center' })
+
+  y += 18
+
+  // Bloc résumé
+  doc.setFillColor(248, 250, 252)
+  doc.setDrawColor(192, 204, 220)
+  doc.rect(innerX + 1, y, innerW - 2, 16, 'FD')
+
+  drawField('Total', currency(Number(total || 0)), innerX + 3, y + 4, innerW - 8, 18)
+  drawField('Reste', currency(Number(remaining || 0)), innerX + 3, y + 9, innerW - 8, 18)
+
+  y += 17
+
+  // Note éventuelle
+  if (notes) {
+    doc.setDrawColor(192, 204, 220)
+    doc.setFillColor(255, 255, 255)
+    doc.rect(innerX + 1, y, innerW - 2, 14, 'FD')
+
+    setFontSafe(doc, 'bold')
+    doc.setTextColor(24, 92, 170)
+    doc.setFontSize(7.5)
+    doc.text('NOTE', innerX + 3, y + 4)
+
+    const noteLines = doc.splitTextToSize(safeText(notes), innerW - 18)
+    doc.setTextColor(60, 74, 87)
+    doc.setFontSize(7.5)
+    doc.text(noteLines, innerX + 16, y + 4)
+
+    y += 15
+  }
+
+  // Footer
+  doc.setDrawColor(190, 202, 219)
   doc.line(innerX + 3, y, innerX + innerW - 3, y)
 
   y += 4
   setFontSafe(doc, 'normal')
-  doc.setFontSize(8)
-  doc.setTextColor(100)
-  doc.text('Merci pour votre paiement.', innerX + innerW / 2, y + 2, { align: 'center' })
+  doc.setTextColor(100, 115, 130)
+  doc.setFontSize(7.5)
+  doc.text('Merci pour votre confiance.', innerX + innerW / 2, y + 3, { align: 'center' })
 
   return doc
 }
