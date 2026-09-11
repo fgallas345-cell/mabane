@@ -151,7 +151,7 @@ alter table public.sales drop constraint if exists sales_status_check;
 alter table public.sales add constraint sales_status_check check (status in ('payee', 'partielle', 'credit', 'annulee'));
 alter table public.sales add column if not exists delivery_status text not null default 'livree' check (delivery_status in ('en_attente', 'partielle', 'livree'));
 alter table public.sales add column if not exists quote_status text not null default 'confirmed' check (quote_status in ('draft', 'confirmed', 'cancelled'));
-alter table public.sales add column if not exists payment_method text not null default 'especes' check (payment_method in ('especes', 'mobile_money', 'virement', 'cheque', 'carte'));
+alter table public.sales add column if not exists payment_method text default 'especes' check (payment_method is null or payment_method in ('especes', 'mobile_money', 'virement', 'cheque', 'carte'));
 alter table public.sales add column if not exists receipt_number text;
 alter table public.sales add column if not exists last_payment_at timestamptz;
 alter table public.sales add column if not exists updated_at timestamptz default now();
