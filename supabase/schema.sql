@@ -151,6 +151,10 @@ alter table public.sales drop constraint if exists sales_status_check;
 alter table public.sales add constraint sales_status_check check (status in ('payee', 'partielle', 'credit', 'annulee'));
 alter table public.sales add column if not exists delivery_status text not null default 'livree' check (delivery_status in ('en_attente', 'partielle', 'livree'));
 alter table public.sales add column if not exists quote_status text not null default 'confirmed' check (quote_status in ('draft', 'confirmed', 'cancelled'));
+alter table public.sales add column if not exists payment_method text not null default 'especes' check (payment_method in ('especes', 'mobile_money', 'virement', 'cheque', 'carte'));
+alter table public.sales add column if not exists receipt_number text;
+alter table public.sales add column if not exists last_payment_at timestamptz;
+alter table public.sales add column if not exists updated_at timestamptz default now();
 
 -- ============================================================================
 -- 7. TABLE sale_items (lignes de facture)
@@ -170,7 +174,31 @@ alter table public.sale_items
   add column if not exists purchase_price numeric(12,2) not null default 0;
 
 -- ============================================================================
--- 8. TABLE deliveries (bons de livraison)
+-- 8. TABLE payments (historique des paiements d'une vente)
+-- ============================================================================
+create table if not exists public.payments (
+  id uuid primary key default uuid_generate_v4(),
+  sale_id uuid references public.sales(id) on delete cascade,
+  amount numeric(12,2) not null,
+  method text not null default 'especes',
+  reference text,
+  notes text,
+  created_by uuid references public.users(id) on delete set null,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_payments_sale on public.payments(sale_id);
+create index if not exists idx_payments_created on public.payments(created_at);
+
+alter table public.payments enable row level security;
+
+drop policy if exists "Authenticated read payments" on public.payments;
+create policy "Authenticated read payments" on public.payments for select using (auth.role() = 'authenticated');
+drop policy if exists "Authenticated write payments" on public.payments;
+create policy "Authenticated write payments" on public.payments for insert with check (auth.role() = 'authenticated');
+
+-- ============================================================================
+-- 9. TABLE deliveries (bons de livraison)
 -- ============================================================================
 create table if not exists public.deliveries (
   id uuid primary key default uuid_generate_v4(),
@@ -506,7 +534,7 @@ begin
     from public.sale_items si
     where si.sale_id = p_sale_id and si.product_id is not null
   loop
-    if v_sale.delivery_status = 'en_attente' then
+    if v_sale.delivery_status = 'livree' then
       select stock, purchase_price into v_current_stock, v_purchase_price
       from public.products
       where id = v_item.product_id
@@ -1121,12 +1149,31 @@ begin
 end;
 $$;
 
+create sequence if not exists public.receipt_number_seq;
+
+create or replace function public.next_receipt_number()
+returns text
+language plpgsql
+as $$
+declare
+  year_part text := to_char(now(), 'YYYY');
+  next_val integer;
+begin
+  perform pg_advisory_xact_lock(hashtext('mabane_receipt_' || year_part));
+  next_val := nextval('public.receipt_number_seq');
+  return 'REC-' || year_part || '-' || lpad(next_val::text, 6, '0');
+end;
+$$;
+
 -- ============================================================================
 -- FONCTION RPC : enregistrer un paiement sur une vente à crédit / partielle (client)
 -- ============================================================================
 create or replace function public.add_sale_payment(
   p_sale_id uuid,
-  p_amount numeric
+  p_amount numeric,
+  p_method text default 'especes',
+  p_reference text default null,
+  p_notes text default null
 )
 returns public.sales
 language plpgsql
@@ -1135,6 +1182,7 @@ as $$
 declare
   v_sale public.sales;
   v_new_paid numeric;
+  v_receipt_number text;
 begin
   if p_amount is null or p_amount <= 0 then
     raise exception 'Le montant du paiement doit être supérieur à zéro.';
@@ -1156,13 +1204,29 @@ begin
     raise exception 'Ce paiement dépasse le solde restant dû (%).', v_sale.total - v_sale.amount_paid;
   end if;
 
+  v_receipt_number := public.next_receipt_number();
+
+  insert into public.payments (sale_id, amount, method, reference, notes, created_by)
+  values (
+    p_sale_id,
+    p_amount,
+    coalesce(nullif(p_method, ''), 'especes'),
+    nullif(p_reference, ''),
+    nullif(p_notes, ''),
+    auth.uid()
+  );
+
   update public.sales
   set amount_paid = v_new_paid,
       status = case
         when v_new_paid >= total then 'payee'
         when v_new_paid > 0 then 'partielle'
         else 'credit'
-      end
+      end,
+      payment_method = coalesce(nullif(p_method, ''), 'especes'),
+      receipt_number = v_receipt_number,
+      last_payment_at = now(),
+      updated_at = now()
   where id = p_sale_id
   returning * into v_sale;
 
@@ -1217,6 +1281,8 @@ begin
   loop
     if v_sale.delivery_status = 'en_attente' then
       v_undelivered := 0;
+    elsif v_sale.delivery_status = 'livree' then
+      v_undelivered := v_item.quantity;
     else
       select coalesce(sum(di.quantity_delivered), 0) into v_delivered
       from public.delivery_items di
@@ -2064,11 +2130,12 @@ alter publication supabase_realtime set table public.products, public.sales, pub
 grant execute on function public.next_invoice_number() to authenticated;
 grant execute on function public.next_purchase_number() to authenticated;
 grant execute on function public.next_delivery_number() to authenticated;
+grant execute on function public.next_receipt_number() to authenticated;
 grant execute on function public.create_sale(uuid, uuid, numeric, jsonb, numeric, text, text) to authenticated;
 grant execute on function public.confirm_quote(uuid, uuid) to authenticated;
 grant execute on function public.cancel_quote(uuid, uuid) to authenticated;
 grant execute on function public.create_delivery(uuid, jsonb, text) to authenticated;
-grant execute on function public.add_sale_payment(uuid, numeric) to authenticated;
+grant execute on function public.add_sale_payment(uuid, numeric, text, text, text) to authenticated;
 grant execute on function public.cancel_sale(uuid, uuid) to authenticated;
 grant execute on function public.add_purchase_payment(uuid, numeric) to authenticated;
 grant execute on function public.cancel_purchase(uuid, uuid) to authenticated;

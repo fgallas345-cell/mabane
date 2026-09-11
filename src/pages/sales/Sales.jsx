@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { Plus, Trash2, Edit, Download, MessageCircle, Eye, Search, Receipt, FileText, RotateCcw, CreditCard, Wallet, Truck } from 'lucide-react'
 import { useProducts } from '../../hooks/useProducts'
 import { useClients } from '../../hooks/useEntities'
-import { useSales, useCreateSale, useCancelSale, useAddSalePayment, useUpdateSale, useDeleteSale, useUpdateSaleItems, useDeliveries, useCreateDelivery, useConfirmQuote } from '../../hooks/useSales'
+import { useSales, useCreateSale, useCancelSale, useAddSalePayment, useUpdateSale, useDeleteSale, useUpdateSaleItems, useDeliveries, useCreateDelivery, useConfirmQuote, useSalePayments } from '../../hooks/useSales'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import Pagination from '../../components/Pagination'
@@ -145,7 +145,11 @@ export default function Sales() {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [paymentOpen, setPaymentOpen] = useState(null)
   const [paymentAmount, setPaymentAmount] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('especes')
+  const [paymentReference, setPaymentReference] = useState('')
+  const [paymentNotes, setPaymentNotes] = useState('')
   const [paymentError, setPaymentError] = useState('')
+  const [lastReceipt, setLastReceipt] = useState(null)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const pageSize = 10
@@ -155,6 +159,7 @@ export default function Sales() {
   const [deliverySale, setDeliverySale] = useState(null)
   const [deliveryItems, setDeliveryItems] = useState([])
   const [deliveryNotes, setDeliveryNotes] = useState('')
+  const { data: detailPayments = [] } = useSalePayments(detailSale?.id)
 
   // --- Form state for new sale / quote ---
   const [clientId, setClientId] = useState('')
@@ -281,9 +286,30 @@ export default function Sales() {
       return
     }
     try {
-      await addPayment.mutateAsync({ saleId: paymentOpen.id, amount: Number(paymentAmount) })
+      const updatedSale = await addPayment.mutateAsync({
+        saleId: paymentOpen.id,
+        amount: Number(paymentAmount),
+        method: paymentMethod,
+        reference: paymentReference || null,
+        notes: paymentNotes || null,
+      })
+      setLastReceipt({
+        receiptNumber: updatedSale?.receipt_number,
+        invoiceNumber: paymentOpen.invoice_number,
+        clientName: paymentOpen.clients?.name || 'Client comptoir',
+        amount: Number(paymentAmount),
+        method: paymentMethod,
+        reference: paymentReference || null,
+        notes: paymentNotes || null,
+        remaining: Number(paymentOpen.total) - Number(paymentOpen.amount_paid) - Number(paymentAmount),
+        total: Number(paymentOpen.total),
+        createdAt: new Date().toISOString(),
+      })
       setPaymentOpen(null)
       setPaymentAmount('')
+      setPaymentMethod('especes')
+      setPaymentReference('')
+      setPaymentNotes('')
     } catch (err) {
       const message = err.message || 'Erreur lors de l’ajout du paiement.'
       setPaymentError(message)
@@ -1254,6 +1280,21 @@ export default function Sales() {
                 )}
               </>
             )}
+            {detailPayments.length > 0 && (
+              <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
+                <div className="px-3 py-2 text-xs font-semibold text-gray-600 dark:text-gray-300">Historique des paiements</div>
+                {detailPayments.map((p) => (
+                  <div key={p.id} className="px-3 py-2 flex items-center justify-between text-xs">
+                    <div>
+                      <p className="font-medium">{currency(p.amount)} — {p.method}</p>
+                      {p.reference && <p className="text-gray-500">Réf : {p.reference}</p>}
+                      {p.notes && <p className="text-gray-500">{p.notes}</p>}
+                    </div>
+                    <span className="text-[11px] text-gray-500">{new Date(p.created_at).toLocaleString('fr-FR')}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="flex gap-2">
               <button className="btn-secondary flex-1" onClick={() => downloadInvoicePDF(detailSale)}>
                 <Download size={15} /> Télécharger PDF
@@ -1293,6 +1334,26 @@ export default function Sales() {
                 onChange={(e) => setPaymentAmount(e.target.value)}
               />
             </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="label">Mode de paiement</label>
+                <select className="input" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+                  <option value="especes">Espèces</option>
+                  <option value="mobile_money">Mobile Money</option>
+                  <option value="virement">Virement</option>
+                  <option value="cheque">Chèque</option>
+                  <option value="carte">Carte</option>
+                </select>
+              </div>
+              <div>
+                <label className="label">Référence (optionnel)</label>
+                <input className="input" value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} placeholder="Ex: N° chèque / transaction" />
+              </div>
+            </div>
+            <div>
+              <label className="label">Note (optionnel)</label>
+              <textarea className="input" rows={2} value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} placeholder="Ex: avance, acompte..." />
+            </div>
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" className="btn-secondary" onClick={() => setPaymentOpen(null)}>Annuler</button>
               <button type="submit" className="btn-primary" disabled={addPayment.isPending}>
@@ -1300,6 +1361,23 @@ export default function Sales() {
               </button>
             </div>
           </form>
+        )}
+      </Modal>
+
+      {/* ---- Modal: reçu de paiement ---- */}
+      <Modal open={!!lastReceipt} onClose={() => setLastReceipt(null)} title="Reçu de paiement">
+        {lastReceipt && (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Paiement enregistré pour la facture <strong>{lastReceipt.invoiceNumber}</strong> — reçu <strong>{lastReceipt.receiptNumber}</strong>
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button className="btn-primary flex-1" onClick={() => import('../../utils/paymentReceiptPdf').then((m) => m.downloadPaymentReceiptPDF(lastReceipt))}>
+                Télécharger le reçu (PDF)
+              </button>
+              <button className="btn-secondary flex-1" onClick={() => setLastReceipt(null)}>Fermer</button>
+            </div>
+          </div>
         )}
       </Modal>
 

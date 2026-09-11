@@ -66,10 +66,13 @@ export function useAddSalePayment() {
   const queryClient = useQueryClient()
   const toast = useToast()
   return useMutation({
-    mutationFn: async ({ saleId, amount }) => {
+    mutationFn: async ({ saleId, amount, method, reference, notes }) => {
       const { data, error } = await supabase.rpc('add_sale_payment', {
         p_sale_id: saleId,
         p_amount: amount,
+        p_method: method || 'especes',
+        p_reference: reference || null,
+        p_notes: notes || null,
       })
       if (error) throw error
       return data
@@ -78,6 +81,7 @@ export function useAddSalePayment() {
       toast.success('Paiement ajouté avec succès.')
       queryClient.invalidateQueries({ queryKey: ['sales'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['payments'] })
     },
     onError: (error) => {
       toast.error(error?.message || 'Erreur lors de l’ajout du paiement.')
@@ -118,6 +122,22 @@ export function useStockMovements() {
         .select('*, products(id, name)')
         .order('created_at', { ascending: false })
         .limit(200)
+      if (error) throw error
+      return data
+    },
+  })
+}
+
+export function useSalePayments(saleId) {
+  return useQuery({
+    queryKey: ['payments', saleId],
+    enabled: Boolean(saleId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('sale_id', saleId)
+        .order('created_at', { ascending: true })
       if (error) throw error
       return data
     },

@@ -18,7 +18,7 @@ Stack : **React (Vite) + Tailwind CSS + React Query + Supabase (PostgreSQL/Auth/
 - 💸 Finances (recettes, dépenses, bénéfice)
 - 📊 Tableau de bord (ventes du jour, revenus du mois, ruptures de stock, top produits)
 - 🔔 Notifications de stock faible dans la barre supérieure
-- 📁 Export PDF (factures) et Excel (ventes, stock, dépenses)
+- 📁 Export PDF (factures, reçus de paiement) et Excel (ventes, stock, dépenses)
 - 🔎 Recherche globale (produits, clients)
 - 📱 Interface 100% responsive (mobile, tablette, desktop)
 - 🔐 Sécurité via Row Level Security (RLS) Supabase
@@ -31,9 +31,9 @@ Stack : **React (Vite) + Tailwind CSS + React Query + Supabase (PostgreSQL/Auth/
 
 ### 2. Créer le projet Supabase
 1. Créez un nouveau projet sur [supabase.com](https://supabase.com).
-2. Allez dans **SQL Editor** et exécutez tout le contenu du fichier [`supabase/schema.sql`](./supabase/schema.sql). Cela crée :
-   - toutes les tables (users, categories, products, clients, suppliers, supplier_products, purchases, purchase_items, sales, sale_items, deliveries, delivery_items, stock_movements, expenses, shop_settings, small_sales, small_sale_items)
-   - les fonctions RPC (numérotation de facture/achat/BL, création de vente/achat/petite vente atomique, confirmation/annulation de devis, entrée/sortie de stock, paiement partiel, création de bon de livraison, mise à jour de lignes de facture/achat, suppression de mouvement de stock)
+ 2. Allez dans **SQL Editor** et exécutez tout le contenu du fichier [`supabase/schema.sql`](./supabase/schema.sql). Cela crée :
+   - toutes les tables (users, categories, products, clients, suppliers, supplier_products, purchases, purchase_items, sales, sale_items, payments, deliveries, delivery_items, stock_movements, expenses, shop_settings, small_sales, small_sale_items)
+   - les fonctions RPC (numérotation de facture/achat/BL/reçu, création de vente/achat/petite vente atomique, confirmation/annulation de devis, entrée/sortie de stock, paiement partiel, création de bon de livraison, mise à jour de lignes de facture/achat, suppression de mouvement de stock)
    - les policies RLS (chiffrement au niveau des lignes)
    - le bucket de stockage `product-images` pour les photos produits
    - les catégories par défaut (Ciment, Fer, Électricité, Plomberie, Divers)
