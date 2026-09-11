@@ -11,7 +11,8 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import { currency } from '../../lib/constants'
 import { downloadInvoicePDF } from '../../utils/invoicePdf'
 import { downloadDeliveryPDF } from '../../utils/deliveryPdf'
-import { sendInvoiceViaWhatsApp } from '../../utils/whatsapp'
+import { sendInvoiceViaWhatsApp, sendReceiptViaWhatsApp } from '../../utils/whatsapp'
+import { downloadPaymentReceiptPDF } from '../../utils/paymentReceiptPdf'
 import SearchableSelect from '../../components/SearchableSelect'
 
 function StatusBadge({ status }) {
@@ -150,6 +151,7 @@ export default function Sales() {
   const [paymentNotes, setPaymentNotes] = useState('')
   const [paymentError, setPaymentError] = useState('')
   const [lastReceipt, setLastReceipt] = useState(null)
+  const [initialReceipt, setInitialReceipt] = useState(null)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const pageSize = 10
@@ -244,7 +246,7 @@ export default function Sales() {
       return
     }
     try {
-      await createSale.mutateAsync({
+      const createdSale = await createSale.mutateAsync({
         clientId: clientId || null,
         userId: user?.id,
         discount: Number(discount) || 0,
@@ -259,6 +261,20 @@ export default function Sales() {
         deliveryMode: isDraft ? 'staged' : deliveryMode,
         quoteStatus: isDraft ? 'draft' : 'confirmed',
       })
+      if (!isDraft && partialPayment && Number(amountPaid) > 0) {
+        setInitialReceipt({
+          receiptNumber: createdSale?.receipt_number,
+          invoiceNumber: createdSale?.invoice_number,
+          clientName: clientId ? (clients.find((c) => c.id === clientId)?.name || 'Client comptoir') : 'Client comptoir',
+          amount: Number(amountPaid),
+          method: 'especes',
+          reference: null,
+          notes: 'Avance initiale',
+          remaining: Number(total) - Number(amountPaid),
+          total: Number(total),
+          createdAt: createdSale?.created_at || new Date().toISOString(),
+        })
+      }
       setNewSaleOpen(false)
       setNewQuoteOpen(false)
       resetForm()
@@ -1372,10 +1388,33 @@ export default function Sales() {
               Paiement enregistré pour la facture <strong>{lastReceipt.invoiceNumber}</strong> — reçu <strong>{lastReceipt.receiptNumber}</strong>
             </p>
             <div className="flex flex-col sm:flex-row gap-2">
-              <button className="btn-primary flex-1" onClick={() => import('../../utils/paymentReceiptPdf').then((m) => m.downloadPaymentReceiptPDF(lastReceipt))}>
+              <button className="btn-primary flex-1" onClick={() => downloadPaymentReceiptPDF(lastReceipt)}>
                 Télécharger le reçu (PDF)
               </button>
+              <button className="btn-success flex-1" onClick={() => sendReceiptViaWhatsApp(lastReceipt)}>
+                Envoyer par WhatsApp
+              </button>
               <button className="btn-secondary flex-1" onClick={() => setLastReceipt(null)}>Fermer</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ---- Modal: reçu initial (avance lors de la création) ---- */}
+      <Modal open={!!initialReceipt} onClose={() => setInitialReceipt(null)} title="Reçu de paiement">
+        {initialReceipt && (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Avance enregistrée pour la facture <strong>{initialReceipt.invoiceNumber}</strong> — reçu <strong>{initialReceipt.receiptNumber}</strong>
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button className="btn-primary flex-1" onClick={() => downloadPaymentReceiptPDF(initialReceipt)}>
+                Télécharger le reçu (PDF)
+              </button>
+              <button className="btn-success flex-1" onClick={() => sendReceiptViaWhatsApp(initialReceipt)}>
+                Envoyer par WhatsApp
+              </button>
+              <button className="btn-secondary flex-1" onClick={() => setInitialReceipt(null)}>Fermer</button>
             </div>
           </div>
         )}

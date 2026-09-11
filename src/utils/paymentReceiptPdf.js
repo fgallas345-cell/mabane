@@ -108,9 +108,9 @@ export async function generatePaymentReceiptPDF({
   total,
   createdAt,
 }) {
-  const MARGIN = 5
-  const PAGE_W = 110
-  const CONTENT_H = 62
+  const MARGIN = 6
+  const PAGE_W = 100
+  const CONTENT_H = 78
 
   const PAGE_H = MARGIN * 2 + CONTENT_H
 
@@ -123,34 +123,34 @@ export async function generatePaymentReceiptPDF({
 
   doc.setFillColor(253, 251, 245)
   doc.setDrawColor(26, 79, 160)
-  doc.setLineWidth(0.5)
+  doc.setLineWidth(0.6)
   doc.rect(innerX, innerY, innerW, CONTENT_H, 'FD')
 
   let y = innerY + 2
 
   doc.setFillColor(26, 79, 160)
-  doc.rect(innerX, y, innerW, 7, 'F')
+  doc.rect(innerX, y, innerW, 8, 'F')
   setFontSafe(doc, 'bold')
   doc.setTextColor(255, 255, 255)
-  doc.setFontSize(13)
-  doc.text(safeText(SHOP.name), innerX + innerW / 2, y + 7 / 2 + 1.5, { align: 'center' })
+  doc.setFontSize(14)
+  doc.text(safeText(SHOP.name), innerX + innerW / 2, y + 8 / 2 + 1.5, { align: 'center' })
 
-  y += 9
+  y += 10
   setFontSafe(doc, 'bold')
-  doc.setFontSize(8)
+  doc.setFontSize(11)
   doc.setTextColor(26, 79, 160)
   doc.text('REÇU DE PAIEMENT', innerX + innerW / 2, y + 3, { align: 'center' })
 
-  y += 6
+  y += 7
   doc.setTextColor(34, 34, 34)
   setFontSafe(doc, 'normal')
-  doc.setFontSize(8)
+  doc.setFontSize(9)
 
   const line = (label, value, bold = false) => {
     setFontSafe(doc, bold ? 'bold' : 'normal')
     doc.text(`${label} :`, innerX + 3, y + 3)
-    doc.text(safeText(value || ''), innerX + 38, y + 3)
-    y += 5
+    doc.text(safeText(value || ''), innerX + 35, y + 3)
+    y += 5.5
   }
 
   line('N° reçu', receiptNumber, true)
@@ -166,31 +166,31 @@ export async function generatePaymentReceiptPDF({
   doc.setLineWidth(0.25)
   doc.line(innerX + 3, y, innerX + innerW - 3, y)
 
-  y += 4
+  y += 5
   setFontSafe(doc, 'bold')
-  doc.setFontSize(9)
+  doc.setFontSize(10)
   doc.setTextColor(26, 79, 160)
   doc.text('MONTANT PAYÉ', innerX + innerW / 2, y + 3, { align: 'center' })
 
-  y += 6
-  doc.setTextColor(0, 128, 0)
-  doc.setFontSize(12)
+  y += 7
+  doc.setTextColor(0, 100, 0)
+  doc.setFontSize(14)
   doc.text(currency(Number(amount || 0)), innerX + innerW / 2, y + 4, { align: 'center' })
 
-  y += 8
+  y += 9
   doc.setTextColor(34, 34, 34)
-  doc.setFontSize(8)
+  doc.setFontSize(9)
   doc.text(`Total facture : ${currency(Number(total || 0))}`, innerX + 3, y + 3)
   doc.text(`Reste à payer : ${currency(Number(remaining || 0))}`, innerX + innerW / 2, y + 3, { align: 'right' })
 
-  y += 6
+  y += 7
   doc.setDrawColor(120)
   doc.setLineWidth(0.25)
   doc.line(innerX + 3, y, innerX + innerW - 3, y)
 
   y += 4
   setFontSafe(doc, 'normal')
-  doc.setFontSize(7)
+  doc.setFontSize(8)
   doc.setTextColor(100)
   doc.text('Merci pour votre paiement.', innerX + innerW / 2, y + 2, { align: 'center' })
 

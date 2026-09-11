@@ -1,5 +1,40 @@
 import { WHATSAPP_MESSAGE, currency } from '../lib/constants'
 import { getInvoicePDFBlob } from './invoicePdf'
+import { getPaymentReceiptPDFBlob } from './paymentReceiptPdf'
+
+export async function sendReceiptViaWhatsApp(receipt) {
+  const phone = normalizePhone(receipt.clientName)
+  if (!phone) return
+
+  const message = `Reçu de paiement ${receipt.receiptNumber} pour la facture ${receipt.invoiceNumber} : ${currency(receipt.amount)} payé sur ${currency(receipt.total)}. Reste : ${currency(receipt.remaining || 0)}.`
+
+  try {
+    const pdfBlob = await getPaymentReceiptPDFBlob(receipt)
+    const pdfFile = new File([pdfBlob], `${receipt.receiptNumber || 'recu'}.pdf`, { type: 'application/pdf' })
+
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+      await navigator.share({
+        title: `Reçu ${receipt.receiptNumber}`,
+        text: message,
+        files: [pdfFile],
+      })
+      return
+    }
+
+    if (navigator.share) {
+      await navigator.share({
+        title: `Reçu ${receipt.receiptNumber}`,
+        text: message,
+        files: [pdfFile],
+      })
+      return
+    }
+  } catch (error) {
+    console.warn('Impossible de partager le reçu PDF, ouverture de WhatsApp en fallback', error)
+  }
+
+  openWhatsAppLink(phone, message)
+}
 
 /**
  * Normalise un numéro de téléphone sénégalais/international pour wa.me

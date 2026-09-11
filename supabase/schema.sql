@@ -364,6 +364,7 @@ declare
   v_status text;
   v_delivery_status text;
   v_is_draft boolean;
+  v_receipt_number text;
 begin
   if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
     raise exception 'La vente doit contenir au moins un article.';
@@ -425,7 +426,11 @@ begin
 
   v_invoice_number := public.next_invoice_number();
 
-  insert into public.sales (invoice_number, client_id, user_id, subtotal, discount, total, amount_paid, status, delivery_status, quote_status)
+  if not v_is_draft and coalesce(v_amount_paid, 0) > 0 then
+    v_receipt_number := public.next_receipt_number();
+  end if;
+
+  insert into public.sales (invoice_number, client_id, user_id, subtotal, discount, total, amount_paid, status, delivery_status, quote_status, payment_method, receipt_number, last_payment_at, updated_at)
   values (
     v_invoice_number,
     p_client_id,
@@ -436,9 +441,25 @@ begin
     v_amount_paid,
     v_status,
     v_delivery_status,
-    p_quote_status
+    p_quote_status,
+    case when v_amount_paid > 0 then 'especes' else null end,
+    v_receipt_number,
+    case when v_amount_paid > 0 then now() else null end,
+    now()
   )
   returning * into v_sale;
+
+  if not v_is_draft and coalesce(v_amount_paid, 0) > 0 then
+    insert into public.payments (sale_id, amount, method, reference, notes, created_by)
+    values (
+      v_sale.id,
+      v_amount_paid,
+      'especes',
+      'Avance initiale',
+      'Paiement lors de la création de la facture',
+      p_user_id
+    );
+  end if;
 
   for v_item in select * from jsonb_array_elements(p_items)
   loop
