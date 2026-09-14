@@ -1,7 +1,7 @@
 -- ============================================================================
--- ⚠️  CE FICHIER EST OBSOLÈTE — NE PAS EXÉCUTER
--- Cette RPC (update_purchase_items) a été intégrée dans supabase/schema.sql.
--- Exécutez uniquement schema.sql lors d'un nouveau déploiement.
+-- ⚠️  FICHIER HISTORIQUE — NE PAS EXÉCUTER
+-- Cette RPC (update_purchase_items) est intégrée dans supabase/schema.sql.
+-- La source de vérité pour tout nouveau déploiement est schema.sql.
 -- ============================================================================
 -- Anciennement : RPC function to update purchase items and manage stock accordingly
 -- Execute this in Supabase SQL Editor

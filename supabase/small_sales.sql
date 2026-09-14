@@ -1,8 +1,9 @@
 -- ============================================================================
--- ⚠️  CE FICHIER EST OBSOLÈTE — NE PAS EXÉCUTER
+-- ⚠️  FICHIER HISTORIQUE — NE PAS EXÉCUTER
 -- Le contenu de ce fichier (tables small_sales, small_sale_items + RPCs
--- create_small_sale / update_small_sale) a été intégré dans supabase/schema.sql.
--- Exécutez uniquement schema.sql lors d'un nouveau déploiement.
+-- create_small_sale / update_small_sale / cancel_small_sale) est intégré dans
+-- supabase/schema.sql.
+-- La source de vérité pour tout nouveau déploiement est schema.sql.
 -- ============================================================================
 -- Anciennement : QUINCAILLERIE MABANE — Petites ventes (ventes rapides SANS facture)
 -- À exécuter dans Supabase SQL Editor (Project > SQL Editor > New query)

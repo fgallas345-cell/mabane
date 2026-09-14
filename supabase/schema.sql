@@ -1898,11 +1898,17 @@ begin
     new.id,
     coalesce(new.raw_user_meta_data->>'full_name', new.email),
     new.email,
-    case
-      when not exists (select 1 from public.users) then 'admin'
-      when new.raw_user_meta_data->>'role' = 'admin' then 'employe'
-      else coalesce(new.raw_user_meta_data->>'role', 'employe')
-    end,
+    coalesce(
+      case
+        when new.raw_user_meta_data->>'role' in ('admin', 'caissier', 'employe')
+          then new.raw_user_meta_data->>'role'
+        else null
+      end,
+      case
+        when not exists (select 1 from public.users) then 'admin'
+        else 'employe'
+      end
+    ),
     coalesce(new.raw_user_meta_data->>'phone', null)
   )
   on conflict (id) do nothing;

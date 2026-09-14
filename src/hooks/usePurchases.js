@@ -166,7 +166,7 @@ export function useDeletePurchase() {
       if (error) throw error
     },
     onSuccess: () => {
-      toast.success('Achat supprimé avec succès.')
+      toast.success('Achat supprimé de l’historique.')
       queryClient.invalidateQueries({ queryKey: ['purchases'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stock_movements'] })

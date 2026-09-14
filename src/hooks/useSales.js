@@ -277,7 +277,7 @@ export function useDeleteSale() {
       if (error) throw error
     },
     onSuccess: () => {
-      toast.success('Facture supprimée avec succès.')
+      toast.success('Facture supprimée de l’historique.')
       queryClient.invalidateQueries({ queryKey: ['sales'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
