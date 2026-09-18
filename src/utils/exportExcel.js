@@ -1,26 +1,30 @@
-import * as XLSX from 'xlsx'
+// SheetJS (~400 Ko) n'est chargé qu'au premier export
 
-function downloadWorkbook(rows, sheetName, fileName) {
+async function downloadWorkbook(rows, sheetName, fileName) {
+  const XLSX = await import('xlsx')
   const worksheet = XLSX.utils.json_to_sheet(rows)
   const workbook = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName)
   XLSX.writeFile(workbook, fileName)
 }
 
-export function exportSalesToExcel(sales) {
+export async function exportSalesToExcel(sales) {
   const rows = sales.map((s) => ({
     'N° Facture': s.invoice_number,
     Client: s.clients?.name || 'Client comptoir',
     Téléphone: s.clients?.phone || '',
-    'Sous-total': s.subtotal,
-    Remise: s.discount,
-    Total: s.total,
+    'Sous-total': Number(s.subtotal),
+    Remise: Number(s.discount),
+    Total: Number(s.total),
+    Encaissé: Number(s.amount_paid),
+    'Reste dû': Number(s.total) - Number(s.amount_paid),
+    Statut: { payee: 'Payée', partielle: 'Partielle', credit: 'À crédit', annulee: 'Annulée' }[s.status] || s.status,
     Date: new Date(s.created_at).toLocaleString('fr-FR'),
   }))
-  downloadWorkbook(rows, 'Ventes', `ventes-mabane-${Date.now()}.xlsx`)
+  await downloadWorkbook(rows, 'Ventes', `ventes-mabane-${Date.now()}.xlsx`)
 }
 
-export function exportProductsToExcel(products) {
+export async function exportProductsToExcel(products) {
   const rows = products.map((p) => ({
     Produit: p.name,
     Catégorie: p.categories?.name || '',
@@ -30,15 +34,15 @@ export function exportProductsToExcel(products) {
     Stock: p.stock,
     'Seuil alerte': p.alert_threshold,
   }))
-  downloadWorkbook(rows, 'Stock', `stock-mabane-${Date.now()}.xlsx`)
+  await downloadWorkbook(rows, 'Stock', `stock-mabane-${Date.now()}.xlsx`)
 }
 
-export function exportExpensesToExcel(expenses) {
+export async function exportExpensesToExcel(expenses) {
   const rows = expenses.map((e) => ({
     Libellé: e.label,
     Catégorie: e.category || '',
     Montant: e.amount,
     Date: new Date(e.created_at).toLocaleString('fr-FR'),
   }))
-  downloadWorkbook(rows, 'Dépenses', `depenses-mabane-${Date.now()}.xlsx`)
+  await downloadWorkbook(rows, 'Dépenses', `depenses-mabane-${Date.now()}.xlsx`)
 }

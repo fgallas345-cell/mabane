@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, Info, AlertTriangle, XCircle, X } from 'lucide-react'
+import { registerQueryErrorToast } from '../lib/queryClient'
 
 const ToastContext = createContext(null)
 let nextToastId = 1
@@ -53,6 +54,12 @@ export function ToastProvider({ children }) {
     }),
     [pushToast]
   )
+
+  // Les erreurs de chargement React Query (QueryCache.onError) passent par ici
+  useEffect(() => {
+    registerQueryErrorToast(value.error)
+    return () => registerQueryErrorToast(null)
+  }, [value])
 
   return (
     <ToastContext.Provider value={value}>

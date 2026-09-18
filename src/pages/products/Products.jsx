@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Plus, Pencil, Trash2, Search, Package, ImagePlus, FileSpreadsheet, AlertTriangle, TrendingUp, Truck, Eye } from 'lucide-react'
-import { useProducts, uploadProductImage } from '../../hooks/useProducts'
+import { useProducts, uploadProductImage, deleteProductImage } from '../../hooks/useProducts'
 import { useCategories } from '../../hooks/useEntities'
 import { usePurchases } from '../../hooks/usePurchases'
+import { useShopSettings } from '../../hooks/useShopSettings'
 import { useToast } from '../../context/ToastContext'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -121,6 +122,8 @@ export default function Products() {
   const { data: products = [], isLoading, createItem, updateItem, deleteItem } = useProducts()
   const { data: categories = [] } = useCategories()
   const { data: purchases = [] } = usePurchases()
+  const { data: shopSettings } = useShopSettings()
+  const defaultThreshold = Number(shopSettings?.low_stock_default_threshold) || 5
   const [modalOpen, setModalOpen] = useState(false)
   const [detailProduct, setDetailProduct] = useState(null)
   const [editing, setEditing] = useState(null)
@@ -134,7 +137,7 @@ export default function Products() {
 
   const openCreate = () => {
     setEditing(null)
-    setForm(emptyForm)
+    setForm({ ...emptyForm, alert_threshold: defaultThreshold })
     setModalOpen(true)
   }
 
@@ -177,16 +180,26 @@ export default function Products() {
       stock: Number(form.stock) || 0,
       alert_threshold: Number(form.alert_threshold) || 0,
     }
-    if (editing) {
-      await updateItem.mutateAsync({ id: editing.id, ...payload })
-    } else {
-      await createItem.mutateAsync(payload)
+    try {
+      if (editing) {
+        // Le stock ne se modifie jamais ici : uniquement via un mouvement (page Stock)
+        // pour garder l'historique et la cohérence avec les ventes/achats.
+        delete payload.stock
+        await updateItem.mutateAsync({ id: editing.id, ...payload })
+        // L’ancienne image ne sert plus : on la retire du bucket (pas de fichiers orphelins)
+        if (editing.image_url && editing.image_url !== payload.image_url) await deleteProductImage(editing.image_url)
+      } else {
+        await createItem.mutateAsync(payload)
+      }
+      setModalOpen(false)
+    } catch {
+      // le toast d'erreur est déjà affiché par le hook ; on garde le formulaire ouvert
     }
-    setModalOpen(false)
   }
 
   const handleDelete = async () => {
     await deleteItem.mutateAsync(confirmDelete.id)
+    if (confirmDelete.image_url) await deleteProductImage(confirmDelete.image_url)
     if (detailProduct?.id === confirmDelete.id) setDetailProduct(null)
     setConfirmDelete(null)
   }
@@ -393,7 +406,7 @@ export default function Products() {
               ) : (
                 <ImagePlus size={20} className="text-gray-400" />
               )}
-              <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleImageChange} />
             </label>
             <p className="text-xs text-gray-400">{uploading ? 'Téléversement...' : 'Cliquez sur le cadre pour ajouter une photo du produit'}</p>
           </div>
@@ -432,8 +445,20 @@ export default function Products() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Stock initial</label>
-              <input type="number" min="0" required className="input" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} />
+              <label className="label">{editing ? 'Stock actuel' : 'Stock initial'}</label>
+              <input
+                type="number"
+                min="0"
+                required
+                className="input disabled:opacity-60"
+                value={form.stock}
+                disabled={!!editing}
+                title={editing ? 'Le stock se corrige depuis la page Stock (entrée / sortie) pour garder l’historique.' : undefined}
+                onChange={(e) => setForm({ ...form, stock: e.target.value })}
+              />
+              {editing && (
+                <p className="text-xs text-gray-400 mt-1">Modifiable uniquement via un mouvement dans la page Stock.</p>
+              )}
             </div>
             <div>
               <label className="label">Seuil d'alerte</label>

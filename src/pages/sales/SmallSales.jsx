@@ -47,7 +47,7 @@ function QtyStepper({ value, onChange, max }) {
 }
 
 export default function SmallSales() {
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
   const toast = useToast()
   const { data: products = [] } = useProducts()
   const { data: smallSales = [] } = useSmallSales()
@@ -552,6 +552,7 @@ export default function SmallSales() {
                       >
                         <Pencil size={14} />
                       </button>
+                      {isAdmin && (
                       <button
                         type="button"
                         className="p-2 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-800"
@@ -560,6 +561,7 @@ export default function SmallSales() {
                       >
                         <Trash2 size={14} />
                       </button>
+                      )}
                     </div>
                   </div>
                 ))

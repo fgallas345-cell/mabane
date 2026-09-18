@@ -218,45 +218,25 @@ export function useDeleteStockMovement() {
   })
 }
 
-export function useUpdateSale() {
-  const queryClient = useQueryClient()
-  const toast = useToast()
-  return useMutation({
-    mutationFn: async ({ saleId, clientId, discount }) => {
-      const { data, error } = await supabase
-        .from('sales')
-        .update({ client_id: clientId || null, discount: discount || 0 })
-        .eq('id', saleId)
-        .select()
-        .single()
-      if (error) throw error
-      return data
-    },
-    onSuccess: () => {
-      toast.success('Facture mise à jour avec succès.')
-      queryClient.invalidateQueries({ queryKey: ['sales'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-    },
-    onError: (error) => {
-      toast.error(error?.message || 'Erreur lors de la mise à jour de la facture.')
-    },
-  })
-}
-
+// Modification atomique d'une facture (articles + remise + client) : une seule RPC
+// recalcule sous-total, remise, total, statut et gère le stock selon l'état de livraison.
 export function useUpdateSaleItems() {
   const queryClient = useQueryClient()
   const toast = useToast()
   return useMutation({
-    mutationFn: async ({ saleId, items }) => {
+    mutationFn: async ({ saleId, items, discount, clientId }) => {
       const { data, error } = await supabase.rpc('update_sale_items', {
         p_sale_id: saleId,
         p_items: items,
+        p_discount: discount ?? null,
+        p_client_id: clientId || null,
+        p_keep_client: clientId === undefined,
       })
       if (error) throw error
       return data
     },
     onSuccess: () => {
-      toast.success('Articles de facture mis à jour.')
+      toast.success('Facture mise à jour avec succès.')
       queryClient.invalidateQueries({ queryKey: ['sales'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stock_movements'] })

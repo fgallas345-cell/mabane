@@ -32,7 +32,7 @@ L’application doit permettre de :
 | **Finances** | Recettes, dépenses, bénéfice ; export Excel. |
 | **Paramètres** | Infos boutique (nom, gérant, adresse, activités, téléphones), seuil stock défaut, thème clair/sombre. |
 | **Utilisateurs** | RBAC — admin crée / édite / supprime les comptes ; caissier / employé avec permissions limitées. |
-| **Auth** | Login / Register (création du premier admin par trigger) ; session persistante. |
+| **Auth** | Login uniquement (comptes créés depuis le dashboard Supabase ; premier compte = admin par trigger) ; session persistante. |
 
 ---
 
@@ -71,7 +71,7 @@ supabase/
   functions/
     send-whatsapp/ fonction Edge optionnelle (API Meta WhatsApp Cloud)
 public/
-  fonts/           NotoSans-Regular.woff2, NotoSans-Bold.woff2 (pour les PDFs)
+  fonts/           NotoSans-Regular.ttf, NotoSans-Bold.ttf (pour les PDFs — jsPDF exige du TrueType)
 ```
 
 ---
@@ -185,7 +185,7 @@ CREATE TABLE shop_settings    (singleton, name, owner, address, activities, phon
 - `generateInvoicePDF(sale)` → facture complète (devis / facture / brouillon).
 - `generateDeliveryPDF(delivery, sale)` → bon de livraison.
 - `generatePaymentReceiptPDF(receipt)` → reçu de paiement (n° reçu, montant payé, reste à payer, mode).
-- Fonts NotoSans embarquées (`public/fonts/*.woff2`).
+- Fonts NotoSans embarquées (`public/fonts/*.ttf`, chargées à la demande par `utils/pdfFonts.js`).
 
 ### 5.5 WhatsApp
 - `sendInvoiceViaWhatsApp(sale)` : génère le blob PDF → `navigator.share` (fallback `wa.me` pré-rempli).

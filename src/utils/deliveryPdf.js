@@ -1,95 +1,5 @@
-import jsPDF from 'jspdf'
 import { SHOP, currency } from '../lib/constants'
-
-let _fontEmbedded = false
-
-function arrayBufferToBase64(buffer) {
-  let binary = ''
-  const bytes = new Uint8Array(buffer)
-  const chunkSize = 0x8000
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize))
-  }
-  return btoa(binary)
-}
-
-async function ensureFont(doc) {
-  if (_fontEmbedded) return true
-  try {
-       const fonts = [
-      { url: '/fonts/NotoSans-Regular.woff2', fileName: 'NotoSans-Regular.woff2', style: 'normal' },
-      { url: '/fonts/NotoSans-Bold.woff2', fileName: 'NotoSans-Bold.woff2', style: 'bold' },
-    ]
-
-    for (const f of fonts) {
-      try {
-        const res = await fetch(f.url)
-        if (!res.ok) throw new Error(`Font fetch failed: ${f.url}`)
-        const buf = await res.arrayBuffer()
-        const header = new Uint8Array(buf.slice(0, 4))
-        const headerStr = String.fromCharCode(...header)
-        const isLikelyFont =
-          (header[0] === 0x00 && header[1] === 0x01 && header[2] === 0x00 && header[3] === 0x00) ||
-          headerStr === 'OTTO' ||
-          headerStr === 'ttcf' ||
-          headerStr === 'wOF2'
-
-        if (!isLikelyFont) {
-          console.warn('Fetched file does not look like a TTF/OTF, skipping:', f.url)
-          continue
-        }
-
-        const base64 = arrayBufferToBase64(buf)
-        doc.addFileToVFS(f.fileName, base64)
-        try {
-          doc.addFont(f.fileName, 'NotoSans', f.style)
-        } catch (e) {
-          try {
-            if (doc.internal && doc.internal.collections && doc.internal.collections.VFS) {
-              delete doc.internal.collections.VFS[f.fileName]
-            }
-          } catch (delErr) {
-            console.warn('Failed to remove invalid font from VFS', delErr)
-          }
-          console.warn('Failed to addFont, font skipped:', f.url, e)
-          continue
-        }
-      } catch (err) {
-        console.warn('Failed to load font variant', f.url, err)
-        _fontEmbedded = false
-      }
-    }
-
-    if (doc.internal && doc.internal.collections && doc.internal.collections.VFS) {
-      const vfs = doc.internal.collections.VFS
-      if (vfs['NotoSans-Regular.woff2']) {
-        _fontEmbedded = true
-        return true
-      }
-    }
-    _fontEmbedded = false
-    return false
-  } catch (e) {
-    console.warn('Could not embed font, falling back to built-ins', e)
-    return false
-  }
-}
-
-function setFontSafe(doc, style) {
-  if (_fontEmbedded) {
-    try {
-      doc.setFont('NotoSans', style)
-    } catch {
-      try {
-        doc.setFont('NotoSans')
-      } catch {
-        doc.setFont('helvetica', style)
-      }
-    }
-  } else {
-    doc.setFont('helvetica', style)
-  }
-}
+import { ensureFont, setFontSafe } from './pdfFonts'
 
 /**
  * Génère le PDF du bon de livraison pour une livraison.
@@ -128,6 +38,8 @@ export async function generateDeliveryPDF(delivery) {
 
   const PAGE_H = MARGIN * 2 + contentHeight
 
+  // jspdf (~350 Ko) n'est chargé qu'au premier PDF généré, pas au démarrage de l'app
+  const { default: jsPDF } = await import('jspdf')
   const doc = new jsPDF({ unit: 'mm', format: [PAGE_W, PAGE_H] })
   await ensureFont(doc)
 

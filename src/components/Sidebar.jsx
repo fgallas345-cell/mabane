@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { SHOP } from '../lib/constants'
 
 const navItems = [
   { to: '/', label: 'Tableau de bord', icon: LayoutDashboard, end: true },
@@ -31,6 +32,10 @@ const navItems = [
 
 export default function Sidebar({ open, onClose }) {
   const { isAdmin } = useAuth()
+  // "QUINCAILLERIE MABANE" → "Quincaillerie" / "MABANE"
+  const [shopFirst, ...shopOthers] = SHOP.name.split(" ")
+  const shopFirstWord = shopFirst.charAt(0) + shopFirst.slice(1).toLowerCase()
+  const shopRest = shopOthers.join(" ")
 
   return (
     <>
@@ -46,8 +51,8 @@ export default function Sidebar({ open, onClose }) {
           <div className="flex items-center gap-3">
             <img src="/mabane.png" alt="Logo Mabane" className="h-10 w-10 rounded-lg object-cover" />
             <div>
-              <p className="font-bold text-sm leading-tight">Quincaillerie</p>
-              <p className="text-xs text-brand-600 dark:text-brand-400 font-semibold leading-tight">MABANE</p>
+              <p className="font-bold text-sm leading-tight">{shopFirstWord}</p>
+              <p className="text-xs text-brand-600 dark:text-brand-400 font-semibold leading-tight">{shopRest}</p>
             </div>
           </div>
           <button className="lg:hidden p-1 text-gray-400" onClick={onClose}>

@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { Plus, Trash2, Edit, Download, MessageCircle, Eye, Search, Receipt, FileText, RotateCcw, CreditCard, Wallet, Truck } from 'lucide-react'
 import { useProducts } from '../../hooks/useProducts'
 import { useClients } from '../../hooks/useEntities'
-import { useSales, useCreateSale, useCancelSale, useAddSalePayment, useUpdateSale, useDeleteSale, useUpdateSaleItems, useDeliveries, useCreateDelivery, useConfirmQuote, useSalePayments } from '../../hooks/useSales'
+import { useSales, useCreateSale, useCancelSale, useAddSalePayment, useDeleteSale, useUpdateSaleItems, useDeliveries, useCreateDelivery, useConfirmQuote, useCancelQuote, useSalePayments } from '../../hooks/useSales'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import Pagination from '../../components/Pagination'
@@ -129,10 +129,10 @@ export default function Sales() {
   const createSale = useCreateSale()
   const cancelSale = useCancelSale()
   const addPayment = useAddSalePayment()
-  const updateSale = useUpdateSale()
   const updateSaleItems = useUpdateSaleItems()
   const deleteSale = useDeleteSale()
   const confirmQuote = useConfirmQuote()
+  const cancelQuote = useCancelQuote()
 
   const [newSaleOpen, setNewSaleOpen] = useState(false)
   const [newQuoteOpen, setNewQuoteOpen] = useState(false)
@@ -266,6 +266,7 @@ export default function Sales() {
           receiptNumber: createdSale?.receipt_number,
           invoiceNumber: createdSale?.invoice_number,
           clientName: clientId ? (clients.find((c) => c.id === clientId)?.name || 'Client comptoir') : 'Client comptoir',
+          clientPhone: clientId ? (clients.find((c) => c.id === clientId)?.phone || null) : null,
           amount: Number(amountPaid),
           method: 'especes',
           reference: null,
@@ -313,6 +314,7 @@ export default function Sales() {
         receiptNumber: updatedSale?.receipt_number,
         invoiceNumber: paymentOpen.invoice_number,
         clientName: paymentOpen.clients?.name || 'Client comptoir',
+        clientPhone: paymentOpen.clients?.phone || null,
         amount: Number(paymentAmount),
         method: paymentMethod,
         reference: paymentReference || null,
@@ -334,10 +336,17 @@ export default function Sales() {
   }
 
   const handleCancelSale = async () => {
-    await cancelSale.mutateAsync({ saleId: confirmCancel.id, userId: user?.id })
+    const isDraft = confirmCancel.quote_status === 'draft'
+    try {
+      // Un devis n'a jamais touché le stock : RPC dédiée (cancel_quote), pas de restitution
+      if (isDraft) await cancelQuote.mutateAsync({ saleId: confirmCancel.id, userId: user?.id })
+      else await cancelSale.mutateAsync({ saleId: confirmCancel.id, userId: user?.id })
+    } catch {
+      return // toast déjà affiché par le hook
+    }
     setConfirmCancel(null)
     if (detailSale?.id === confirmCancel.id) {
-      setDetailSale((sale) => ({ ...sale, status: 'annulee' }))
+      setDetailSale((sale) => (isDraft ? { ...sale, quote_status: 'cancelled' } : { ...sale, status: 'annulee' }))
     }
   }
 
@@ -355,37 +364,49 @@ export default function Sales() {
       toast.error('La remise ne peut pas dépasser le sous-total de la facture.')
       return
     }
-    // Stock max disponible : le stock actuel + les quantités rendues depuis la facture d'origine
-    const originalByProductId = {}
-    ;(editSale.sale_items || []).forEach((item) => {
-      if (item.product_id) {
-        originalByProductId[item.product_id] = (originalByProductId[item.product_id] || 0) + item.quantity
-      }
-    })
-    const overStock = editSaleItems.find((item) => {
-      if (!item.product_id) return false
-      const product = products.find((p) => p.id === item.product_id)
-      if (!product) return false
-      const available = Number(product.stock || 0) + (originalByProductId[item.product_id] || 0)
-      return item.quantity > available
-    })
-    if (overStock) {
-      toast.error(`Stock insuffisant pour "${overStock.product_name}" (disponible: ${Number(products.find((p) => p.id === overStock.product_id)?.stock || 0) + (originalByProductId[overStock.product_id] || 0)})`)
+    const newTotal = newSubtotal - Number(editDiscount || 0)
+    if (Number(editSale.amount_paid || 0) > newTotal) {
+      toast.error(`Le nouveau total (${currency(newTotal)}) est inférieur au montant déjà encaissé (${currency(editSale.amount_paid)}).`)
       return
+    }
+    // Le stock n'est concerné que pour une facture confirmée et livrée immédiatement
+    // (devis et livraisons échelonnées ne l'ont jamais décrémenté).
+    const movesStock = editSale.quote_status === 'confirmed' && editSale.delivery_status === 'livree'
+    if (movesStock) {
+      // Stock max disponible : le stock actuel + les quantités rendues depuis la facture d'origine
+      const originalByProductId = {}
+      ;(editSale.sale_items || []).forEach((item) => {
+        if (item.product_id) {
+          originalByProductId[item.product_id] = (originalByProductId[item.product_id] || 0) + item.quantity
+        }
+      })
+      const overStock = editSaleItems.find((item) => {
+        if (!item.product_id) return false
+        const product = products.find((p) => p.id === item.product_id)
+        if (!product) return false
+        const available = Number(product.stock || 0) + (originalByProductId[item.product_id] || 0)
+        return item.quantity > available
+      })
+      if (overStock) {
+        toast.error(`Stock insuffisant pour "${overStock.product_name}" (disponible: ${Number(products.find((p) => p.id === overStock.product_id)?.stock || 0) + (originalByProductId[overStock.product_id] || 0)})`)
+        return
+      }
     }
 
     try {
-      // Update sale items (full replacement: add / modify / remove handled by RPC)
+      // Une seule RPC atomique : articles + remise + client, total et statut recalculés côté base
       const itemsToUpdate = editSaleItems.map(item => ({
         product_id: item.product_id,
         product_name: item.product_name,
         quantity: item.quantity,
         unit_price: item.unit_price,
-        purchase_price: item.purchase_price || 0,
       }))
-      await updateSaleItems.mutateAsync({ saleId: editSale.id, items: itemsToUpdate })
-      // Then update client and discount if changed
-      await updateSale.mutateAsync({ saleId: editSale.id, clientId: editClientId || null, discount: Number(editDiscount) || 0 })
+      await updateSaleItems.mutateAsync({
+        saleId: editSale.id,
+        items: itemsToUpdate,
+        discount: Number(editDiscount) || 0,
+        clientId: editClientId || null,
+      })
       setEditSale(null)
       setEditProductToAdd('')
       // refresh detail view if open
@@ -742,7 +763,7 @@ export default function Sales() {
                             {s.quote_status === 'draft' && (
                               <>
                                 <ActionButton icon={FileText} title="Confirmer le devis" tone="emerald" onClick={() => confirmQuote.mutateAsync({ saleId: s.id, userId: user?.id }).then(() => setDetailSale(null))} />
-                                <ActionButton icon={RotateCcw} title="Annuler le devis" tone="red" onClick={() => setConfirmCancel(s)} />
+                                {isAdmin && <ActionButton icon={RotateCcw} title="Annuler le devis" tone="red" onClick={() => setConfirmCancel(s)} />}
                               </>
                             )}
                             {s.quote_status !== 'draft' && (
@@ -764,7 +785,7 @@ export default function Sales() {
                                 {isAdmin && s.status !== 'annulee' && (
                                   <ActionButton icon={RotateCcw} title="Annuler et remettre en stock" onClick={() => setConfirmCancel(s)} tone="red" />
                                 )}
-                                {isAdmin && s.status !== 'annulee' && (
+                                {isAdmin && s.status !== 'annulee' && s.delivery_status !== 'partielle' && (
                                   <ActionButton
                                     icon={Edit}
                                     title="Modifier la facture"
@@ -836,7 +857,7 @@ export default function Sales() {
                       {s.quote_status === 'draft' ? (
                         <>
                           <ActionButton icon={FileText} title="Confirmer" tone="emerald" onClick={() => confirmQuote.mutateAsync({ saleId: s.id, userId: user?.id }).then(() => setDetailSale(null))} />
-                          <ActionButton icon={RotateCcw} title="Annuler" tone="red" onClick={() => setConfirmCancel(s)} />
+                          {isAdmin && <ActionButton icon={RotateCcw} title="Annuler" tone="red" onClick={() => setConfirmCancel(s)} />}
                         </>
                       ) : (
                         <>
@@ -857,7 +878,7 @@ export default function Sales() {
                           {isAdmin && s.status !== 'annulee' && (
                             <ActionButton icon={RotateCcw} title="Annuler" onClick={() => setConfirmCancel(s)} tone="red" />
                           )}
-                          {isAdmin && s.status !== 'annulee' && (
+                          {isAdmin && s.status !== 'annulee' && s.delivery_status !== 'partielle' && (
                             <ActionButton icon={Edit} title="Modifier" onClick={() => { setEditSale(s); setEditClientId(s.client_id || ''); setEditDiscount(s.discount || 0); setEditSaleItems(s.sale_items || []); setEditProductToAdd('') }} />
                           )}
                         </>
@@ -1111,8 +1132,8 @@ export default function Sales() {
 
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" className="btn-secondary" onClick={() => setEditSale(null)}>Annuler</button>
-              <button type="submit" className="btn-primary" disabled={updateSaleItems.isPending || updateSale.isPending}>
-                {updateSaleItems.isPending || updateSale.isPending ? 'Enregistrement...' : 'Enregistrer'}
+              <button type="submit" className="btn-primary" disabled={updateSaleItems.isPending}>
+                {updateSaleItems.isPending ? 'Enregistrement...' : 'Enregistrer'}
               </button>
             </div>
           </form>
@@ -1269,12 +1290,14 @@ export default function Sales() {
                 >
                   <FileText size={15} /> Confirmer le devis
                 </button>
+                {isAdmin && (
                 <button
                   className="btn-secondary flex-1"
                   onClick={() => { setDetailSale(null); setConfirmCancel(detailSale) }}
                 >
                   Annuler le devis
                 </button>
+                )}
               </div>
             ) : (
               <>
@@ -1391,7 +1414,7 @@ export default function Sales() {
               <button className="btn-primary flex-1" onClick={() => downloadPaymentReceiptPDF(lastReceipt)}>
                 Télécharger le reçu (PDF)
               </button>
-              <button className="btn-success flex-1" onClick={() => sendReceiptViaWhatsApp(lastReceipt)}>
+              <button className="btn-success flex-1" disabled={!lastReceipt.clientPhone} title={lastReceipt.clientPhone ? undefined : "Aucun numéro WhatsApp"} onClick={() => sendReceiptViaWhatsApp(lastReceipt)}>
                 Envoyer par WhatsApp
               </button>
               <button className="btn-secondary flex-1" onClick={() => setLastReceipt(null)}>Fermer</button>
@@ -1411,7 +1434,7 @@ export default function Sales() {
               <button className="btn-primary flex-1" onClick={() => downloadPaymentReceiptPDF(initialReceipt)}>
                 Télécharger le reçu (PDF)
               </button>
-              <button className="btn-success flex-1" onClick={() => sendReceiptViaWhatsApp(initialReceipt)}>
+              <button className="btn-success flex-1" disabled={!initialReceipt.clientPhone} title={initialReceipt.clientPhone ? undefined : "Aucun numéro WhatsApp"} onClick={() => sendReceiptViaWhatsApp(initialReceipt)}>
                 Envoyer par WhatsApp
               </button>
               <button className="btn-secondary flex-1" onClick={() => setInitialReceipt(null)}>Fermer</button>
@@ -1424,8 +1447,8 @@ export default function Sales() {
         open={!!confirmCancel}
         onClose={() => setConfirmCancel(null)}
         onConfirm={handleCancelSale}
-        loading={cancelSale.isPending}
-        message={`Annuler la facture "${confirmCancel?.invoice_number}" ? Les quantités seront remises en stock.`}
+        loading={cancelSale.isPending || cancelQuote.isPending}
+        message={confirmCancel?.quote_status === 'draft' ? `Annuler le devis "${confirmCancel?.invoice_number}" ? Il n'a aucun effet sur le stock.` : `Annuler la facture "${confirmCancel?.invoice_number}" ? Les quantités déjà sorties du stock seront remises en stock.`}
       />
     </div>
   )

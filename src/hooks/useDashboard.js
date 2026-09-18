@@ -184,3 +184,20 @@ export function useDashboard() {
     refetchInterval: 60000,
   });
 }
+
+// Requête légère pour la cloche de notifications (Topbar) : évite de recharger
+// les 10 requêtes du tableau de bord sur chaque page.
+export function useLowStock() {
+  return useQuery({
+    queryKey: ["products", "low-stock"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("id, name, stock, alert_threshold, unit")
+        .order("stock", { ascending: true });
+      if (error) throw error;
+      return data.filter((p) => p.stock <= p.alert_threshold);
+    },
+    staleTime: 60 * 1000,
+  });
+}

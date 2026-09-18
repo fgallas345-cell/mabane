@@ -151,6 +151,7 @@ alter table public.sales drop constraint if exists sales_status_check;
 alter table public.sales add constraint sales_status_check check (status in ('payee', 'partielle', 'credit', 'annulee'));
 alter table public.sales add column if not exists delivery_status text not null default 'livree' check (delivery_status in ('en_attente', 'partielle', 'livree'));
 alter table public.sales add column if not exists quote_status text not null default 'confirmed' check (quote_status in ('draft', 'confirmed', 'cancelled'));
+alter table public.sales add column if not exists payment_method text;
 update public.sales set payment_method = 'especes' where payment_method is null;
 alter table public.sales alter column payment_method set default 'especes';
 alter table public.sales alter column payment_method set not null;
@@ -354,6 +355,7 @@ create or replace function public.create_sale(
 returns public.sales
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_sale public.sales;
@@ -370,6 +372,7 @@ declare
   v_is_draft boolean;
   v_receipt_number text;
 begin
+  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
   if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
     raise exception 'La vente doit contenir au moins un article.';
   end if;
@@ -481,7 +484,7 @@ begin
       (v_item->>'product_id')::uuid,
       v_item->>'product_name',
       (v_item->>'quantity')::integer,
-      coalesce((v_item->>'purchase_price')::numeric, v_purchase_price),
+      coalesce(v_purchase_price, 0), -- prix d'achat toujours lu depuis le catalogue (jamais depuis le client)
       (v_item->>'unit_price')::numeric,
       v_line_total
     );
@@ -530,6 +533,7 @@ create or replace function public.confirm_quote(
 returns public.sales
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_sale public.sales;
@@ -537,6 +541,7 @@ declare
   v_current_stock integer;
   v_purchase_price numeric;
 begin
+  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
   select * into v_sale from public.sales where id = p_sale_id for update;
   if v_sale.id is null then
     raise exception 'Devis introuvable.';
@@ -613,10 +618,12 @@ create or replace function public.cancel_quote(
 returns public.sales
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_sale public.sales;
 begin
+  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
   if not exists (select 1 from public.users where id = auth.uid() and role = 'admin') then
     raise exception 'Seul un administrateur peut annuler un devis.';
   end if;
@@ -655,8 +662,10 @@ create or replace function public.add_stock_entry(
 returns void
 language plpgsql
 security definer
+set search_path = public
 as $$
 begin
+  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
   if p_quantity is null or p_quantity <= 0 then
     raise exception 'La quantité d''entrée doit être supérieure à zéro.';
   end if;
@@ -686,6 +695,7 @@ create or replace function public.create_delivery(
 returns public.deliveries
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_delivery public.deliveries;
@@ -703,6 +713,10 @@ begin
 
   if v_sale_item.status = 'annulee' then
     raise exception 'Impossible de livrer une facture annulée.';
+  end if;
+
+  if v_sale_item.quote_status <> 'confirmed' then
+    raise exception 'Impossible de livrer un devis : confirmez-le d''abord.';
   end if;
 
   if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
@@ -788,6 +802,19 @@ begin
   return v_delivery;
 end;
 $$;
+-- ============================================================================
+-- Un mouvement est "système" s'il a été généré par une vente, un achat, une
+-- livraison ou une annulation : il ne doit jamais être corrigé à la main, sinon
+-- le stock et le document d'origine (facture, achat, BL) se désynchronisent.
+-- ============================================================================
+create or replace function public.is_system_stock_movement(p_reason text)
+returns boolean
+language sql
+immutable
+as $$
+  select coalesce(p_reason, '') ~ '^(Vente |Achat |Livraison |Annulation |Confirmation devis |Petite vente|Rectification |Vente rectifiée |Achat rectifié )';
+$$;
+
 drop function if exists public.update_stock_movement(uuid, uuid, text, integer, text, uuid);
 drop function if exists public.update_stock_movement(uuid, uuid, integer, text, text, uuid);
 
@@ -802,6 +829,7 @@ create or replace function public.update_stock_movement(
 returns void
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_old public.stock_movements;
@@ -809,6 +837,11 @@ declare
   v_new_delta integer;
   v_current_stock integer;
 begin
+  if not public.is_admin() then
+    raise exception 'Seul un administrateur peut corriger un mouvement de stock.';
+  end if;
+
+  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
   if p_type not in ('entree', 'sortie') then
     raise exception 'Type de mouvement invalide.';
   end if;
@@ -824,6 +857,10 @@ begin
 
   if not found then
     raise exception 'Mouvement de stock introuvable.';
+  end if;
+
+  if public.is_system_stock_movement(v_old.reason) then
+    raise exception 'Ce mouvement a été généré par un document (vente, achat, livraison...). Corrigez ou annulez le document lui-même.';
   end if;
 
   v_old_delta := case when v_old.type = 'entree' then v_old.quantity else -v_old.quantity end;
@@ -874,12 +911,17 @@ create or replace function public.delete_stock_movement(
 returns void
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_old public.stock_movements;
   v_delta integer;
   v_current_stock integer;
 begin
+  if not public.is_admin() then
+    raise exception 'Seul un administrateur peut corriger un mouvement de stock.';
+  end if;
+
   select * into v_old
   from public.stock_movements
   where id = p_movement_id
@@ -887,6 +929,10 @@ begin
 
   if not found then
     raise exception 'Mouvement de stock introuvable.';
+  end if;
+
+  if public.is_system_stock_movement(v_old.reason) then
+    raise exception 'Ce mouvement a été généré par un document (vente, achat, livraison...). Corrigez ou annulez le document lui-même.';
   end if;
 
   v_delta := case when v_old.type = 'entree' then v_old.quantity else -v_old.quantity end;
@@ -939,7 +985,7 @@ $$;
 -- ============================================================================
 -- FONCTION : générer le prochain numéro de bon de livraison (BL-2026-0001)
 -- ============================================================================
-create sequence if not exists public.delivery_number_seq;
+drop sequence if exists public.delivery_number_seq; -- inutilisée : la numérotation BL se base sur max()
 
 create or replace function public.next_delivery_number()
 returns text
@@ -976,6 +1022,7 @@ create or replace function public.create_purchase(
 returns public.purchases
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_purchase public.purchases;
@@ -987,6 +1034,7 @@ declare
   v_status text;
   v_amount_paid numeric := coalesce(p_amount_paid, 0);
 begin
+  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
   if p_supplier_id is null then
     raise exception 'Veuillez sélectionner un fournisseur.';
   end if;
@@ -1076,6 +1124,7 @@ create or replace function public.add_purchase_payment(
 returns public.purchases
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_purchase public.purchases;
@@ -1125,12 +1174,14 @@ create or replace function public.cancel_purchase(
 returns void
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_purchase public.purchases;
   v_item record;
   v_current_stock integer;
 begin
+  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
   if not exists (select 1 from public.users where id = auth.uid() and role = 'admin') then
     raise exception 'Seul un administrateur peut annuler un achat.';
   end if;
@@ -1203,6 +1254,7 @@ create or replace function public.add_sale_payment(
 returns public.sales
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_sale public.sales;
@@ -1269,6 +1321,7 @@ create or replace function public.cancel_sale(
 returns void
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_sale public.sales;
@@ -1277,6 +1330,7 @@ declare
   v_undelivered integer;
   v_current_stock integer;
 begin
+  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
   if not exists (select 1 from public.users where id = auth.uid() and role = 'admin') then
     raise exception 'Seul un administrateur peut annuler une vente.';
   end if;
@@ -1304,6 +1358,10 @@ begin
     from public.sale_items si
     where si.sale_id = p_sale_id and si.product_id is not null
   loop
+    -- On remet en stock UNIQUEMENT ce qui en est réellement sorti :
+    --   en_attente : rien n'a été livré, le stock n'a jamais été décrémenté → 0
+    --   livree     : tout est sorti (vente immédiate ou BL complets) → quantité totale
+    --   partielle  : seules les quantités livrées (BL) ont quitté le stock → somme des BL
     if v_sale.delivery_status = 'en_attente' then
       v_undelivered := 0;
     elsif v_sale.delivery_status = 'livree' then
@@ -1315,7 +1373,7 @@ begin
       where d.sale_id = p_sale_id
         and di.sale_item_id = v_item.id;
 
-      v_undelivered := v_item.quantity - v_delivered;
+      v_undelivered := v_delivered;
     end if;
 
     if v_undelivered > 0 then
@@ -1360,6 +1418,7 @@ create or replace function public.create_small_sale(
 returns public.small_sales
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_sale public.small_sales;
@@ -1369,6 +1428,7 @@ declare
   v_current_stock integer;
   v_purchase_price numeric;
 begin
+  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
   if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
     raise exception 'La petite vente doit contenir au moins un article.';
   end if;
@@ -1457,6 +1517,7 @@ create or replace function public.update_small_sale(
 returns public.small_sales
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_sale public.small_sales;
@@ -1583,10 +1644,20 @@ create or replace function public.cancel_small_sale(
 returns void
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_item record;
 begin
+  if not public.is_admin() then
+    raise exception 'Seul un administrateur peut annuler une petite vente.';
+  end if;
+
+  perform 1 from public.small_sales where id = p_sale_id for update;
+  if not found then
+    raise exception 'Petite vente introuvable.';
+  end if;
+
   for v_item in
     select product_id, quantity
     from public.small_sale_items
@@ -1611,16 +1682,32 @@ end;
 $$;
 
 -- ============================================================================
--- FONCTION RPC : modifier les articles d'une facture (gestion de stock atomique)
--- items = jsonb array: [{product_id, product_name, quantity, unit_price, purchase_price}, ...]
+-- FONCTION RPC : modifier une facture (articles + remise + client) de façon atomique
+-- items = jsonb array: [{product_id, product_name, quantity, unit_price}, ...]
+--
+-- Règles de stock :
+--   - devis (draft)            : le stock n'a jamais bougé → aucun mouvement
+--   - livraison 'en_attente'   : idem, rien n'est sorti → aucun mouvement
+--   - vente immédiate 'livree' sans bon de livraison : on restitue les anciennes
+--                                lignes puis on sort les nouvelles
+--   - dès qu'un bon de livraison existe (partielle ou livree via BL) : REFUS,
+--     car on ne peut plus savoir quelle part de chaque ligne est sortie.
+-- Le prix d'achat est toujours relu depuis le catalogue.
+-- Le total est recalculé avec la nouvelle remise et vérifié contre amount_paid.
 -- ============================================================================
+drop function if exists public.update_sale_items(uuid, jsonb);
+
 create or replace function public.update_sale_items(
   p_sale_id uuid,
-  p_items jsonb
+  p_items jsonb,
+  p_discount numeric default null,
+  p_client_id uuid default null,
+  p_keep_client boolean default false
 )
 returns public.sales
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_sale public.sales;
@@ -1629,9 +1716,18 @@ declare
   v_new_quantity integer;
   v_purchase_price numeric;
   v_new_subtotal numeric := 0;
+  v_new_discount numeric;
+  v_new_total numeric;
   v_line_total numeric;
   v_current_stock integer;
+  v_moves_stock boolean;
+  v_has_deliveries boolean;
+  v_actor uuid := auth.uid();
 begin
+  if not public.is_admin() then
+    raise exception 'Seul un administrateur peut modifier une facture.';
+  end if;
+
   select * into v_sale
   from public.sales
   where id = p_sale_id
@@ -1649,13 +1745,26 @@ begin
     raise exception 'La facture doit contenir au moins un article.';
   end if;
 
-  -- Delete old sale items and restore stock
+  select exists (select 1 from public.deliveries where sale_id = p_sale_id) into v_has_deliveries;
+  if v_has_deliveries then
+    raise exception 'Cette facture a déjà des bons de livraison : ses articles ne peuvent plus être modifiés. Annulez-la et créez une nouvelle facture.';
+  end if;
+
+  -- Le stock n'a bougé que pour une facture confirmée livrée immédiatement
+  v_moves_stock := v_sale.quote_status = 'confirmed' and v_sale.delivery_status = 'livree';
+
+  v_new_discount := coalesce(p_discount, v_sale.discount, 0);
+  if v_new_discount < 0 then
+    raise exception 'La remise ne peut pas être négative.';
+  end if;
+
+  -- 1. Retirer les anciennes lignes (et restituer le stock si elles l'avaient décrémenté)
   for v_old_item in
     select id, product_id, quantity
     from public.sale_items
     where sale_id = p_sale_id
   loop
-    if v_old_item.product_id is not null then
+    if v_moves_stock and v_old_item.product_id is not null then
       update public.products
       set stock = stock + v_old_item.quantity, updated_at = now()
       where id = v_old_item.product_id;
@@ -1666,19 +1775,19 @@ begin
         'entree',
         v_old_item.quantity,
         'Rectification facture ' || v_sale.invoice_number,
-        auth.uid()
+        v_actor
       );
     end if;
 
     delete from public.sale_items where id = v_old_item.id;
   end loop;
 
-  -- Insert new items
+  -- 2. Insérer les nouvelles lignes (et sortir le stock si la facture est livrée)
   for v_item in select * from jsonb_array_elements(p_items)
   loop
     v_new_quantity := (v_item->>'quantity')::integer;
 
-    if v_new_quantity <= 0 then
+    if v_new_quantity is null or v_new_quantity <= 0 then
       raise exception 'La quantité doit être supérieure à zéro pour le produit %', v_item->>'product_name';
     end if;
 
@@ -1698,22 +1807,24 @@ begin
       raise exception 'Produit introuvable : %', v_item->>'product_name';
     end if;
 
-    if v_current_stock < v_new_quantity then
-      raise exception 'Stock insuffisant pour le produit % (disponible: %)', v_item->>'product_name', v_current_stock;
+    if v_moves_stock then
+      if v_current_stock < v_new_quantity then
+        raise exception 'Stock insuffisant pour le produit % (disponible: %)', v_item->>'product_name', v_current_stock;
+      end if;
+
+      update public.products
+      set stock = stock - v_new_quantity, updated_at = now()
+      where id = (v_item->>'product_id')::uuid;
+
+      insert into public.stock_movements (product_id, type, quantity, reason, user_id)
+      values (
+        (v_item->>'product_id')::uuid,
+        'sortie',
+        v_new_quantity,
+        'Vente rectifiée ' || v_sale.invoice_number,
+        v_actor
+      );
     end if;
-
-    update public.products
-    set stock = stock - v_new_quantity, updated_at = now()
-    where id = (v_item->>'product_id')::uuid;
-
-    insert into public.stock_movements (product_id, type, quantity, reason, user_id)
-    values (
-      (v_item->>'product_id')::uuid,
-      'sortie',
-      v_new_quantity,
-      'Vente rectifiée ' || v_sale.invoice_number,
-      auth.uid()
-    );
 
     insert into public.sale_items (sale_id, product_id, product_name, quantity, purchase_price, unit_price, line_total)
     values (
@@ -1721,20 +1832,35 @@ begin
       (v_item->>'product_id')::uuid,
       v_item->>'product_name',
       v_new_quantity,
-      coalesce((v_item->>'purchase_price')::numeric, v_purchase_price),
+      coalesce(v_purchase_price, 0),
       (v_item->>'unit_price')::numeric,
       v_line_total
     );
   end loop;
 
+  -- 3. Recalculer les montants avec la NOUVELLE remise
+  if v_new_discount > v_new_subtotal then
+    raise exception 'La remise (%) ne peut pas dépasser le sous-total (%).', v_new_discount, v_new_subtotal;
+  end if;
+
+  v_new_total := v_new_subtotal - v_new_discount;
+
+  if v_sale.amount_paid > v_new_total then
+    raise exception 'Le nouveau total (%) est inférieur au montant déjà encaissé (%).', v_new_total, v_sale.amount_paid;
+  end if;
+
   update public.sales
   set subtotal = v_new_subtotal,
-      total = v_new_subtotal - coalesce(v_sale.discount, 0),
+      discount = v_new_discount,
+      total = v_new_total,
+      client_id = case when p_keep_client then client_id else p_client_id end,
       status = case
-        when v_sale.amount_paid >= (v_new_subtotal - coalesce(v_sale.discount, 0)) and (v_new_subtotal - coalesce(v_sale.discount, 0)) > 0 then 'payee'
+        when v_sale.quote_status = 'draft' then status
+        when v_sale.amount_paid >= v_new_total and v_new_total > 0 then 'payee'
         when v_sale.amount_paid > 0 then 'partielle'
         else 'credit'
-      end
+      end,
+      updated_at = now()
   where id = p_sale_id
   returning * into v_sale;
 
@@ -1753,6 +1879,7 @@ create or replace function public.update_purchase_items(
 returns public.purchases
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
   v_purchase public.purchases;
@@ -1763,6 +1890,10 @@ declare
   v_line_total numeric;
   v_current_stock integer;
 begin
+  if not public.is_admin() then
+    raise exception 'Seul un administrateur peut modifier un achat.';
+  end if;
+
   select * into v_purchase
   from public.purchases
   where id = p_purchase_id
@@ -1868,6 +1999,10 @@ begin
     );
   end loop;
 
+  if v_purchase.amount_paid > v_new_subtotal then
+    raise exception 'Le nouveau total (%) est inférieur au montant déjà payé (%). Réduisez d''abord le paiement.', v_new_subtotal, v_purchase.amount_paid;
+  end if;
+
   -- Recalculate and update purchase totals
   update public.purchases
   set subtotal = v_new_subtotal,
@@ -1885,12 +2020,41 @@ end;
 $$;
 
 -- ============================================================================
+-- TRIGGER : rafraîchir updated_at sur toute modification directe (hors RPC)
+-- ============================================================================
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+drop trigger if exists set_products_updated_at on public.products;
+create trigger set_products_updated_at
+  before update on public.products
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists set_sales_updated_at on public.sales;
+create trigger set_sales_updated_at
+  before update on public.sales
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists set_shop_settings_updated_at on public.shop_settings;
+create trigger set_shop_settings_updated_at
+  before update on public.shop_settings
+  for each row execute function public.set_updated_at();
+
+-- ============================================================================
 -- TRIGGER : création automatique du profil "users" à l'inscription
 -- ============================================================================
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer
+set search_path = public
 as $$
 begin
   insert into public.users (id, full_name, email, role, phone)
@@ -1898,17 +2062,13 @@ begin
     new.id,
     coalesce(new.raw_user_meta_data->>'full_name', new.email),
     new.email,
-    coalesce(
-      case
-        when new.raw_user_meta_data->>'role' in ('admin', 'caissier', 'employe')
-          then new.raw_user_meta_data->>'role'
-        else null
-      end,
-      case
-        when not exists (select 1 from public.users) then 'admin'
-        else 'employe'
-      end
-    ),
+    -- Le rôle demandé par le client (raw_user_meta_data->>'role') est volontairement IGNORÉ :
+    -- seul le tout premier compte devient admin, tous les autres sont créés 'employe'
+    -- et promus ensuite par un administrateur depuis la page Utilisateurs.
+    case
+      when not exists (select 1 from public.users) then 'admin'
+      else 'employe'
+    end,
     coalesce(new.raw_user_meta_data->>'phone', null)
   )
   on conflict (id) do nothing;
@@ -1944,6 +2104,7 @@ create or replace function public.is_admin()
 returns boolean
 language sql
 security definer
+set search_path = public
 stable
 as $$
   select exists (
@@ -1951,10 +2112,11 @@ as $$
   );
 $$;
 
--- USERS : chacun voit son profil, l'admin voit tout le monde
+-- USERS : tout membre connecté voit l'annuaire de l'équipe (nécessaire pour afficher
+-- le vendeur d'une petite vente / d'un mouvement) ; seul l'admin modifie.
 drop policy if exists "Users can view own profile" on public.users;
 create policy "Users can view own profile" on public.users
-  for select using (auth.uid() = id or public.is_admin());
+  for select using (auth.role() = 'authenticated');
 drop policy if exists "Admin can insert users" on public.users;
 create policy "Admin can insert users" on public.users
   for insert with check (public.is_admin() or (auth.uid() = id and role = 'employe'));
@@ -2140,9 +2302,9 @@ begin
       not valid;
   end if;
 
-  if not exists (select 1 from pg_constraint where conname = 'sales_valid_amounts') then
+  if not exists (select 1 from pg_constraint where conname = 'sales_valid_paid') then
     alter table public.sales
-      add constraint sales_valid_amounts
+      add constraint sales_valid_paid
       check (amount_paid >= 0 and amount_paid <= total)
       not valid;
   end if;
@@ -2176,7 +2338,7 @@ grant execute on function public.delete_stock_movement(uuid) to authenticated;
 grant execute on function public.create_small_sale(jsonb, uuid, text, numeric) to authenticated;
 grant execute on function public.update_small_sale(uuid, jsonb, text, numeric) to authenticated;
 grant execute on function public.cancel_small_sale(uuid) to authenticated;
-grant execute on function public.update_sale_items(uuid, jsonb) to authenticated;
+grant execute on function public.update_sale_items(uuid, jsonb, numeric, uuid, boolean) to authenticated;
 grant execute on function public.update_purchase_items(uuid, jsonb) to authenticated;
 notify pgrst, 'reload schema';
 
@@ -2212,8 +2374,10 @@ create policy "Authenticated delete product images" on storage.objects
   for delete using (bucket_id = 'product-images' and auth.role() = 'authenticated');
 
 -- ============================================================================
--- IMPORTANT : Pour créer le PREMIER compte admin :
--- 1. Inscrivez-vous depuis l'application (page /register) avec un email/mdp
--- 2. Puis exécutez dans le SQL Editor :
---    update public.users set role = 'admin' where email = 'votre-email@exemple.com';
+-- IMPORTANT : création des comptes
+-- 1. Désactivez les inscriptions publiques (Authentication > Providers > Email > "Allow new users to sign up" = off).
+-- 2. Créez les utilisateurs depuis Authentication > Users > Add user.
+--    Le PREMIER compte créé devient automatiquement 'admin' ; les suivants sont 'employe'
+--    et sont promus par l'admin depuis la page Utilisateurs de l'application.
+--    Le rôle éventuellement passé dans raw_user_meta_data est toujours ignoré.
 -- ============================================================================

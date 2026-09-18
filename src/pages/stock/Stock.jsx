@@ -60,8 +60,14 @@ function ActionButton({ icon: Icon, title, onClick, tone = 'gray' }) {
   )
 }
 
+// Miroir de public.is_system_stock_movement (schema.sql) : mouvements générés par
+// une vente / un achat / une livraison / une annulation → jamais corrigés à la main.
+const SYSTEM_REASON = /^(Vente |Achat |Livraison |Annulation |Confirmation devis |Petite vente|Rectification |Vente rectifiée |Achat rectifié )/
+const isSystemMovement = (m) => SYSTEM_REASON.test(m?.reason || '')
+
 export default function Stock() {
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
+  const canEdit = (m) => isAdmin && !isSystemMovement(m)
   const { data: products = [] } = useProducts()
   const { data: movements = [], isLoading } = useStockMovements()
   const addEntry = useAddStockEntry()
@@ -284,8 +290,8 @@ export default function Stock() {
                       <td className="table-td">
                         <div className="flex justify-end gap-1">
                           <ActionButton icon={Eye} title="Voir le détail" onClick={() => setDetailMovement(m)} />
-                          <ActionButton icon={Pencil} title="Modifier" onClick={() => openEdit(m)} />
-                          <ActionButton icon={Trash2} title="Supprimer" onClick={() => setConfirmDelete(m)} tone="red" />
+                          {canEdit(m) && <ActionButton icon={Pencil} title="Modifier" onClick={() => openEdit(m)} />}
+                          {canEdit(m) && <ActionButton icon={Trash2} title="Supprimer" onClick={() => setConfirmDelete(m)} tone="red" />}
                         </div>
                       </td>
                     </tr>
@@ -315,8 +321,8 @@ export default function Stock() {
                   <MovementTypeBadge type={m.type} />
                   <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                     <span className="text-xs text-gray-400 mr-1">{formatRelativeDate(m.created_at)}</span>
-                    <ActionButton icon={Pencil} title="Modifier" onClick={() => openEdit(m)} />
-                    <ActionButton icon={Trash2} title="Supprimer" onClick={() => setConfirmDelete(m)} tone="red" />
+                    {canEdit(m) && <ActionButton icon={Pencil} title="Modifier" onClick={() => openEdit(m)} />}
+                    {canEdit(m) && <ActionButton icon={Trash2} title="Supprimer" onClick={() => setConfirmDelete(m)} tone="red" />}
                   </div>
                 </div>
               </div>
@@ -420,14 +426,22 @@ export default function Stock() {
                 <span className="text-right">{detailMovement.reason || '—'}</span>
               </div>
             </div>
-            <div className="flex justify-end gap-2">
-              <button className="btn-secondary" onClick={() => { openEdit(detailMovement); setDetailMovement(null) }}>
-                <Pencil size={15} /> Modifier
-              </button>
-              <button className="btn-danger" onClick={() => setConfirmDelete(detailMovement)}>
-                <Trash2 size={15} /> Supprimer
-              </button>
-            </div>
+            {canEdit(detailMovement) ? (
+              <div className="flex justify-end gap-2">
+                <button className="btn-secondary" onClick={() => { openEdit(detailMovement); setDetailMovement(null) }}>
+                  <Pencil size={15} /> Modifier
+                </button>
+                <button className="btn-danger" onClick={() => setConfirmDelete(detailMovement)}>
+                  <Trash2 size={15} /> Supprimer
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400">
+                {isSystemMovement(detailMovement)
+                  ? 'Mouvement généré par un document (vente, achat, livraison…) : corrigez ou annulez le document lui-même.'
+                  : 'Seul un administrateur peut corriger un mouvement de stock.'}
+              </p>
+            )}
           </div>
         )}
       </Modal>

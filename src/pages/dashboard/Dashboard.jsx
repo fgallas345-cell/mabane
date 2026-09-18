@@ -44,13 +44,23 @@ function QtyTooltip({ active, payload, label }) {
 }
 
 export default function Dashboard() {
-  const { data, isLoading } = useDashboard()
+  const { data, isLoading, isError, error, refetch } = useDashboard()
   const { profile } = useAuth()
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-4 border-brand-500 border-t-transparent" />
+      </div>
+    )
+  }
+
+  if (isError || !data) {
+    return (
+      <div className="card p-8 text-center space-y-3">
+        <p className="font-medium">Impossible de charger le tableau de bord.</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">{error?.message}</p>
+        <button className="btn-secondary" onClick={() => refetch()}>Réessayer</button>
       </div>
     )
   }

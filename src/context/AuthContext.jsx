@@ -51,15 +51,6 @@ export function AuthProvider({ children }) {
     return { error }
   }
 
-  const signUp = async (email, password, fullName, role = 'employe') => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName, role } },
-    })
-    return { data, error }
-  }
-
   const signOut = async () => {
     await supabase.auth.signOut()
   }
@@ -69,7 +60,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ session, user: session?.user, profile, loading, signIn, signUp, signOut, isAdmin, isCaissier }}
+      value={{ session, user: session?.user, profile, loading, signIn, signOut, isAdmin, isCaissier }}
     >
       {children}
     </AuthContext.Provider>

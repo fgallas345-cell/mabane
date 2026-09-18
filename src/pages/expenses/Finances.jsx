@@ -10,6 +10,7 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import Pagination from '../../components/Pagination'
 import { currency } from '../../lib/constants'
 import { exportSalesToExcel, exportExpensesToExcel } from '../../utils/exportExcel'
+import { getSaleGrossMargin, getSmallSaleGrossMargin, isCountedSale } from '../../utils/finance'
 
 const emptyForm = { label: '', amount: '', category: '' }
 
@@ -48,26 +49,6 @@ function formatRelativeDate(dateStr) {
   return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function getSaleGrossMargin(sale) {
-  const itemsMargin = (sale.sale_items || []).reduce((sum, item) => {
-    const purchasePrice = Number(item.purchase_price ?? 0)
-    const unitPrice = Number(item.unit_price ?? 0)
-    const quantity = Number(item.quantity ?? 0)
-    return sum + (unitPrice - purchasePrice) * quantity
-  }, 0)
-  return itemsMargin - Number(sale.discount || 0)
-}
-
-function getSmallSaleGrossMargin(sale) {
-  const itemsMargin = (sale.small_sale_items || []).reduce((sum, item) => {
-    const purchasePrice = Number(item.purchase_price ?? 0)
-    const unitPrice = Number(item.unit_price ?? 0)
-    const quantity = Number(item.quantity ?? 0)
-    return sum + (unitPrice - purchasePrice) * quantity
-  }, 0)
-  return itemsMargin - Number(sale.discount || 0)
-}
-
 function ActionButton({ icon: Icon, title, onClick, tone = 'gray' }) {
   const tones = {
     gray: 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200',
@@ -94,7 +75,11 @@ export default function Finances() {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const pageSize = 10
 
-  const activeSales = useMemo(() => sales.filter((sale) => sale.status !== 'annulee'), [sales])
+  // Même périmètre que le Dashboard : ni annulées, ni devis (un devis n'est pas une vente)
+  const activeSales = useMemo(
+    () => sales.filter(isCountedSale),
+    [sales]
+  )
   const totalRevenue = useMemo(
     () =>
       activeSales.reduce((sum, s) => sum + Number(s.total), 0) +
@@ -166,7 +151,7 @@ export default function Finances() {
           <p className="text-gray-500 dark:text-gray-400 text-sm">Recettes, dépenses et bénéfices</p>
         </div>
         <div className="flex gap-2">
-          <button className="btn-secondary" onClick={() => exportSalesToExcel(sales)}>
+          <button className="btn-secondary" onClick={() => exportSalesToExcel(activeSales)}>
             <FileSpreadsheet size={16} /> Export ventes
           </button>
           <button className="btn-primary" onClick={openCreate}>

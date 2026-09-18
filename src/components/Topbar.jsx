@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { Menu, Search, Bell, LogOut, User as UserIcon } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import ThemeToggle from './ThemeToggle'
-import { useDashboard } from '../hooks/useDashboard'
+import { useLowStock } from '../hooks/useDashboard'
 import { useProducts } from '../hooks/useProducts'
 import { useClients } from '../hooks/useEntities'
-import { ROLE_LABELS } from '../lib/constants'
+import { ROLE_LABELS, SHOP } from '../lib/constants'
 
 export default function Topbar({ onMenuClick }) {
   const { profile, signOut } = useAuth()
@@ -17,7 +17,7 @@ export default function Topbar({ onMenuClick }) {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const searchRef = useRef(null)
 
-  const { data: dashboard } = useDashboard()
+  const { data: lowStockData } = useLowStock()
   const { data: products = [] } = useProducts()
   const { data: clients = [] } = useClients()
 
@@ -36,7 +36,7 @@ export default function Topbar({ onMenuClick }) {
     ? clients.filter((c) => c.name.toLowerCase().includes(search.toLowerCase())).slice(0, 5)
     : []
 
-  const lowStock = dashboard?.lowStock || []
+  const lowStock = lowStockData || []
 
   return (
     <header className="h-16 bg-white dark:bg-darkcard border-b border-gray-200 dark:border-gray-700/60 flex items-center justify-between px-4 lg:px-6 gap-4 sticky top-0 z-20">
@@ -48,7 +48,7 @@ export default function Topbar({ onMenuClick }) {
         <div className="hidden sm:flex items-center gap-2">
           <img src="/mabane.png" alt="Logo Mabane" className="h-8 w-8 rounded-lg object-cover" />
           <div className="hidden md:block">
-            <p className="text-sm font-semibold">Quincaillerie Mabane</p>
+            <p className="text-sm font-semibold">{SHOP.name}</p>
           </div>
         </div>
 

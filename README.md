@@ -6,7 +6,7 @@ Stack : **React (Vite) + Tailwind CSS + React Query + Supabase (PostgreSQL/Auth/
 
 ## ✨ Fonctionnalités incluses
 
-- 🔐 Authentification Supabase (connexion, inscription admin, rôles admin/caissier/employé)
+- 🔐 Authentification Supabase (connexion, rôles admin/caissier/employé — comptes créés depuis le dashboard Supabase)
 - 🌞🌙 Mode clair / sombre avec sauvegarde de préférence
 - 📦 Gestion des produits (CRUD, image, catégorie, prix, stock, seuil d'alerte)
 - 🗂️ Gestion des catégories
@@ -57,10 +57,19 @@ npm run dev
 ```
 L'application est disponible sur `http://localhost:5173`.
 
-### 5. Créer le premier compte administrateur
-1. Depuis la page de connexion, cliquez sur **"Créer le compte administrateur"**.
-2. Renseignez vos informations. Le compte est automatiquement créé avec le rôle `admin` (le trigger SQL détecte qu’il s’agit du premier utilisateur).
-3. Les autres comptes (caissier, employé) sont créés par l’administrateur depuis la page **Utilisateurs** de l’application.
+### 5. Créer les comptes utilisateurs
+Il n'y a **pas de page d'inscription** dans l'application (elle permettrait à n'importe qui de se créer un compte).
+
+1. **Désactivez les inscriptions publiques** : Supabase → *Authentication → Sign In / Providers → Email* → décochez **"Allow new users to sign up"**.
+2. Créez le premier compte depuis le dashboard : *Authentication → Users → Add user → Create new user* (cochez *Auto Confirm User*). Le trigger SQL lui attribue automatiquement le rôle `admin` (premier utilisateur).
+3. Déployez la fonction Edge de gestion des comptes (une seule fois) :
+   ```bash
+   supabase functions deploy manage-users
+   supabase secrets set ALLOWED_ORIGIN=https://votre-domaine.com   # optionnel
+   ```
+4. L'administrateur crée ensuite les autres comptes (caissier, employé, admin) depuis la page **Utilisateurs** de l'application, et peut les supprimer ou changer leur rôle.
+
+> Le rôle demandé lors d'une inscription est toujours ignoré par le trigger : seule la page Utilisateurs (réservée à l'admin, via la fonction `manage-users`) peut attribuer un rôle.
 
 ## 📲 Envoi de factures via WhatsApp
 
@@ -80,23 +89,21 @@ src/
   context/        → AuthContext (session/rôle), ThemeContext (clair/sombre), ToastContext
   hooks/          → hooks React Query par entité (produits, ventes, stock, dashboard...)
   lib/            → client Supabase, constantes (infos boutique, rôles)
-  pages/          → une page par module (auth, dashboard, products, sales, stock...)
+  pages/          → une page par module (auth/Login, dashboard, products, sales, stock...)
   utils/          → génération PDF factures, envoi WhatsApp, export Excel
 supabase/
   schema.sql              → schéma complet + petites ventes + RPCs + RLS + bucket storage (tout-en-un)
+  functions/manage-users  → fonction Edge : création / suppression de comptes par l’admin
   functions/send-whatsapp → fonction Edge optionnelle (API Meta WhatsApp Cloud)
 ```
 
 ## 🧪 Tests & lint
 
 ```bash
-npm run lint     # vérifie la qualité du code (oxc)
+npm run lint     # vérifie la qualité du code (oxlint)
+npm test         # tests unitaires (vitest) : calculs de marge, dette, téléphone, devise
 npm run build    # vérifie que le build de production réussit
 ```
-
-## 📞 Contact Quincaillerie Mabane
-Mamadou Faye (Momo Faye) — Diouroup, Sénégal
-+221 77 845 28 72 · +221 78 213 33 12 · +221 77 979 20 90
 
 ## 🏗️ Build de production
 

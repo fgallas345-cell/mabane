@@ -2,52 +2,20 @@ import { WHATSAPP_MESSAGE, currency } from '../lib/constants'
 import { getInvoicePDFBlob } from './invoicePdf'
 import { getPaymentReceiptPDFBlob } from './paymentReceiptPdf'
 
-export async function sendReceiptViaWhatsApp(receipt) {
-  const phone = normalizePhone(receipt.clientName)
-  if (!phone) return
-
-  const message = `Reçu de paiement ${receipt.receiptNumber} pour la facture ${receipt.invoiceNumber} : ${currency(receipt.amount)} payé sur ${currency(receipt.total)}. Reste : ${currency(receipt.remaining || 0)}.`
-
-  try {
-    const pdfBlob = await getPaymentReceiptPDFBlob(receipt)
-    const pdfFile = new File([pdfBlob], `${receipt.receiptNumber || 'recu'}.pdf`, { type: 'application/pdf' })
-
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-      await navigator.share({
-        title: `Reçu ${receipt.receiptNumber}`,
-        text: message,
-        files: [pdfFile],
-      })
-      return
-    }
-
-    if (navigator.share) {
-      await navigator.share({
-        title: `Reçu ${receipt.receiptNumber}`,
-        text: message,
-        files: [pdfFile],
-      })
-      return
-    }
-  } catch (error) {
-    console.warn('Impossible de partager le reçu PDF, ouverture de WhatsApp en fallback', error)
-  }
-
-  openWhatsAppLink(phone, message)
-}
-
 /**
  * Normalise un numéro de téléphone sénégalais/international pour wa.me
  */
 export function normalizePhone(phone) {
   if (!phone) return ''
-  let cleaned = phone.replace(/[\s.\-()]/g, '')
+  let cleaned = String(phone).replace(/[\s.\-()]/g, '')
   if (cleaned.startsWith('00')) cleaned = '+' + cleaned.slice(2)
   if (!cleaned.startsWith('+')) {
     // Numéro sénégalais local (9 chiffres) -> ajouter indicatif +221
     cleaned = cleaned.startsWith('221') ? '+' + cleaned : '+221' + cleaned.replace(/^0/, '')
   }
-  return cleaned.replace('+', '')
+  cleaned = cleaned.replace('+', '')
+  // Un numéro wa.me ne contient que des chiffres
+  return /^\d{8,15}$/.test(cleaned) ? cleaned : ''
 }
 
 function openWhatsAppLink(phone, message) {
@@ -56,7 +24,26 @@ function openWhatsAppLink(phone, message) {
 }
 
 /**
- * Partage la facture en PDF via le Web Share API si possible, sinon ouvre WhatsApp Web avec le message.
+ * Tente de partager un PDF via le Web Share API (mobile) ; renvoie false si impossible
+ * (navigateur sans support fichiers, partage annulé, etc.).
+ */
+async function sharePdf({ title, text, blob, fileName }) {
+  if (!navigator.share) return false
+  const file = new File([blob], fileName, { type: 'application/pdf' })
+  if (navigator.canShare && !navigator.canShare({ files: [file] })) return false
+  try {
+    await navigator.share({ title, text, files: [file] })
+    return true
+  } catch (error) {
+    // AbortError = l'utilisateur a fermé la feuille de partage : on ne force pas le fallback
+    if (error?.name === 'AbortError') return true
+    console.warn('Partage du PDF impossible, ouverture de WhatsApp en fallback', error)
+    return false
+  }
+}
+
+/**
+ * Partage la facture en PDF via le Web Share API si possible, sinon ouvre WhatsApp avec le message.
  */
 export async function sendInvoiceViaWhatsApp(sale) {
   const phone = normalizePhone(sale.clients?.phone)
@@ -65,29 +52,41 @@ export async function sendInvoiceViaWhatsApp(sale) {
   const message = WHATSAPP_MESSAGE(sale.clients?.name, sale.invoice_number, currency(sale.total))
 
   try {
-    const pdfBlob = await getInvoicePDFBlob(sale)
-    const pdfFile = new File([pdfBlob], `${sale.invoice_number}.pdf`, { type: 'application/pdf' })
-
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-      await navigator.share({
-        title: `Facture ${sale.invoice_number}`,
-        text: message,
-        files: [pdfFile],
-      })
-      return
-    }
-
-    // Certains navigateurs supportent share() sans canShare()
-    if (navigator.share) {
-      await navigator.share({
-        title: `Facture ${sale.invoice_number}`,
-        text: message,
-        files: [pdfFile],
-      })
-      return
-    }
+    const blob = await getInvoicePDFBlob(sale)
+    const shared = await sharePdf({
+      title: `Facture ${sale.invoice_number}`,
+      text: message,
+      blob,
+      fileName: `${sale.invoice_number}.pdf`,
+    })
+    if (shared) return
   } catch (error) {
-    console.warn('Impossible de partager le PDF, ouverture de WhatsApp en fallback', error)
+    console.warn('Génération du PDF impossible, ouverture de WhatsApp en fallback', error)
+  }
+
+  openWhatsAppLink(phone, message)
+}
+
+/**
+ * Même principe pour un reçu de paiement. `receipt.clientPhone` est requis.
+ */
+export async function sendReceiptViaWhatsApp(receipt) {
+  const phone = normalizePhone(receipt.clientPhone)
+  if (!phone) return
+
+  const message = `Reçu de paiement ${receipt.receiptNumber} pour la facture ${receipt.invoiceNumber} : ${currency(receipt.amount)} payé sur ${currency(receipt.total)}. Reste : ${currency(receipt.remaining || 0)}.`
+
+  try {
+    const blob = await getPaymentReceiptPDFBlob(receipt)
+    const shared = await sharePdf({
+      title: `Reçu ${receipt.receiptNumber}`,
+      text: message,
+      blob,
+      fileName: `${receipt.receiptNumber || 'recu'}.pdf`,
+    })
+    if (shared) return
+  } catch (error) {
+    console.warn('Génération du PDF impossible, ouverture de WhatsApp en fallback', error)
   }
 
   openWhatsAppLink(phone, message)

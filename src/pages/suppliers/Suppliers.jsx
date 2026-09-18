@@ -439,7 +439,7 @@ export default function Suppliers() {
                             : [...prev, product.id]
                         )
                       }}
-                      className="checkbox"
+                      className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-800"
                     />
                     <span className="text-sm truncate">{product.name}</span>
                   </label>
