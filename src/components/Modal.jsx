@@ -6,6 +6,10 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
 export default function Modal({ open, onClose, title, children, maxWidth = 'max-w-lg' }) {
   const panelRef = useRef(null)
   const titleId = useId()
+  // onClose est souvent une fonction inline (nouvelle à chaque rendu) : on la garde dans une ref
+  // pour que l'effet ci-dessous ne se relance pas (et ne vole pas le focus) à chaque frappe.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => { onCloseRef.current = onClose })
 
   // Échap pour fermer, Tab piégé dans la boîte de dialogue, focus initial sur le premier champ
   useEffect(() => {
@@ -18,7 +22,7 @@ export default function Modal({ open, onClose, title, children, maxWidth = 'max-
     const onKeyDown = (e) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        onClose?.()
+        onCloseRef.current?.()
         return
       }
       if (e.key !== 'Tab' || !panel) return
@@ -39,7 +43,7 @@ export default function Modal({ open, onClose, title, children, maxWidth = 'max-
       document.removeEventListener('keydown', onKeyDown)
       previouslyFocused?.focus?.()
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
   return (
