@@ -149,7 +149,7 @@ export default function Clients() {
 
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize)
   const clientSales = historyClient ? sales.filter((s) => s.client_id === historyClient.id) : []
-  const historyTotal = clientSales.reduce((sum, s) => sum + Number(s.total || 0), 0)
+  const historyTotal = clientSales.filter(isCountedSale).reduce((sum, s) => sum + Number(s.total || 0), 0)
   const historyDette = clientSales
     .filter(isCountedSale)
     .reduce((sum, s) => sum + (Number(s.total) - Number(s.amount_paid)), 0)
@@ -270,7 +270,7 @@ export default function Clients() {
                             <Phone size={13} /> {c.phone}
                           </a>
                         </td>
-                        <td className="table-td">
+                        <td className="table-td whitespace-normal max-w-[220px]">
                           {c.address ? (
                             <span className="inline-flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
                               <MapPin size={13} className="shrink-0" /> {c.address}
@@ -390,13 +390,15 @@ export default function Clients() {
                 return (
                   <div key={s.id} className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/60">
                     <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-semibold px-1.5 py-0.5 rounded bg-white dark:bg-gray-900/60">{s.invoice_number}</span>
+                      <span className="font-mono text-xs font-semibold px-1.5 py-0.5 rounded bg-white dark:bg-gray-900/60 whitespace-nowrap">{s.invoice_number}</span>
                       <p className="text-xs text-gray-400">{new Date(s.created_at).toLocaleDateString('fr-FR')}</p>
                     </div>
                     <div className="flex items-center justify-between mt-2">
                       <p className="font-semibold text-sm tabular-nums">{currency(s.total)}</p>
                       {s.status === 'annulee' ? (
                         <span className="text-xs font-medium text-gray-400">Annulée</span>
+                      ) : s.quote_status === 'draft' ? (
+                        <span className="text-xs font-medium text-purple-600 dark:text-purple-400">Devis</span>
                       ) : due > 0 ? (
                         <button
                           className="text-xs font-medium text-brand-600 hover:underline flex items-center gap-1"
@@ -422,7 +424,7 @@ export default function Clients() {
           <form onSubmit={handleAddPayment} className="space-y-4">
             {paymentError && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">{paymentError}</div>}
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Facture <strong>{payingSale.invoice_number}</strong> — solde dû :{' '}
+              Facture <strong className="whitespace-nowrap">{payingSale.invoice_number}</strong> — solde dû :{' '}
               <span className="text-red-500 font-semibold">{currency(Number(payingSale.total) - Number(payingSale.amount_paid))}</span>
             </p>
             <div>
@@ -433,10 +435,17 @@ export default function Clients() {
                 max={Number(payingSale.total) - Number(payingSale.amount_paid)}
                 required
                 autoFocus
-                className="input"
+                className="input text-lg font-semibold"
                 value={paymentAmount}
                 onChange={(e) => setPaymentAmount(e.target.value)}
               />
+              <button
+                type="button"
+                className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 mt-1.5"
+                onClick={() => setPaymentAmount(String(Number(payingSale.total) - Number(payingSale.amount_paid)))}
+              >
+                Solder la totalité
+              </button>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" className="btn-secondary" onClick={() => setPayingSale(null)}>Annuler</button>

@@ -8,6 +8,7 @@ import { useShopSettings } from '../../hooks/useShopSettings'
 import { useToast } from '../../context/ToastContext'
 import Modal from '../../components/Modal'
 import ActionButton from '../../components/ActionButton'
+import { DetailHeader, DetailList, DetailRow, DetailActions } from '../../components/Detail'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Pagination from '../../components/Pagination'
 import { currency } from '../../lib/constants'
@@ -423,7 +424,10 @@ export default function Products() {
             </div>
             <div>
               <label className="label">Unité</label>
-              <input className="input" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="unité, sac, mètre..." />
+              <input className="input" list="unit-suggestions" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="unité, sac, mètre..." />
+              <datalist id="unit-suggestions">
+                {['unité', 'sac', 'mètre', 'kg', 'litre', 'rouleau', 'barre', 'boîte', 'paire'].map((u) => <option key={u} value={u} />)}
+              </datalist>
             </div>
           </div>
 
@@ -437,6 +441,17 @@ export default function Products() {
               <input type="number" min="0" required className="input" value={form.sale_price} onChange={(e) => setForm({ ...form, sale_price: e.target.value })} />
             </div>
           </div>
+          {Number(form.sale_price) > 0 && (() => {
+            const margin = Number(form.sale_price) - Number(form.purchase_price || 0)
+            const loss = margin < 0
+            return (
+              <p className={`text-sm rounded-lg px-3 py-2 -mt-1 tabular-nums ${loss ? 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'}`}>
+                {loss ? 'Vendu à perte : ' : 'Marge : '}
+                <strong>{currency(margin)}</strong> par {form.unit || 'unité'}
+                {Number(form.purchase_price) > 0 && ` (${margin >= 0 ? '+' : ''}${Math.round((margin / Number(form.purchase_price)) * 100)} %)`}
+              </p>
+            )
+          })()}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -501,33 +516,42 @@ export default function Products() {
       <Modal open={!!detailProduct} onClose={() => setDetailProduct(null)} title="Détail du produit" maxWidth="max-w-lg">
         {detailProduct && (
           <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              {detailProduct.image_url ? (
-                <img src={detailProduct.image_url} alt={detailProduct.name} className="h-14 w-14 rounded-lg object-cover shrink-0" />
-              ) : (
-                <div className="h-14 w-14 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
-                  <Package size={22} />
-                </div>
-              )}
-              <div className="min-w-0">
-                <p className="font-semibold truncate">{detailProduct.name}</p>
-                <CategoryBadge name={detailProduct.categories?.name} />
-              </div>
-            </div>
-            <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
-              <div className="flex justify-between p-3 text-sm"><span className="text-gray-500">Prix d'achat</span><span className="font-medium">{currency(detailProduct.purchase_price)}</span></div>
-              <div className="flex justify-between p-3 text-sm"><span className="text-gray-500">Prix de vente</span><span className="font-medium">{currency(detailProduct.sale_price)}</span></div>
-              <div className="flex justify-between p-3 text-sm"><span className="text-gray-500">Stock</span><StockBadge stock={detailProduct.stock} threshold={detailProduct.alert_threshold} unit={detailProduct.unit} /></div>
-              <div className="flex justify-between p-3 text-sm"><span className="text-gray-500">Seuil d'alerte</span><span>{detailProduct.alert_threshold} {detailProduct.unit || 'unité'}</span></div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button className="btn-secondary" onClick={() => { openEdit(detailProduct); setDetailProduct(null) }}>
-                <Pencil size={15} /> Modifier
-              </button>
+            <DetailHeader
+              avatar={
+                detailProduct.image_url ? (
+                  <img src={detailProduct.image_url} alt={detailProduct.name} className="h-14 w-14 rounded-lg object-cover shrink-0" />
+                ) : (
+                  <div className="h-14 w-14 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
+                    <Package size={22} />
+                  </div>
+                )
+              }
+              title={detailProduct.name}
+              subtitle={detailProduct.categories?.name || 'Sans catégorie'}
+            />
+            <DetailList title="Prix">
+              <DetailRow label="Prix d'achat">{currency(detailProduct.purchase_price)}</DetailRow>
+              <DetailRow label="Prix de vente" strong>{currency(detailProduct.sale_price)}</DetailRow>
+              <DetailRow label="Marge unitaire">
+                <span className="inline-flex items-center gap-2">
+                  {currency(Number(detailProduct.sale_price) - Number(detailProduct.purchase_price))}
+                  <MarginPill purchase={detailProduct.purchase_price} sale={detailProduct.sale_price} />
+                </span>
+              </DetailRow>
+            </DetailList>
+            <DetailList title="Stock">
+              <DetailRow label="En stock"><StockBadge stock={detailProduct.stock} threshold={detailProduct.alert_threshold} unit={detailProduct.unit} /></DetailRow>
+              <DetailRow label="Seuil d'alerte">{detailProduct.alert_threshold} {detailProduct.unit || 'unité'}</DetailRow>
+              <DetailRow label="Valeur du stock (au prix d'achat)">{currency(Number(detailProduct.stock) * Number(detailProduct.purchase_price))}</DetailRow>
+            </DetailList>
+            <DetailActions>
               <button className="btn-danger" onClick={() => setConfirmDelete(detailProduct)}>
                 <Trash2 size={15} /> Supprimer
               </button>
-            </div>
+              <button className="btn-secondary" onClick={() => { openEdit(detailProduct); setDetailProduct(null) }}>
+                <Pencil size={15} /> Modifier
+              </button>
+            </DetailActions>
           </div>
         )}
       </Modal>

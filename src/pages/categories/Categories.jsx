@@ -77,7 +77,7 @@ export default function Categories() {
             className="input pl-9"
             placeholder="Rechercher une catégorie..."
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+            onChange={(e) => setSearch(e.target.value)}
           />
         </div>
       )}

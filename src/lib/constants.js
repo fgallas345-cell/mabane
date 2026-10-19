@@ -39,13 +39,22 @@ export const ROLE_LABELS = {
   employe: 'Employé',
 }
 
+export const PAYMENT_METHOD_LABELS = {
+  especes: 'Espèces',
+  mobile_money: 'Mobile Money',
+  virement: 'Virement',
+  cheque: 'Chèque',
+  carte: 'Carte',
+}
+
 export const STOCK_MOVEMENT_TYPES = {
   ENTREE: 'entree',
   SORTIE: 'sortie',
 }
 
-export const WHATSAPP_MESSAGE = (clientName, invoiceNumber, total) =>
-  `Bonjour ${clientName || ''}, voici votre facture N°${invoiceNumber} de la Quincaillerie Mabane d'un montant de ${total} FCFA. Merci pour votre confiance 🙏`
+// total / due : montants déjà formatés (currency). due est omis quand la facture est soldée.
+export const WHATSAPP_MESSAGE = (clientName, invoiceNumber, total, due) =>
+  `Bonjour${clientName ? ` ${clientName}` : ''}, voici votre facture N°${invoiceNumber} de ${SHOP.name} d'un montant de ${total}.${due ? ` Reste à payer : ${due}.` : ''} Merci pour votre confiance.`
 
 export const currency = (value) => {
   const n = Number(value || 0)

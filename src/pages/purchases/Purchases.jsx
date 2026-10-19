@@ -8,9 +8,12 @@ import { useToast } from '../../context/ToastContext'
 import Pagination from '../../components/Pagination'
 import Modal from '../../components/Modal'
 import ActionButton from '../../components/ActionButton'
+import { DetailHeader, DetailList, DetailRow, Callout, DetailActions } from '../../components/Detail'
+import RowActions from '../../components/RowActions'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { currency } from '../../lib/constants'
 import SearchableSelect from '../../components/SearchableSelect'
+import QtyStepper from '../../components/QtyStepper'
 
 // --- Helpers d'affichage ---
 
@@ -37,6 +40,47 @@ function StatusBadge({ status }) {
   }
   const s = map[status] || map.credit
   return <span className={`badge ${s.cls}`}>{s.label}</span>
+}
+
+// Ligne d'article d'un achat : quantité (− / +), coût unitaire, total, retrait
+function CostLine({ item, onQuantity, onCost, onRemove }) {
+  return (
+    <div className="p-3">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm font-medium truncate">{item.product_name}</p>
+        <button
+          type="button"
+          aria-label={`Retirer ${item.product_name}`}
+          className="p-1.5 -mr-1.5 -mt-1 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg"
+          onClick={onRemove}
+        >
+          <Trash2 size={15} />
+        </button>
+      </div>
+      <div className="flex flex-wrap items-end justify-between gap-3 mt-2">
+        <div className="flex items-end gap-3">
+          <div>
+            <p className="text-[11px] text-gray-400 mb-1">Quantité</p>
+            <QtyStepper value={item.quantity} onChange={onQuantity} />
+          </div>
+          <div>
+            <p className="text-[11px] text-gray-400 mb-1">Coût unitaire</p>
+            <input
+              type="number"
+              inputMode="numeric"
+              min="0"
+              aria-label="Coût unitaire"
+              className="input w-28 h-9 text-right"
+              value={item.unit_cost}
+              onFocus={(e) => e.target.select()}
+              onChange={(e) => onCost(e.target.value)}
+            />
+          </div>
+        </div>
+        <p className="text-sm font-semibold tabular-nums">{currency((Number(item.quantity) || 0) * (Number(item.unit_cost) || 0))}</p>
+      </div>
+    </div>
+  )
 }
 
 export default function Purchases() {
@@ -118,9 +162,9 @@ export default function Purchases() {
     setError('')
   }
 
-  const addProduct = () => {
-    if (!productToAdd) return
-    const product = products.find((p) => p.id === productToAdd)
+  const addProduct = (id = productToAdd) => {
+    if (!id) return
+    const product = products.find((p) => p.id === id)
     if (!product) return
     if (cart.find((c) => c.product_id === product.id)) {
       setCart((c) => c.map((item) => (item.product_id === product.id ? { ...item, quantity: item.quantity + 1 } : item)))
@@ -131,7 +175,7 @@ export default function Purchases() {
   }
 
   const updateCartField = (productId, field, value) => {
-    setCart((c) => c.map((item) => (item.product_id === productId ? { ...item, [field]: value } : item)))
+    setCart((c) => c.map((item) => (item.product_id === productId ? { ...item, [field]: field === 'unit_cost' ? Math.max(0, Number(value) || 0) : value } : item)))
   }
 
   const removeFromCart = (productId) => {
@@ -263,9 +307,9 @@ export default function Purchases() {
     )
   }
 
-  const addEditProduct = () => {
-    if (!editProductToAdd || !editPurchase) return
-    const product = products.find((p) => p.id === editProductToAdd)
+  const addEditProduct = (id = editProductToAdd) => {
+    if (!id || !editPurchase) return
+    const product = products.find((p) => p.id === id)
     if (!product) return
     setEditPurchaseItems((items) => {
       const existing = items.find((i) => i.product_id === product.id)
@@ -427,7 +471,7 @@ export default function Purchases() {
                         className="hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors cursor-pointer"
                         onClick={() => setDetailPurchase(p)}
                       >
-                        <td className="table-td font-mono text-xs">{p.purchase_number}</td>
+                        <td className="table-td font-mono text-xs whitespace-nowrap">{p.purchase_number}</td>
                         <td className="table-td">
                           <div className="flex items-center gap-2">
                             <Truck size={14} className="text-gray-400 shrink-0" />
@@ -440,27 +484,27 @@ export default function Purchases() {
                           {due > 0 ? <span className="text-red-500 font-medium">{currency(due)}</span> : <span className="text-gray-400">—</span>}
                         </td>
                         <td className="table-td"><StatusBadge status={p.status} /></td>
-                        <td className="table-td">
-                          <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                        <td className="table-td" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-0.5">
                             <ActionButton icon={Eye} title="Voir le détail" onClick={() => setDetailPurchase(p)} />
-                            {p.status !== 'annulee' && due > 0 && (
-                              <ActionButton icon={CreditCard} title="Enregistrer un paiement" tone="emerald" onClick={() => { setPaymentOpen(p); setPaymentAmount(''); setPaymentError('') }} />
-                            )}
-                            {p.status !== 'annulee' && (
-                              <ActionButton icon={Edit} title="Modifier l'achat" onClick={() => {
-                                setEditPurchase(p)
-                                setEditSupplierId(p.supplier_id || '')
-                                setEditNotes(p.notes || '')
-                                setEditPurchaseItems(p.purchase_items || [])
-                                setEditProductToAdd('')
-                              }} />
-                            )}
-                            {isAdmin && p.status !== 'annulee' && (
-                              <ActionButton icon={RotateCcw} title="Annuler" tone="red" onClick={() => setConfirmCancel(p)} />
-                            )}
-                            {isAdmin && p.status === 'annulee' && (
-                              <ActionButton icon={Trash2} title="Supprimer" tone="red" onClick={() => setConfirmDelete(p)} />
-                            )}
+                            <RowActions
+                              items={[
+                                p.status !== 'annulee' && due > 0 && { icon: CreditCard, label: 'Enregistrer un paiement', tone: 'emerald', onClick: () => { setPaymentOpen(p); setPaymentAmount(''); setPaymentError('') } },
+                                p.status !== 'annulee' && {
+                                  icon: Edit,
+                                  label: 'Modifier l’achat',
+                                  onClick: () => {
+                                    setEditPurchase(p)
+                                    setEditSupplierId(p.supplier_id || '')
+                                    setEditNotes(p.notes || '')
+                                    setEditPurchaseItems(p.purchase_items || [])
+                                    setEditProductToAdd('')
+                                  },
+                                },
+                                isAdmin && p.status !== 'annulee' && { icon: RotateCcw, label: 'Annuler l’achat', tone: 'red', onClick: () => setConfirmCancel(p) },
+                                isAdmin && p.status === 'annulee' && { icon: Trash2, label: 'Supprimer l’achat', tone: 'red', onClick: () => setConfirmDelete(p) },
+                              ]}
+                            />
                           </div>
                         </td>
                       </tr>
@@ -484,7 +528,7 @@ export default function Purchases() {
                       </div>
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{p.supplier_name || p.suppliers?.name || '—'}</p>
-                        <span className="inline-block mt-0.5 font-mono text-[11px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500">
+                        <span className="inline-block mt-0.5 font-mono text-[11px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 whitespace-nowrap">
                           {p.purchase_number}
                         </span>
                       </div>
@@ -532,261 +576,223 @@ export default function Purchases() {
 
       {/* ---- Modal: nouvel achat ---- */}
       <Modal open={newPurchaseOpen} onClose={() => setNewPurchaseOpen(false)} title="Nouvel achat fournisseur" maxWidth="max-w-2xl">
-        <form onSubmit={handleCreatePurchase} className="space-y-4">
-          {error && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">{error}</div>}
-
-          <div>
-            <label className="label">Fournisseur</label>
-            <SearchableSelect
-              value={supplierId}
-              onChange={setSupplierId}
-              options={supplierOptions}
-              placeholder="Rechercher un fournisseur..."
-              emptyMessage="Aucun fournisseur trouvé"
-            />
-            {suppliers.length === 0 && (
-              <p className="text-xs text-amber-500 mt-1">Ajoutez d'abord un fournisseur dans la page Fournisseurs.</p>
-            )}
-          </div>
-
-          <div className="flex gap-2">
-            <div className="flex-1 min-w-0">
+        <form onSubmit={handleCreatePurchase}>
+          <div className="space-y-4">
+            <div>
+              <label className="label">Fournisseur</label>
               <SearchableSelect
-                value={productToAdd}
-                onChange={setProductToAdd}
+                value={supplierId}
+                onChange={setSupplierId}
+                options={supplierOptions}
+                placeholder="Rechercher un fournisseur..."
+                emptyMessage="Aucun fournisseur trouvé"
+                autoFocus
+              />
+              {suppliers.length === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Ajoutez d'abord un fournisseur dans la page Fournisseurs.</p>
+              )}
+            </div>
+
+            <div>
+              <label className="label">Ajouter un produit</label>
+              <SearchableSelect
+                value=""
+                onChange={(id) => addProduct(id)}
                 options={productOptions}
-                placeholder="Rechercher un produit..."
+                placeholder="Tapez le nom du produit puis Entrée..."
                 emptyMessage="Aucun produit trouvé"
+                clearOnSelect
               />
             </div>
-            <button type="button" className="btn-secondary shrink-0" onClick={addProduct}>
-              <Plus size={16} /> Ajouter
-            </button>
-          </div>
 
-          {cart.length > 0 && (
-            <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
-              {cart.map((item) => (
-                <div key={item.product_id} className="flex items-center gap-2 p-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{item.product_name}</p>
-                  </div>
-                  <div className="flex flex-col items-center">
-                    <span className="text-[10px] text-gray-400">Qté</span>
-                    <input
-                      type="number"
-                      min="1"
-                      className="input w-16 text-center !py-1"
-                      value={item.quantity}
-                      onChange={(e) => updateCartField(item.product_id, 'quantity', Math.max(1, Number(e.target.value)))}
-                    />
-                  </div>
-                  <div className="flex flex-col items-center">
-                    <span className="text-[10px] text-gray-400">Coût unitaire</span>
-                    <input
-                      type="number"
-                      min="0"
-                      className="input w-24 text-center !py-1"
-                      value={item.unit_cost}
-                      onChange={(e) => updateCartField(item.product_id, 'unit_cost', Math.max(0, Number(e.target.value)))}
-                    />
-                  </div>
-                  <p className="w-24 text-right text-sm font-semibold shrink-0">{currency(item.quantity * item.unit_cost)}</p>
-                  <button type="button" className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg shrink-0" onClick={() => removeFromCart(item.product_id)}>
-                    <Trash2 size={14} />
-                  </button>
+            {cart.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 py-8 text-center">
+                <PackagePlus size={22} className="mx-auto text-gray-300 dark:text-gray-600" />
+                <p className="text-sm text-gray-400 mt-2">Aucun produit ajouté.</p>
+              </div>
+            ) : (
+              <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
+                {cart.map((item) => (
+                  <CostLine
+                    key={item.product_id}
+                    item={item}
+                    onQuantity={(q) => updateCartField(item.product_id, 'quantity', q)}
+                    onCost={(c) => updateCartField(item.product_id, 'unit_cost', c)}
+                    onRemove={() => removeFromCart(item.product_id)}
+                  />
+                ))}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="label" htmlFor="purchase-paid">Payé maintenant (FCFA)</label>
+                <input id="purchase-paid" type="number" inputMode="numeric" min="0" max={subtotal} className="input" placeholder="0" value={amountPaid} onFocus={(e) => e.target.select()} onChange={(e) => setAmountPaid(e.target.value)} />
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  <button type="button" className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" onClick={() => setAmountPaid(String(subtotal))}>Tout payer</button>
+                  <button type="button" className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" onClick={() => setAmountPaid('0')}>À crédit</button>
                 </div>
-              ))}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="label">Montant payé maintenant (FCFA)</label>
-              <input type="number" min="0" max={subtotal} className="input" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} />
-              <p className="text-xs text-gray-400 mt-1">Laissez 0 si c'est un achat entièrement à crédit.</p>
-            </div>
-            <div>
-              <label className="label">Notes (optionnel)</label>
-              <input className="input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Référence bon de livraison..." />
+              </div>
+              <div>
+                <label className="label" htmlFor="purchase-notes">Note <span className="text-gray-400 font-normal">(optionnel)</span></label>
+                <input id="purchase-notes" className="input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="N° du bon de livraison..." />
+              </div>
             </div>
           </div>
 
-          <div className="border-t border-gray-200 dark:border-gray-700/60 pt-3 space-y-1">
-            <div className="flex justify-between text-lg font-bold"><span>Total achat</span><span>{currency(subtotal)}</span></div>
-            <div className="flex justify-between text-sm text-gray-500">
-              <span>Reste à payer (dette)</span>
-              <span className={Number(amountPaid || 0) < subtotal ? 'text-red-500 font-medium' : ''}>
-                {currency(Math.max(0, subtotal - Number(amountPaid || 0)))}
-              </span>
+          <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-5 px-5 sm:px-6 py-3 bg-white dark:bg-darkcard border-t border-gray-200 dark:border-gray-700/60 rounded-b-xl">
+            {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400 mb-2">{error}</p>}
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs text-gray-400">Total de l'achat</p>
+                <p className="text-xl font-semibold tabular-nums leading-tight">{currency(subtotal)}</p>
+                {Number(amountPaid || 0) < subtotal && subtotal > 0 && (
+                  <p className="text-xs text-red-500 tabular-nums">Dette : {currency(Math.max(0, subtotal - Number(amountPaid || 0)))}</p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button type="button" className="btn-secondary" onClick={() => setNewPurchaseOpen(false)}>Annuler</button>
+                <button type="submit" className="btn-primary" disabled={createPurchase.isPending || cart.length === 0}>
+                  {createPurchase.isPending ? 'Enregistrement...' : "Enregistrer l'achat"}
+                </button>
+              </div>
             </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className="btn-secondary" onClick={() => setNewPurchaseOpen(false)}>Annuler</button>
-            <button type="submit" className="btn-primary" disabled={createPurchase.isPending}>
-              <PackagePlus size={16} /> {createPurchase.isPending ? 'Enregistrement...' : "Enregistrer l'achat"}
-            </button>
           </div>
         </form>
       </Modal>
 
       {/* ---- Modal: modifier un achat ---- */}
-      <Modal open={!!editPurchase} onClose={() => setEditPurchase(null)} title={`Modifier achat ${editPurchase?.purchase_number || ''}`} maxWidth="max-w-2xl">
-        {editPurchase && (
-          <form onSubmit={handleUpdatePurchase} className="space-y-4">
-            <div>
-                <label className="label">Fournisseur</label>
-                <SearchableSelect
-                  value={editSupplierId}
-                  onChange={setEditSupplierId}
-                  options={supplierOptions}
-                  placeholder="Rechercher un fournisseur..."
-                  emptyMessage="Aucun fournisseur trouvé"
-                />
-            </div>
-
-            <div>
-              <label className="label">Ajouter un produit à l'achat</label>
-              <div className="flex gap-2">
-                <div className="flex-1 min-w-0">
+      <Modal open={!!editPurchase} onClose={() => setEditPurchase(null)} title={<>Modifier l'achat <span className="whitespace-nowrap font-mono">{editPurchase?.purchase_number}</span></>} maxWidth="max-w-2xl">
+        {editPurchase && (() => {
+          const editTotal = editPurchaseItems.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unit_cost) || 0), 0)
+          return (
+            <form onSubmit={handleUpdatePurchase}>
+              <div className="space-y-4">
+                <div>
+                  <label className="label">Fournisseur</label>
                   <SearchableSelect
-                    value={editProductToAdd}
-                    onChange={setEditProductToAdd}
-                    options={productOptions}
-                    placeholder="Rechercher un produit..."
-                    emptyMessage="Aucun produit trouvé"
+                    value={editSupplierId}
+                    onChange={setEditSupplierId}
+                    options={supplierOptions}
+                    placeholder="Rechercher un fournisseur..."
+                    emptyMessage="Aucun fournisseur trouvé"
                   />
                 </div>
-                <button type="button" className="btn-secondary shrink-0" onClick={addEditProduct}>
-                  <Plus size={16} /> Ajouter
-                </button>
-              </div>
-              <p className="text-xs text-gray-400 mt-1">Modifiez la quantité et le coût unitaire, ou supprimez des articles puis enregistrez.</p>
-            </div>
 
-            <div>
-              <label className="label">Articles de l'achat</label>
-              <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
-                {editPurchaseItems.length === 0 ? (
-                  <p className="text-sm text-gray-400 p-3">Aucun article</p>
-                ) : (
-                  editPurchaseItems.map((item) => (
-                    <div key={item.id} className="flex items-center gap-2 p-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{item.product_name}</p>
-                      </div>
-                      <div className="flex flex-col items-center">
-                        <span className="text-[10px] text-gray-400">Qté</span>
-                        <input
-                          type="number"
-                          min="1"
-                          className="input w-16 text-center !py-1"
-                          value={item.quantity}
-                          onChange={(e) => handleEditPurchaseItemQuantity(item.id, Number(e.target.value))}
-                        />
-                      </div>
-                      <div className="flex flex-col items-center">
-                        <span className="text-[10px] text-gray-400">Coût unitaire</span>
-                        <input
-                          type="number"
-                          min="0"
-                          className="input w-24 text-center !py-1"
-                          value={item.unit_cost}
-                          onChange={(e) => handleEditPurchaseItemCost(item.id, Number(e.target.value))}
-                        />
-                      </div>
-                      <p className="w-24 text-right text-sm font-semibold shrink-0">{currency(item.quantity * item.unit_cost)}</p>
-                      <button
-                        type="button"
-                        className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg shrink-0"
-                        onClick={() => handleRemoveEditPurchaseItem(item.id)}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+                <div>
+                  <label className="label">Ajouter un produit</label>
+                  <SearchableSelect
+                    value=""
+                    onChange={(id) => addEditProduct(id)}
+                    options={productOptions}
+                    placeholder="Tapez le nom du produit puis Entrée..."
+                    emptyMessage="Aucun produit trouvé"
+                    clearOnSelect
+                  />
+                </div>
 
-            <div>
-              <label className="label">Notes (optionnel)</label>
-              <input className="input" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Référence bon de livraison..." />
-            </div>
+                <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
+                  {editPurchaseItems.length === 0 ? (
+                    <p className="text-sm text-gray-400 p-4 text-center">Aucun article : ajoutez-en au moins un.</p>
+                  ) : (
+                    editPurchaseItems.map((item) => (
+                      <CostLine
+                        key={item.id}
+                        item={item}
+                        onQuantity={(q) => handleEditPurchaseItemQuantity(item.id, q)}
+                        onCost={(c) => handleEditPurchaseItemCost(item.id, c)}
+                        onRemove={() => handleRemoveEditPurchaseItem(item.id)}
+                      />
+                    ))
+                  )}
+                </div>
 
-            <div className="border-t border-gray-200 dark:border-gray-700/60 pt-3 space-y-1">
-              <div className="flex justify-between text-lg font-bold">
-                <span>Total achat</span>
-                <span>{currency(editPurchaseItems.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unit_cost) || 0), 0))}</span>
-              </div>
-              <div className="flex justify-between text-sm text-gray-500">
-                <span>Déjà payé</span>
-                <span>{currency(editPurchase.amount_paid)}</span>
-              </div>
-            </div>
+                <div>
+                  <label className="label" htmlFor="edit-purchase-notes">Note <span className="text-gray-400 font-normal">(optionnel)</span></label>
+                  <input id="edit-purchase-notes" className="input" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="N° du bon de livraison..." />
+                </div>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" className="btn-secondary" onClick={() => setEditPurchase(null)}>Annuler</button>
-              <button type="submit" className="btn-primary" disabled={updatePurchaseItems.isPending || updatePurchase.isPending}>
-                {updatePurchaseItems.isPending || updatePurchase.isPending ? 'Enregistrement...' : 'Enregistrer'}
-              </button>
-            </div>
-          </form>
-        )}
+                <p className="text-sm text-gray-500 dark:text-gray-400">Déjà payé : <span className="font-medium tabular-nums">{currency(editPurchase.amount_paid)}</span></p>
+              </div>
+
+              <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-5 px-5 sm:px-6 py-3 bg-white dark:bg-darkcard border-t border-gray-200 dark:border-gray-700/60 rounded-b-xl">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs text-gray-400">Nouveau total</p>
+                    <p className="text-xl font-semibold tabular-nums leading-tight">{currency(editTotal)}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" className="btn-secondary" onClick={() => setEditPurchase(null)}>Annuler</button>
+                    <button type="submit" className="btn-primary" disabled={updatePurchaseItems.isPending || updatePurchase.isPending || editPurchaseItems.length === 0}>
+                      {updatePurchaseItems.isPending || updatePurchase.isPending ? 'Enregistrement...' : 'Enregistrer'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </form>
+          )
+        })()}
       </Modal>
 
       {/* ---- Modal: détail achat ---- */}
-      <Modal open={!!detailPurchase} onClose={() => setDetailPurchase(null)} title={`Achat ${detailPurchase?.purchase_number || ''}`} maxWidth="max-w-lg">
-        {detailPurchase && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
-                <Truck size={16} />
-              </div>
-              <div>
-                <p className="text-sm font-medium">{detailPurchase.supplier_name || detailPurchase.suppliers?.name}</p>
-                <p className="text-xs text-gray-400">{new Date(detailPurchase.created_at).toLocaleString('fr-FR')}</p>
-              </div>
-              <div className="ml-auto"><StatusBadge status={detailPurchase.status} /></div>
-            </div>
-
-            <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
-              {detailPurchase.purchase_items?.map((item) => (
-                <div key={item.id} className="flex justify-between p-3 text-sm">
-                  <span>{item.product_name} × {item.quantity} <span className="text-gray-400">({currency(item.unit_cost)}/unité)</span></span>
-                  <span className="font-medium tabular-nums">{currency(item.line_total)}</span>
-                </div>
-              ))}
-            </div>
-
-            {detailPurchase.notes && <p className="text-xs text-gray-500 dark:text-gray-400 italic">{detailPurchase.notes}</p>}
-
-            <div className="space-y-1">
-              <div className="flex justify-between text-sm text-gray-500"><span>Total</span><span>{currency(detailPurchase.total)}</span></div>
-              <div className="flex justify-between text-sm text-gray-500"><span>Payé</span><span>{currency(detailPurchase.amount_paid)}</span></div>
-              <div className="flex justify-between text-lg font-bold">
-                <span>Reste dû</span>
-                <span className={Number(detailPurchase.total) - Number(detailPurchase.amount_paid) > 0 ? 'text-red-500' : ''}>
-                  {currency(Number(detailPurchase.total) - Number(detailPurchase.amount_paid))}
-                </span>
-              </div>
-            </div>
-
-            {detailPurchase.status === 'annulee' && (
-              <p className="text-xs text-red-500 text-center font-medium">Achat annulé - stock retiré.</p>
-            )}
-
-            {detailPurchase.status !== 'annulee' && Number(detailPurchase.total) - Number(detailPurchase.amount_paid) > 0 && (
-              <button
-                className="btn-success w-full"
-                onClick={() => { setPaymentOpen(detailPurchase); setPaymentAmount(''); setPaymentError('') }}
+      <Modal
+        open={!!detailPurchase}
+        onClose={() => setDetailPurchase(null)}
+        title={<>Achat <span className="whitespace-nowrap font-mono">{detailPurchase?.purchase_number}</span></>}
+        maxWidth="max-w-lg"
+      >
+        {detailPurchase && (() => {
+          const due = Number(detailPurchase.total) - Number(detailPurchase.amount_paid)
+          const isCancelled = detailPurchase.status === 'annulee'
+          return (
+            <div className="space-y-4">
+              <DetailHeader
+                avatar={
+                  <div className="h-9 w-9 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
+                    <Truck size={16} />
+                  </div>
+                }
+                title={detailPurchase.supplier_name || detailPurchase.suppliers?.name || '—'}
+                subtitle={new Date(detailPurchase.created_at).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}
               >
-                <CreditCard size={15} /> Enregistrer un paiement
-              </button>
-            )}
-          </div>
-        )}
+                <StatusBadge status={detailPurchase.status} />
+              </DetailHeader>
+
+              {isCancelled && <Callout tone="red" title="Achat annulé">Les quantités ont été retirées du stock.</Callout>}
+
+              <DetailList title="Articles">
+                {detailPurchase.purchase_items?.map((item) => (
+                  <div key={item.id} className="flex items-start justify-between gap-4 px-3 py-2.5 text-sm">
+                    <div className="min-w-0">
+                      <p className="font-medium">{item.product_name}</p>
+                      <p className="text-xs text-gray-400 tabular-nums">{item.quantity} × {currency(item.unit_cost)}</p>
+                    </div>
+                    <span className="font-medium tabular-nums whitespace-nowrap">{currency(item.line_total)}</span>
+                  </div>
+                ))}
+              </DetailList>
+
+              {detailPurchase.notes && <Callout tone="gray" title="Note">{detailPurchase.notes}</Callout>}
+
+              <DetailList>
+                <DetailRow label="Total" strong>{currency(detailPurchase.total)}</DetailRow>
+                <DetailRow label="Payé">{currency(detailPurchase.amount_paid)}</DetailRow>
+                {!isCancelled && <DetailRow label="Reste dû" strong tone={due > 0 ? 'red' : 'emerald'}>{currency(due)}</DetailRow>}
+              </DetailList>
+
+              {!isCancelled && due > 0 && (
+                <DetailActions>
+                  <button
+                    className="btn-success"
+                    onClick={() => { setPaymentOpen(detailPurchase); setPaymentAmount(''); setPaymentError('') }}
+                  >
+                    <CreditCard size={15} /> Enregistrer un paiement
+                  </button>
+                </DetailActions>
+              )}
+            </div>
+          )
+        })()}
       </Modal>
 
       {/* ---- Modal: paiement ---- */}
@@ -806,10 +812,17 @@ export default function Purchases() {
                 max={Number(paymentOpen.total) - Number(paymentOpen.amount_paid)}
                 required
                 autoFocus
-                className="input"
+                className="input text-lg font-semibold"
                 value={paymentAmount}
                 onChange={(e) => setPaymentAmount(e.target.value)}
               />
+              <button
+                type="button"
+                className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 mt-1.5"
+                onClick={() => setPaymentAmount(String(Number(paymentOpen.total) - Number(paymentOpen.amount_paid)))}
+              >
+                Solder la totalité
+              </button>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" className="btn-secondary" onClick={() => setPaymentOpen(null)}>Annuler</button>

@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Plus, ArrowUpRight, ArrowDownRight, Search, Package, History, AlertTriangle, Eye, Pencil, Trash2 } from 'lucide-react'
 import { useProducts } from '../../hooks/useProducts'
 import { useStockMovements, useAddStockEntry, useUpdateStockMovement, useDeleteStockMovement } from '../../hooks/useSales'
 import { useAuth } from '../../context/AuthContext'
 import Modal from '../../components/Modal'
 import ActionButton from '../../components/ActionButton'
+import { DetailHeader, DetailList, DetailRow, Callout, DetailActions } from '../../components/Detail'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import SearchableSelect from '../../components/SearchableSelect'
+import QtyStepper from '../../components/QtyStepper'
 import Pagination from '../../components/Pagination'
 
 // --- Helpers d'affichage ---
@@ -58,6 +61,21 @@ export default function Stock() {
   const { user, isAdmin } = useAuth()
   const canEdit = (m) => isAdmin && !isSystemMovement(m)
   const { data: products = [] } = useProducts()
+  const productOptions = useMemo(
+    () =>
+      products.map((p) => ({
+        value: p.id,
+        label: p.name,
+        searchText: p.name,
+        content: (
+          <span className="flex items-center justify-between gap-3">
+            <span className="truncate font-medium">{p.name}</span>
+            <span className={`shrink-0 text-xs tabular-nums ${Number(p.stock) <= Number(p.alert_threshold) ? 'text-amber-600' : 'text-gray-400'}`}>stock : {p.stock}</span>
+          </span>
+        ),
+      })),
+    [products]
+  )
   const { data: movements = [], isLoading } = useStockMovements()
   const addEntry = useAddStockEntry()
   const updateMovement = useUpdateStockMovement()
@@ -68,6 +86,7 @@ export default function Stock() {
   const [editing, setEditing] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [productId, setProductId] = useState('')
+  const selectedProduct = products.find((p) => p.id === productId)
   const [movementType, setMovementType] = useState('entree')
   const [quantity, setQuantity] = useState('')
   const [reason, setReason] = useState('')
@@ -95,9 +114,12 @@ export default function Stock() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setFormError('')
-    if (!productId || !quantity) return
+    if (!productId) {
+      setFormError('Choisissez un produit.')
+      return
+    }
     try {
-      await addEntry.mutateAsync({ productId, quantity: Number(quantity), reason, userId: user?.id })
+      await addEntry.mutateAsync({ productId, quantity: Number(quantity) || 1, reason, userId: user?.id })
       setModalOpen(false)
       setProductId('')
       setQuantity('')
@@ -270,7 +292,7 @@ export default function Stock() {
                       <td className="table-td text-right">
                         <QuantitySigned type={m.type} quantity={m.quantity} />
                       </td>
-                      <td className="table-td">
+                      <td className="table-td whitespace-normal max-w-[320px]">
                         <span className="text-gray-500 dark:text-gray-400">{m.reason || '—'}</span>
                       </td>
                       <td className="table-td">
@@ -324,28 +346,50 @@ export default function Stock() {
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Nouvelle entrée de stock">
         <form onSubmit={handleSubmit} className="space-y-4">
-          {formError && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">{formError}</div>}
           <div>
             <label className="label">Produit</label>
-            <select required className="input" value={productId} onChange={(e) => setProductId(e.target.value)}>
-              <option value="">Sélectionner un produit...</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} (stock actuel: {p.stock})</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={productId}
+              onChange={setProductId}
+              options={productOptions}
+              placeholder="Tapez le nom du produit..."
+              emptyMessage="Aucun produit trouvé"
+              autoFocus
+            />
           </div>
+
           <div>
             <label className="label">Quantité reçue</label>
-            <input type="number" min="1" required className="input" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+            <div className="flex items-center gap-3">
+              <QtyStepper value={quantity === '' ? 1 : quantity} min={1} onChange={(q) => setQuantity(q)} />
+              {selectedProduct && (
+                <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+                  Stock : {selectedProduct.stock} → <strong className="text-emerald-600 dark:text-emerald-400">{Number(selectedProduct.stock) + (Number(quantity) || 1)}</strong> {selectedProduct.unit || ''}
+                </p>
+              )}
+            </div>
           </div>
+
           <div>
-            <label className="label">Motif</label>
-            <input className="input" placeholder="Achat fournisseur, réapprovisionnement..." value={reason} onChange={(e) => setReason(e.target.value)} />
+            <label className="label" htmlFor="stock-reason">Motif</label>
+            <input id="stock-reason" className="input" placeholder="Achat fournisseur, réapprovisionnement..." value={reason} onChange={(e) => setReason(e.target.value)} />
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {['Réapprovisionnement', 'Retour client', 'Inventaire', 'Don / échantillon'].map((r) => (
+                <button key={r} type="button" className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" onClick={() => setReason(r)}>
+                  {r}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+
+          {formError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{formError}</p>}
+
+          <DetailActions>
             <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>Annuler</button>
-            <button type="submit" className="btn-primary" disabled={addEntry.isPending}>Enregistrer</button>
-          </div>
+            <button type="submit" className="btn-primary" disabled={addEntry.isPending || !productId}>
+              {addEntry.isPending ? 'Enregistrement...' : 'Enregistrer l’entrée'}
+            </button>
+          </DetailActions>
         </form>
       </Modal>
 
@@ -392,44 +436,35 @@ export default function Stock() {
       <Modal open={!!detailMovement} onClose={() => setDetailMovement(null)} title="Détail du mouvement">
         {detailMovement && (
           <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
-                <Package size={18} />
-              </div>
-              <div className="min-w-0">
-                <p className="font-medium truncate">{detailMovement.products?.name || '—'}</p>
-                <p className="text-xs text-gray-400">{formatRelativeDate(detailMovement.created_at)}</p>
-              </div>
-            </div>
-            <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
-              <div className="flex justify-between p-3 text-sm">
-                <span className="text-gray-500">Type</span>
-                <MovementTypeBadge type={detailMovement.type} />
-              </div>
-              <div className="flex justify-between p-3 text-sm">
-                <span className="text-gray-500">Quantité</span>
-                <QuantitySigned type={detailMovement.type} quantity={detailMovement.quantity} />
-              </div>
-              <div className="flex justify-between gap-4 p-3 text-sm">
-                <span className="text-gray-500">Motif</span>
-                <span className="text-right">{detailMovement.reason || '—'}</span>
-              </div>
-            </div>
+            <DetailHeader
+              avatar={
+                <div className="h-10 w-10 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
+                  <Package size={18} />
+                </div>
+              }
+              title={detailMovement.products?.name || 'Produit supprimé'}
+              subtitle={new Date(detailMovement.created_at).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}
+            />
+            <DetailList>
+              <DetailRow label="Type"><MovementTypeBadge type={detailMovement.type} /></DetailRow>
+              <DetailRow label="Quantité"><QuantitySigned type={detailMovement.type} quantity={detailMovement.quantity} /></DetailRow>
+              <DetailRow label="Motif">{detailMovement.reason || '—'}</DetailRow>
+            </DetailList>
             {canEdit(detailMovement) ? (
-              <div className="flex justify-end gap-2">
-                <button className="btn-secondary" onClick={() => { openEdit(detailMovement); setDetailMovement(null) }}>
-                  <Pencil size={15} /> Modifier
-                </button>
+              <DetailActions>
                 <button className="btn-danger" onClick={() => setConfirmDelete(detailMovement)}>
                   <Trash2 size={15} /> Supprimer
                 </button>
-              </div>
+                <button className="btn-secondary" onClick={() => { openEdit(detailMovement); setDetailMovement(null) }}>
+                  <Pencil size={15} /> Modifier
+                </button>
+              </DetailActions>
             ) : (
-              <p className="text-xs text-gray-400">
+              <Callout tone="gray">
                 {isSystemMovement(detailMovement)
                   ? 'Mouvement généré par un document (vente, achat, livraison…) : corrigez ou annulez le document lui-même.'
                   : 'Seul un administrateur peut corriger un mouvement de stock.'}
-              </p>
+              </Callout>
             )}
           </div>
         )}

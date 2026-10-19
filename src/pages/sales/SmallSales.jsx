@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Plus, Trash2, Search, Zap, Receipt, Minus, ShoppingBag, TrendingUp, CheckCircle2, PackageX, Pencil } from 'lucide-react'
+import { Trash2, Search, Zap, Receipt, ShoppingBag, TrendingUp, CheckCircle2, PackageX, Pencil } from 'lucide-react'
 import { useProducts } from '../../hooks/useProducts'
 import { useSmallSales, useCreateSmallSale, useUpdateSmallSale, useDeleteSmallSale } from '../../hooks/useSmallSales'
 import { useAuth } from '../../context/AuthContext'
@@ -9,50 +9,18 @@ import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { currency } from '../../lib/constants'
 import SearchableSelect from '../../components/SearchableSelect'
+import ActionButton from '../../components/ActionButton'
+import QtyStepper from '../../components/QtyStepper'
 
 
 
 // Petit composant de quantité avec boutons − / +
-function QtyStepper({ value, onChange, max }) {
-  return (
-    <div className="inline-flex items-center rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-      <button
-        type="button"
-        className="px-2 py-1.5 text-gray-500 hover:text-brand-600 disabled:opacity-30"
-        disabled={value <= 1}
-        onClick={() => onChange(Math.max(1, value - 1))}
-        aria-label="Diminuer la quantité"
-      >
-        <Minus size={14} />
-      </button>
-      <input
-        type="number"
-        min="1"
-        max={max}
-        className="w-12 bg-transparent text-center text-sm font-medium outline-none"
-        value={value}
-        onChange={(e) => onChange(Math.max(1, Number(e.target.value)))}
-      />
-      <button
-        type="button"
-        className="px-2 py-1.5 text-gray-500 hover:text-brand-600 disabled:opacity-30"
-        disabled={max != null && value >= max}
-        onClick={() => onChange(value + 1)}
-        aria-label="Augmenter la quantité"
-      >
-        <Plus size={14} />
-      </button>
-    </div>
-  )
-}
-
 export default function SmallSales() {
   const { user, isAdmin } = useAuth()
   const toast = useToast()
   const { data: products = [] } = useProducts()
   const { data: smallSales = [] } = useSmallSales()
   const [cart, setCart] = useState([]) // {product_id, product_name, quantity, unit_price}
-  const [productToAdd, setProductToAdd] = useState('')
   const [notes, setNotes] = useState('')
   const [discount, setDiscount] = useState(0)
   const [search, setSearch] = useState('')
@@ -73,7 +41,6 @@ export default function SmallSales() {
 
   const resetForm = () => {
     setCart([])
-    setProductToAdd('')
     setNotes('')
     setDiscount(0)
     setError('')
@@ -117,7 +84,6 @@ export default function SmallSales() {
         },
       ]
     })
-    setProductToAdd('')
     setErrorState('')
   }
 
@@ -381,20 +347,15 @@ export default function SmallSales() {
               )}
 
               {/* Recherche de produit */}
-              <div className="flex gap-2">
-                <div className="flex-1 min-w-0">
-                  <SearchableSelect
-                    value={productToAdd}
-                    onChange={setProductToAdd}
-                    options={productOptions}
-                    placeholder="Rechercher un produit..."
-                    emptyMessage="Aucun produit trouvé"
-                  />
-                </div>
-                <button type="button" className="btn-primary shrink-0" onClick={() => addProduct(productToAdd)}>
-                  <Plus size={16} /> Ajouter
-                </button>
-              </div>
+              <SearchableSelect
+                value=""
+                onChange={(id) => addProduct(id)}
+                options={productOptions}
+                placeholder="Tapez le nom du produit puis Entrée..."
+                emptyMessage="Aucun produit trouvé"
+                clearOnSelect
+                autoFocus
+              />
 
               {/* Raccourcis rapides */}
               {quickProducts.length > 0 && (
@@ -424,15 +385,19 @@ export default function SmallSales() {
                     <div key={item.product_id} className="flex items-center gap-3 p-3">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{item.product_name}</p>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          className="text-xs w-24 bg-transparent text-gray-500 dark:text-gray-400 outline-none border-b border-dashed border-gray-300 dark:border-gray-600 focus:border-brand-500"
-                          value={item.unit_price}
-                          onChange={(e) => updatePrice(item.product_id, Number(e.target.value))}
-                          title="Prix unitaire"
-                        />
+                        <label className="flex items-center gap-1.5 mt-1 text-xs text-gray-400">
+                      Prix
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min="0"
+                        className="input h-7 w-24 !py-0 text-right text-xs"
+                        value={item.unit_price}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => updatePrice(item.product_id, Number(e.target.value))}
+                        aria-label="Prix unitaire"
+                      />
+                    </label>
                       </div>
                       <QtyStepper value={item.quantity} max={item.stock} onChange={(q) => updateQuantity(item.product_id, q)} />
                       <div className="w-24 text-right shrink-0">
@@ -482,9 +447,11 @@ export default function SmallSales() {
                 </div>
               </div>
 
-              <button type="submit" className="btn-primary w-full !py-3 text-base" disabled={createSmallSale.isPending || cart.length === 0}>
-                <ShoppingBag size={18} /> {createSmallSale.isPending ? 'Enregistrement...' : 'Encaisser la vente'}
-              </button>
+              <div className="sticky bottom-0 -mx-6 -mb-6 px-6 py-3 bg-white dark:bg-darkcard border-t border-gray-200 dark:border-gray-700/60 rounded-b-xl">
+                <button type="submit" className="btn-primary w-full !py-3 text-base" disabled={createSmallSale.isPending || cart.length === 0}>
+                  <ShoppingBag size={18} /> {createSmallSale.isPending ? 'Enregistrement...' : cart.length === 0 ? 'Ajoutez un produit' : `Encaisser ${currency(total)}`}
+                </button>
+              </div>
             </form>
           </div>
         </div>
@@ -544,23 +511,11 @@ export default function SmallSales() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-gray-700 dark:text-gray-200 tabular-nums shrink-0">{currency(s.total)}</span>
-                      <button
-                        type="button"
-                        className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-                        title="Modifier la vente"
-                        onClick={() => handleOpenEdit(s)}
-                      >
-                        <Pencil size={14} />
-                      </button>
                       {isAdmin && (
-                      <button
-                        type="button"
-                        className="p-2 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-800"
-                        title="Supprimer la vente"
-                        onClick={() => setDeleteSaleTarget(s)}
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                        <>
+                          <ActionButton icon={Pencil} title="Modifier la vente" onClick={() => handleOpenEdit(s)} />
+                          <ActionButton icon={Trash2} title="Annuler la vente" tone="red" onClick={() => setDeleteSaleTarget(s)} />
+                        </>
                       )}
                     </div>
                   </div>
@@ -579,20 +534,14 @@ export default function SmallSales() {
               <PackageX size={16} className="shrink-0" /> {editError}
             </div>
           )}
-          <div className="flex gap-2">
-            <div className="flex-1 min-w-0">
-              <SearchableSelect
-                value={productToAdd}
-                onChange={setProductToAdd}
-                options={productOptions}
-                placeholder="Rechercher un produit..."
-                emptyMessage="Aucun produit trouvé"
-              />
-            </div>
-            <button type="button" className="btn-primary shrink-0" onClick={() => addProductToEdit(productToAdd)}>
-              <Plus size={16} /> Ajouter
-            </button>
-          </div>
+          <SearchableSelect
+            value=""
+            onChange={(id) => addProductToEdit(id)}
+            options={productOptions}
+            placeholder="Tapez le nom du produit puis Entrée..."
+            emptyMessage="Aucun produit trouvé"
+            clearOnSelect
+          />
           {quickProducts.length > 0 && (
             <div>
               <p className="text-xs font-medium text-gray-400 mb-2">Ajout rapide — cliquez sur un produit</p>
@@ -619,15 +568,19 @@ export default function SmallSales() {
                 <div key={item.product_id} className="flex items-center gap-3 p-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{item.product_name}</p>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      className="text-xs w-24 bg-transparent text-gray-500 dark:text-gray-400 outline-none border-b border-dashed border-gray-300 dark:border-gray-600 focus:border-brand-500"
-                      value={item.unit_price}
-                      onChange={(e) => updateEditPrice(item.product_id, Number(e.target.value))}
-                      title="Prix unitaire"
-                    />
+                    <label className="flex items-center gap-1.5 mt-1 text-xs text-gray-400">
+                      Prix
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min="0"
+                        className="input h-7 w-24 !py-0 text-right text-xs"
+                        value={item.unit_price}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => updateEditPrice(item.product_id, Number(e.target.value))}
+                        aria-label="Prix unitaire"
+                      />
+                    </label>
                   </div>
                   <QtyStepper value={item.quantity} max={item.stock} onChange={(q) => updateEditQuantity(item.product_id, q)} />
                   <div className="w-24 text-right shrink-0">

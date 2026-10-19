@@ -499,7 +499,7 @@ export default function Suppliers() {
                   return (
                     <div key={p.id} className="border border-gray-200 dark:border-gray-700/60 rounded-lg p-3">
                       <div className="flex items-center justify-between">
-                        <span className="font-mono text-xs text-gray-500">{p.purchase_number}</span>
+                        <span className="font-mono text-xs text-gray-500 whitespace-nowrap">{p.purchase_number}</span>
                         <span className="text-xs text-gray-400">{formatDate(p.created_at)}</span>
                       </div>
                       <div className="mt-1.5 space-y-0.5">
@@ -539,7 +539,7 @@ export default function Suppliers() {
           <form onSubmit={handleAddPayment} className="space-y-4">
             {paymentError && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">{paymentError}</div>}
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Achat <strong>{payingPurchase.purchase_number}</strong> — solde dû :{' '}
+              Achat <strong className="whitespace-nowrap">{payingPurchase.purchase_number}</strong> — solde dû :{' '}
               <span className="text-red-500 font-semibold">{currency(Number(payingPurchase.total) - Number(payingPurchase.amount_paid))}</span>
             </p>
             <div>
@@ -550,10 +550,17 @@ export default function Suppliers() {
                 max={Number(payingPurchase.total) - Number(payingPurchase.amount_paid)}
                 required
                 autoFocus
-                className="input"
+                className="input text-lg font-semibold"
                 value={paymentAmount}
                 onChange={(e) => setPaymentAmount(e.target.value)}
               />
+              <button
+                type="button"
+                className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 mt-1.5"
+                onClick={() => setPaymentAmount(String(Number(payingPurchase.total) - Number(payingPurchase.amount_paid)))}
+              >
+                Solder la totalité
+              </button>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" className="btn-secondary" onClick={() => setPayingPurchase(null)}>Annuler</button>

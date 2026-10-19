@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext'
 import StatCard from '../../components/StatCard'
 import Modal from '../../components/Modal'
 import ActionButton from '../../components/ActionButton'
+import { DetailHeader, DetailList, DetailRow, DetailActions } from '../../components/Detail'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Pagination from '../../components/Pagination'
 import { currency } from '../../lib/constants'
@@ -150,7 +151,7 @@ export default function Finances() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatCard icon={TrendingUp} label="Recettes totales" value={currency(totalRevenue)} color="emerald" />
+        <StatCard icon={TrendingUp} label="Chiffre d'affaires (facturé)" value={currency(totalRevenue)} color="emerald" />
         <StatCard icon={TrendingDown} label="Dépenses totales" value={currency(totalExpenses)} color="red" />
         <StatCard icon={Wallet} label="Bénéfice réel" value={currency(profit)} color={profit >= 0 ? 'emerald' : 'red'} />
       </div>
@@ -331,27 +332,27 @@ export default function Finances() {
       <Modal open={!!detailExpense} onClose={() => setDetailExpense(null)} title="Détail de la dépense">
         {detailExpense && (
           <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-red-50 dark:bg-red-500/10 flex items-center justify-center text-red-500 shrink-0">
-                <TrendingDown size={18} />
-              </div>
-              <div>
-                <p className="font-semibold">{detailExpense.label}</p>
-                <p className="text-xs text-gray-400">{formatRelativeDate(detailExpense.created_at)}</p>
-              </div>
-            </div>
-            <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
-              <div className="flex justify-between p-3 text-sm"><span className="text-gray-500">Catégorie</span><CategoryBadge name={detailExpense.category} /></div>
-              <div className="flex justify-between p-3 text-sm"><span className="text-gray-500">Montant</span><span className="font-semibold text-red-600 dark:text-red-400">-{currency(detailExpense.amount)}</span></div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button className="btn-secondary" onClick={() => { openEdit(detailExpense); setDetailExpense(null) }}>
-                <Pencil size={15} /> Modifier
-              </button>
+            <DetailHeader
+              avatar={
+                <div className="h-10 w-10 rounded-full bg-red-50 dark:bg-red-500/10 flex items-center justify-center text-red-500 shrink-0">
+                  <TrendingDown size={18} />
+                </div>
+              }
+              title={detailExpense.label}
+              subtitle={new Date(detailExpense.created_at).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}
+            />
+            <DetailList>
+              <DetailRow label="Catégorie"><CategoryBadge name={detailExpense.category} /></DetailRow>
+              <DetailRow label="Montant" strong tone="red">- {currency(detailExpense.amount)}</DetailRow>
+            </DetailList>
+            <DetailActions>
               <button className="btn-danger" onClick={() => setConfirmDelete(detailExpense)}>
                 <Trash2 size={15} /> Supprimer
               </button>
-            </div>
+              <button className="btn-secondary" onClick={() => { openEdit(detailExpense); setDetailExpense(null) }}>
+                <Pencil size={15} /> Modifier
+              </button>
+            </DetailActions>
           </div>
         )}
       </Modal>

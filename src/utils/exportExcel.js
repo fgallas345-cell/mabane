@@ -1,5 +1,7 @@
 // SheetJS (~400 Ko) n'est chargé qu'au premier export
 
+const today = () => new Date().toISOString().slice(0, 10)
+
 async function downloadWorkbook(rows, sheetName, fileName) {
   const XLSX = await import('xlsx')
   const worksheet = XLSX.utils.json_to_sheet(rows)
@@ -21,7 +23,7 @@ export async function exportSalesToExcel(sales) {
     Statut: { payee: 'Payée', partielle: 'Partielle', credit: 'À crédit', annulee: 'Annulée' }[s.status] || s.status,
     Date: new Date(s.created_at).toLocaleString('fr-FR'),
   }))
-  await downloadWorkbook(rows, 'Ventes', `ventes-mabane-${Date.now()}.xlsx`)
+  await downloadWorkbook(rows, 'Ventes', `ventes-mabane-${today()}.xlsx`)
 }
 
 export async function exportProductsToExcel(products) {
@@ -34,7 +36,7 @@ export async function exportProductsToExcel(products) {
     Stock: p.stock,
     'Seuil alerte': p.alert_threshold,
   }))
-  await downloadWorkbook(rows, 'Stock', `stock-mabane-${Date.now()}.xlsx`)
+  await downloadWorkbook(rows, 'Stock', `stock-mabane-${today()}.xlsx`)
 }
 
 export async function exportExpensesToExcel(expenses) {
@@ -44,5 +46,5 @@ export async function exportExpensesToExcel(expenses) {
     Montant: e.amount,
     Date: new Date(e.created_at).toLocaleString('fr-FR'),
   }))
-  await downloadWorkbook(rows, 'Dépenses', `depenses-mabane-${Date.now()}.xlsx`)
+  await downloadWorkbook(rows, 'Dépenses', `depenses-mabane-${today()}.xlsx`)
 }

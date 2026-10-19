@@ -80,6 +80,14 @@
 
 ---
 
+## 0 ter. Interface, formulaires et documents (19 octobre 2026)
+
+- UI : composants communs (`ActionButton`, `RowActions`, `Detail`, `QtyStepper`, `Segmented`, `SearchableSelect` avec clavier), tableaux ventes/achats à 6 colonnes avec menu « ⋯ », fenêtres de détail et formulaires harmonisés (pied collant avec total, ajout de produit par Entrée, paiement Payé / Avance / Crédit).
+- PDF : facture à hauteur variable (plus de coupure à 10 articles), remise / payé / reste, montant en lettres, filigrane ANNULÉE ; bon de livraison avec client, facture et signatures ; reçu avec mode de paiement lisible. Module commun `utils/pdfCommon.js`.
+- Qualité : `no-undef` activé dans oxlint (il aurait détecté `setPage` sur la page Catégories) et un test de rendu de toutes les pages (`__tests__/smoke.test.jsx`).
+
+---
+
 ## 1. Synthèse
 
 L'application est fonctionnellement riche et l'interface est soignée. Mais l'état actuel présente **une faille de sécurité bloquante** (n'importe qui peut se créer un compte administrateur), **un script SQL qui ne s'installe pas sur une base vierge**, et **plusieurs RPC qui corrompent le stock** dans les scénarios de livraison échelonnée. Plusieurs points « corrigés » depuis l'audit précédent ne le sont pas réellement (`onError` sur `useQuery` est ignoré par React Query v5 ; le trigger de rôle a été modifié dans le sens inverse de la spécification).

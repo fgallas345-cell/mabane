@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import Pagination from '../../components/Pagination'
 import Modal from '../../components/Modal'
+import { DetailHeader, DetailList, DetailRow } from '../../components/Detail'
 import ConfirmDialog from '../../components/ConfirmDialog'
 
 const emptyForm = { fullName: '', email: '', password: '', role: 'employe' }
@@ -219,25 +220,19 @@ export default function UsersAdmin() {
       <Modal open={!!detailUser} onClose={() => setDetailUser(null)} title="Détail utilisateur">
         {detailUser && (
           <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400">
-                <User size={18} />
-              </div>
-              <div>
-                <p className="font-semibold">{detailUser.full_name}</p>
-                <p className="text-xs text-gray-400">{detailUser.email}</p>
-              </div>
-            </div>
-            <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
-              <div className="flex justify-between p-3 text-sm">
-                <span className="text-gray-500">Rôle</span>
-                <span className="font-medium">{ROLE_LABELS[detailUser.role] || detailUser.role}</span>
-              </div>
-              <div className="flex justify-between p-3 text-sm">
-                <span className="text-gray-500">Téléphone</span>
-                <span>{detailUser.phone || '—'}</span>
-              </div>
-            </div>
+            <DetailHeader
+              avatar={
+                <div className="h-10 w-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
+                  <User size={18} />
+                </div>
+              }
+              title={detailUser.full_name}
+              subtitle={detailUser.email}
+            />
+            <DetailList>
+              <DetailRow label="Rôle">{ROLE_LABELS[detailUser.role] || detailUser.role}</DetailRow>
+              <DetailRow label="Téléphone">{detailUser.phone || '—'}</DetailRow>
+            </DetailList>
           </div>
         )}
       </Modal>

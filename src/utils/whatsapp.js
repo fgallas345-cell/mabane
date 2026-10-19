@@ -49,7 +49,8 @@ export async function sendInvoiceViaWhatsApp(sale) {
   const phone = normalizePhone(sale.clients?.phone)
   if (!phone) return
 
-  const message = WHATSAPP_MESSAGE(sale.clients?.name, sale.invoice_number, currency(sale.total))
+  const due = Number(sale.total || 0) - Number(sale.amount_paid || 0)
+  const message = WHATSAPP_MESSAGE(sale.clients?.name, sale.invoice_number, currency(sale.total), due > 0 ? currency(due) : '')
 
   try {
     const blob = await getInvoicePDFBlob(sale)

@@ -103,6 +103,7 @@ export function useCancelSale() {
     onSuccess: () => {
       toast.success('Vente annulée avec succès.')
       queryClient.invalidateQueries({ queryKey: ['sales'] })
+      queryClient.invalidateQueries({ queryKey: ['payments'] }) // le remboursement est une nouvelle ligne de paiement
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })

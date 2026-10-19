@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["react", "oxc", "import"],
+  "env": { "browser": true, "es2022": true },
   "categories": {
     "correctness": "error",
     "suspicious": "warn"
@@ -9,6 +10,7 @@
     "react/rules-of-hooks": "error",
     "react/react-in-jsx-scope": "off",
     "react/only-export-components": ["warn", { "allowConstantExport": true }],
+    "no-undef": "error",
     "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
     "no-console": ["warn", { "allow": ["warn", "error"] }],
     "no-shadow": "off",

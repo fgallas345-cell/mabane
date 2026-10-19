@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Plus, Trash2, Edit, Download, MessageCircle, Eye, Search, Receipt, FileText, RotateCcw, CreditCard, Wallet, Truck } from 'lucide-react'
+import { Plus, Trash2, Edit, Download, MessageCircle, Eye, Search, Receipt, FileText, RotateCcw, CreditCard, Wallet, Truck, ShoppingCart } from 'lucide-react'
 import { useProducts } from '../../hooks/useProducts'
 import { useClients } from '../../hooks/useEntities'
 import { useSales, useCreateSale, useCancelSale, useAddSalePayment, useDeleteSale, useUpdateSaleItems, useDeliveries, useCreateDelivery, useConfirmQuote, useCancelQuote, useSalePayments } from '../../hooks/useSales'
@@ -8,14 +8,18 @@ import { useToast } from '../../context/ToastContext'
 import Pagination from '../../components/Pagination'
 import Modal from '../../components/Modal'
 import ActionButton from '../../components/ActionButton'
+import { DetailHeader, DetailList, DetailRow, Callout, DetailActions } from '../../components/Detail'
+import RowActions from '../../components/RowActions'
 import ConfirmDialog from '../../components/ConfirmDialog'
-import { currency } from '../../lib/constants'
+import { currency, PAYMENT_METHOD_LABELS } from '../../lib/constants'
 import { isCountedSale } from '../../utils/finance'
 import { downloadInvoicePDF } from '../../utils/invoicePdf'
 import { downloadDeliveryPDF } from '../../utils/deliveryPdf'
 import { sendInvoiceViaWhatsApp, sendReceiptViaWhatsApp } from '../../utils/whatsapp'
 import { downloadPaymentReceiptPDF } from '../../utils/paymentReceiptPdf'
 import SearchableSelect from '../../components/SearchableSelect'
+import Segmented from '../../components/Segmented'
+import QtyStepper from '../../components/QtyStepper'
 
 function StatusBadge({ status }) {
   const map = {
@@ -148,6 +152,7 @@ export default function Sales() {
   const [discount, setDiscount] = useState(0)
   const [amountPaid, setAmountPaid] = useState('')
   const [partialPayment, setPartialPayment] = useState(false)
+  const [payMode, setPayMode] = useState('full') // full | advance | credit
   const [deliveryMode, setDeliveryMode] = useState('immediate')
   const [isDraft, setIsDraft] = useState(false)
   const [cart, setCart] = useState([]) // {product_id, product_name, quantity, unit_price, stock}
@@ -159,6 +164,7 @@ export default function Sales() {
     setDiscount(0)
     setAmountPaid('')
     setPartialPayment(false)
+    setPayMode('full')
     setDeliveryMode('immediate')
     setIsDraft(false)
     setCart([])
@@ -166,9 +172,9 @@ export default function Sales() {
     setError('')
   }
 
-  const addProduct = () => {
-    if (!productToAdd) return
-    const product = products.find((p) => p.id === productToAdd)
+  const addProduct = (id = productToAdd) => {
+    if (!id) return
+    const product = products.find((p) => p.id === id)
     if (!product) return
     if (cart.find((c) => c.product_id === product.id)) {
       setCart((c) => c.map((item) => (item.product_id === product.id ? { ...item, quantity: item.quantity + 1 } : item)))
@@ -179,7 +185,13 @@ export default function Sales() {
   }
 
   const updateQuantity = (productId, qty) => {
-    setCart((c) => c.map((item) => (item.product_id === productId ? { ...item, quantity: Math.max(1, qty) } : item)))
+    setCart((c) => c.map((item) => (item.product_id === productId ? { ...item, quantity: Math.max(1, Math.floor(Number(qty)) || 1) } : item)))
+  }
+
+  const changePayMode = (mode) => {
+    setPayMode(mode)
+    setPartialPayment(mode !== 'full')
+    setAmountPaid(mode === 'credit' ? '0' : '')
   }
 
   const removeFromCart = (productId) => {
@@ -418,9 +430,9 @@ export default function Sales() {
     )
   }
 
-  const addEditProduct = () => {
-    if (!editProductToAdd || !editSale) return
-    const product = products.find((p) => p.id === editProductToAdd)
+  const addEditProduct = (id = editProductToAdd) => {
+    if (!id || !editSale) return
+    const product = products.find((p) => p.id === id)
     if (!product) return
     setEditSaleItems((items) => {
       const existing = items.find((i) => i.product_id === product.id)
@@ -501,6 +513,20 @@ export default function Sales() {
     )
   }
 
+  // Données du bon de livraison PDF : client, facture, et reste à livrer après CE bon
+  const buildDeliveryPdfData = (delivery) => {
+    const cumulative = {}
+    for (const d of deliveries || []) {
+      const items = (d.delivery_items || []).map((di) => {
+        cumulative[di.sale_item_id] = (cumulative[di.sale_item_id] || 0) + di.quantity_delivered
+        const ordered = di.sale_items?.quantity || 0
+        return { ...di, ordered, remaining: Math.max(0, ordered - cumulative[di.sale_item_id]) }
+      })
+      if (d.id === delivery.id) return { ...d, delivery_items: items, sale: deliverySale }
+    }
+    return { ...delivery, sale: deliverySale }
+  }
+
   const openNewDelivery = () => {
     if (!deliverySale) return
     const deliveredByItem = {}
@@ -561,24 +587,53 @@ export default function Sales() {
     [clients]
   )
 
+  // Menu d'actions d'une facture : le même sur ordinateur (tableau) et sur téléphone (cartes)
+  const buildSaleMenu = (s) => {
+    const due = Number(s.total) - Number(s.amount_paid)
+    const isDraft = s.quote_status === 'draft'
+    const isCancelled = s.status === 'annulee'
+    return [
+      { icon: Eye, label: 'Voir le détail', onClick: () => setDetailSale(s) },
+      isDraft && { icon: FileText, label: 'Confirmer le devis', tone: 'emerald', onClick: () => confirmQuote.mutateAsync({ saleId: s.id, userId: user?.id }).then(() => setDetailSale(null)) },
+      !isDraft && !isCancelled && due > 0 && { icon: CreditCard, label: 'Enregistrer un paiement', tone: 'emerald', onClick: () => { setPaymentOpen(s); setPaymentAmount(''); setPaymentError('') } },
+      !isDraft && !isCancelled && s.delivery_status !== 'livree' && { icon: Truck, label: 'Gérer les livraisons', onClick: () => setDeliverySale(s) },
+      !isDraft && { icon: MessageCircle, label: s.clients?.phone ? 'Envoyer par WhatsApp' : 'WhatsApp : aucun numéro', disabled: !s.clients?.phone, onClick: () => sendInvoiceViaWhatsApp(s) },
+      isAdmin && !isDraft && !isCancelled && s.delivery_status !== 'partielle' && {
+        icon: Edit,
+        label: 'Modifier la facture',
+        onClick: () => {
+          setEditSale(s)
+          setEditClientId(s.client_id || '')
+          setEditDiscount(s.discount || 0)
+          setEditSaleItems(s.sale_items || [])
+          setEditProductToAdd('')
+        },
+      },
+      isAdmin && !isCancelled && { icon: RotateCcw, label: isDraft ? 'Annuler le devis' : 'Annuler la facture', tone: 'red', onClick: () => setConfirmCancel(s) },
+      isAdmin && isCancelled && { icon: Trash2, label: 'Supprimer la facture', tone: 'red', onClick: () => setConfirmDelete(s) },
+    ]
+  }
+
   const productOptions = useMemo(
     () =>
       products.map((product) => ({
         value: product.id,
         label: `${product.name} - ${currency(product.sale_price)} (stock: ${product.stock})`,
         searchText: `${product.name || ''} ${product.sale_price || ''} ${product.stock || ''}`,
-        disabled: Number(product.stock) <= 0,
+        disabled: !isDraft && Number(product.stock) <= 0,
         content: (
           <span className="flex min-w-0 flex-1 items-start justify-between gap-3">
             <span className="min-w-0">
               <span className="block truncate font-medium">{product.name}</span>
-              <span className="block truncate text-xs text-gray-400">Stock: {product.stock}</span>
+              <span className={`block truncate text-xs ${Number(product.stock) <= 0 ? 'text-red-500' : 'text-gray-400'}`}>
+                {Number(product.stock) <= 0 ? 'Rupture de stock' : `Stock : ${product.stock}`}
+              </span>
             </span>
             <span className="shrink-0 text-xs font-semibold tabular-nums text-gray-500 dark:text-gray-300">{currency(product.sale_price)}</span>
           </span>
         ),
       })),
-    [products]
+    [products, isDraft]
   )
 
   return (
@@ -602,6 +657,7 @@ export default function Sales() {
             className="btn-secondary"
             onClick={() => {
               resetForm()
+              setIsDraft(true)
               setNewQuoteOpen(true)
             }}
           >
@@ -678,15 +734,12 @@ export default function Sales() {
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
-                  <tr className="border-b border-gray-200 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/40">
+                  <tr className="border-b border-gray-200 dark:border-gray-700/60">
                     <th className="table-th">Facture</th>
                     <th className="table-th">Client</th>
-                    <th className="table-th">Date</th>
                     <th className="table-th text-right">Total</th>
                     <th className="table-th text-right">Reste dû</th>
-                    <th className="table-th">Paiement</th>
-                    <th className="table-th">Livraison</th>
-                    <th className="table-th">Devis</th>
+                    <th className="table-th">Statut</th>
                     <th className="table-th text-right">Actions</th>
                   </tr>
                 </thead>
@@ -694,95 +747,54 @@ export default function Sales() {
                   {paginatedSales.map((s) => {
                     const date = formatRelativeDate(s.created_at)
                     const due = Number(s.total) - Number(s.amount_paid)
+                    const isDraft = s.quote_status === 'draft'
+                    const isCancelled = s.status === 'annulee'
                     return (
-                      <tr key={s.id} className="group hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
+                      <tr
+                        key={s.id}
+                        className={`hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors cursor-pointer ${isCancelled ? 'opacity-60' : ''}`}
+                        onClick={() => setDetailSale(s)}
+                      >
                         <td className="table-td">
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center font-mono text-[13px] font-semibold tracking-tight px-2 py-1 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
-                              {s.invoice_number}
-                            </span>
-                          </div>
+                          <p className="font-mono text-[13px] font-semibold text-gray-800 dark:text-gray-100 whitespace-nowrap">{s.invoice_number}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">{date.label}</p>
                         </td>
                         <td className="table-td">
                           <div className="flex items-center gap-2.5">
                             <ClientAvatar name={s.clients?.name} />
                             <div className="min-w-0">
-                              <p className="text-sm font-medium truncate max-w-[160px]">{s.clients?.name || 'Client comptoir'}</p>
+                              <p className="text-sm font-medium truncate max-w-[200px]">{s.clients?.name || 'Client comptoir'}</p>
                               {s.clients?.phone && <p className="text-xs text-gray-400 truncate">{s.clients.phone}</p>}
                             </div>
                           </div>
                         </td>
+                        <td className="table-td text-right font-semibold tabular-nums">{currency(s.total)}</td>
+                        <td className="table-td text-right tabular-nums">
+                          {!isCancelled && !isDraft && due > 0 ? (
+                            <span className="text-red-500 font-medium">{currency(due)}</span>
+                          ) : (
+                            <span className="text-gray-300 dark:text-gray-600">—</span>
+                          )}
+                        </td>
                         <td className="table-td">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-gray-600 dark:text-gray-300">{date.label}</span>
-                            {date.tag && (
-                              <span
-                                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
-                                  date.tone === 'brand'
-                                    ? 'bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-400'
-                                    : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
-                                }`}
-                              >
-                                {date.tag}
-                              </span>
+                          {/* Un seul statut lisible : devis / annulée / paiement, + la livraison seulement si elle reste à faire */}
+                          <div className="flex items-center gap-1.5">
+                            {isCancelled ? (
+                              <StatusBadge status="annulee" />
+                            ) : isDraft ? (
+                              <QuoteStatusBadge quoteStatus="draft" />
+                            ) : (
+                              <>
+                                <StatusBadge status={s.status} />
+                                {s.delivery_status !== 'livree' && <DeliveryStatusBadge deliveryStatus={s.delivery_status} />}
+                              </>
                             )}
                           </div>
                         </td>
-                        <td className="table-td text-right">
-                          <span className="font-semibold tabular-nums">{currency(s.total)}</span>
-                        </td>
-                        <td className="table-td text-right tabular-nums">
-                          {due > 0 ? <span className="text-red-500 font-medium">{currency(due)}</span> : <span className="text-gray-400">—</span>}
-                        </td>
-                        <td className="table-td"><StatusBadge status={s.status} /></td>
-                        <td className="table-td"><DeliveryStatusBadge deliveryStatus={s.delivery_status} /></td>
-                        <td className="table-td"><QuoteStatusBadge quoteStatus={s.quote_status} /></td>
-                        <td className="table-td">
-                          <div className="flex justify-end gap-1">
-                            <ActionButton icon={Eye} title="Voir le détail" onClick={() => setDetailSale(s)} />
-                            {s.quote_status === 'draft' && (
-                              <>
-                                <ActionButton icon={FileText} title="Confirmer le devis" tone="emerald" onClick={() => confirmQuote.mutateAsync({ saleId: s.id, userId: user?.id }).then(() => setDetailSale(null))} />
-                                {isAdmin && <ActionButton icon={RotateCcw} title="Annuler le devis" tone="red" onClick={() => setConfirmCancel(s)} />}
-                              </>
-                            )}
-                            {s.quote_status !== 'draft' && (
-                              <>
-                                <ActionButton icon={Download} title="Télécharger le PDF" onClick={() => downloadInvoicePDF(s)} tone="brand" />
-                                <ActionButton
-                                  icon={MessageCircle}
-                                  title={s.clients?.phone ? 'Envoyer via WhatsApp' : 'Aucun numéro WhatsApp'}
-                                  disabled={!s.clients?.phone}
-                                  onClick={() => sendInvoiceViaWhatsApp(s)}
-                                  tone="emerald"
-                                />
-                                {s.delivery_status !== 'livree' && s.status !== 'annulee' && (
-                                  <ActionButton icon={Truck} title="Gérer les livraisons" tone="brand" onClick={() => setDeliverySale(s)} />
-                                )}
-                                {s.status !== 'annulee' && due > 0 && (
-                                  <ActionButton icon={CreditCard} title="Enregistrer un paiement" tone="emerald" onClick={() => { setPaymentOpen(s); setPaymentAmount(''); setPaymentError('') }} />
-                                )}
-                                {isAdmin && s.status !== 'annulee' && (
-                                  <ActionButton icon={RotateCcw} title="Annuler et remettre en stock" onClick={() => setConfirmCancel(s)} tone="red" />
-                                )}
-                                {isAdmin && s.status !== 'annulee' && s.delivery_status !== 'partielle' && (
-                                  <ActionButton
-                                    icon={Edit}
-                                    title="Modifier la facture"
-                                    onClick={() => {
-                                      setEditSale(s)
-                                      setEditClientId(s.client_id || '')
-                                      setEditDiscount(s.discount || 0)
-                                      setEditSaleItems(s.sale_items || [])
-                                      setEditProductToAdd('')
-                                    }}
-                                  />
-                                )}
-                              </>
-                            )}
-                            {isAdmin && s.status === 'annulee' && (
-                              <ActionButton icon={Trash2} title="Supprimer la facture" onClick={() => setConfirmDelete(s)} tone="red" />
-                            )}
+                        <td className="table-td" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-0.5">
+                            {!isDraft && <ActionButton icon={Download} title="Télécharger le PDF" onClick={() => downloadInvoicePDF(s)} />}
+                            <RowActions items={buildSaleMenu(s)} />
                           </div>
                         </td>
                       </tr>
@@ -805,7 +817,7 @@ export default function Sales() {
                       <ClientAvatar name={s.clients?.name} />
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{s.clients?.name || 'Client comptoir'}</p>
-                        <span className="inline-block mt-0.5 font-mono text-[11px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500">
+                        <span className="inline-block mt-0.5 font-mono text-[11px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 whitespace-nowrap">
                           {s.invoice_number}
                         </span>
                       </div>
@@ -815,57 +827,23 @@ export default function Sales() {
                       {due > 0 && <p className="text-[10px] font-semibold text-red-500 mt-0.5">Dû : {currency(due)}</p>}
                     </div>
                   </div>
-                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-gray-400">{date.label}</span>
-                      {date.tag && (
-                        <span
-                          className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
-                            date.tone === 'brand'
-                              ? 'bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-400'
-                              : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
-                          }`}
-                        >
-                          {date.tag}
-                        </span>
-                      )}
-                      <StatusBadge status={s.status} />
-                      <DeliveryStatusBadge deliveryStatus={s.delivery_status} />
-                      <QuoteStatusBadge quoteStatus={s.quote_status} />
-                    </div>
-                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                      {s.quote_status === 'draft' ? (
-                        <>
-                          <ActionButton icon={FileText} title="Confirmer" tone="emerald" onClick={() => confirmQuote.mutateAsync({ saleId: s.id, userId: user?.id }).then(() => setDetailSale(null))} />
-                          {isAdmin && <ActionButton icon={RotateCcw} title="Annuler" tone="red" onClick={() => setConfirmCancel(s)} />}
-                        </>
+                  <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                      {s.status === 'annulee' ? (
+                        <StatusBadge status="annulee" />
+                      ) : s.quote_status === 'draft' ? (
+                        <QuoteStatusBadge quoteStatus="draft" />
                       ) : (
                         <>
-                          {s.delivery_status !== 'livree' && s.status !== 'annulee' && (
-                            <ActionButton icon={Truck} title="Livraison" tone="brand" onClick={() => setDeliverySale(s)} />
-                          )}
-                          {s.status !== 'annulee' && due > 0 && (
-                            <ActionButton icon={CreditCard} title="Payer" tone="emerald" onClick={() => { setPaymentOpen(s); setPaymentAmount(''); setPaymentError('') }} />
-                          )}
-                          <ActionButton icon={Download} title="Télécharger le PDF" onClick={() => downloadInvoicePDF(s)} tone="brand" />
-                          <ActionButton
-                            icon={MessageCircle}
-                            title={s.clients?.phone ? 'Envoyer via WhatsApp' : 'Aucun numéro WhatsApp'}
-                            disabled={!s.clients?.phone}
-                            onClick={() => sendInvoiceViaWhatsApp(s)}
-                            tone="emerald"
-                          />
-                          {isAdmin && s.status !== 'annulee' && (
-                            <ActionButton icon={RotateCcw} title="Annuler" onClick={() => setConfirmCancel(s)} tone="red" />
-                          )}
-                          {isAdmin && s.status !== 'annulee' && s.delivery_status !== 'partielle' && (
-                            <ActionButton icon={Edit} title="Modifier" onClick={() => { setEditSale(s); setEditClientId(s.client_id || ''); setEditDiscount(s.discount || 0); setEditSaleItems(s.sale_items || []); setEditProductToAdd('') }} />
-                          )}
+                          <StatusBadge status={s.status} />
+                          {s.delivery_status !== 'livree' && <DeliveryStatusBadge deliveryStatus={s.delivery_status} />}
                         </>
                       )}
-                      {isAdmin && s.status === 'annulee' && (
-                        <ActionButton icon={Trash2} title="Supprimer" onClick={() => setConfirmDelete(s)} tone="red" />
-                      )}
+                      <span className="text-xs text-gray-400">{date.label}</span>
+                    </div>
+                    <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {s.quote_status !== 'draft' && <ActionButton icon={Download} title="Télécharger le PDF" onClick={() => downloadInvoicePDF(s)} />}
+                      <RowActions items={buildSaleMenu(s)} />
                     </div>
                   </div>
                 </div>
@@ -878,246 +856,318 @@ export default function Sales() {
       )}
 
       {/* ---- Modal: nouvelle vente / devis ---- */}
-      <Modal open={newSaleOpen || newQuoteOpen} onClose={() => { setNewSaleOpen(false); setNewQuoteOpen(false) }} title={isDraft ? 'Nouveau devis (brouillon)' : 'Nouvelle facture'} maxWidth="max-w-2xl">
-        <form onSubmit={handleCreateSale} className="space-y-4">
-          {error && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">{error}</div>}
+      <Modal
+        open={newSaleOpen || newQuoteOpen}
+        onClose={() => { setNewSaleOpen(false); setNewQuoteOpen(false) }}
+        title={isDraft ? 'Nouveau devis' : 'Nouvelle vente'}
+        maxWidth="max-w-4xl"
+      >
+        <form onSubmit={handleCreateSale}>
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-5">
+            {/* ---- Colonne gauche : client + produits ---- */}
+            <div className="md:col-span-3 space-y-4">
+              <div>
+                <label className="label">
+                  Client {payMode !== 'full' && !isDraft ? <span className="text-red-500">*</span> : <span className="text-gray-400 font-normal">(optionnel)</span>}
+                </label>
+                <SearchableSelect
+                  value={clientId}
+                  onChange={setClientId}
+                  options={clientOptions}
+                  placeholder="Client comptoir, ou rechercher un client..."
+                  emptyMessage="Aucun client trouvé"
+                />
+              </div>
 
-          <div>
-            <label className="label">Client (optionnel)</label>
-            <SearchableSelect
-              value={clientId}
-              onChange={setClientId}
-              options={clientOptions}
-              placeholder="Rechercher un client..."
-              emptyMessage="Aucun client trouvé"
-            />
-          </div>
+              <div>
+                <label className="label">Ajouter un produit</label>
+                <SearchableSelect
+                  value=""
+                  onChange={(id) => addProduct(id)}
+                  options={productOptions}
+                  placeholder="Tapez le nom du produit puis Entrée..."
+                  emptyMessage="Aucun produit trouvé"
+                  clearOnSelect
+                  autoFocus
+                />
+              </div>
 
-          <div className="flex gap-2">
-            <div className="flex-1 min-w-0">
-              <SearchableSelect
-                value={productToAdd}
-                onChange={setProductToAdd}
-                options={productOptions}
-                placeholder="Rechercher un produit..."
-                emptyMessage="Aucun produit trouvé"
-              />
-            </div>
-            <button type="button" className="btn-secondary shrink-0" onClick={addProduct}>
-              <Plus size={16} /> Ajouter
-            </button>
-          </div>
-
-          {cart.length > 0 && (
-            <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
-              {cart.map((item) => (
-                <div key={item.product_id} className="flex items-center gap-3 p-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{item.product_name}</p>
-                    <p className="text-xs text-gray-400">{currency(item.unit_price)} / unité</p>
-                  </div>
-                  <input
-                    type="number"
-                    min="1"
-                    max={item.stock}
-                    className="input w-20 text-center"
-                    value={item.quantity}
-                    onChange={(e) => updateQuantity(item.product_id, Number(e.target.value))}
-                  />
-                  <p className="w-24 text-right text-sm font-semibold">{currency(item.quantity * item.unit_price)}</p>
-                  <button type="button" className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg" onClick={() => removeFromCart(item.product_id)}>
-                    <Trash2 size={14} />
-                  </button>
+              {cart.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 py-10 text-center">
+                  <ShoppingCart size={22} className="mx-auto text-gray-300 dark:text-gray-600" />
+                  <p className="text-sm text-gray-400 mt-2">Le panier est vide.</p>
+                  <p className="text-xs text-gray-400">Recherchez un produit ci-dessus pour l'ajouter.</p>
                 </div>
-              ))}
+              ) : (
+                <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
+                  {cart.map((item) => {
+                    const over = !isDraft && item.quantity > item.stock
+                    return (
+                      <div key={item.product_id} className="p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{item.product_name}</p>
+                            <p className="text-xs text-gray-400 tabular-nums">{currency(item.unit_price)} / unité · stock {item.stock}</p>
+                          </div>
+                          <button
+                            type="button"
+                            aria-label={`Retirer ${item.product_name}`}
+                            className="p-1.5 -mr-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg"
+                            onClick={() => removeFromCart(item.product_id)}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between mt-2">
+                          <QtyStepper value={item.quantity} onChange={(q) => updateQuantity(item.product_id, q)} invalid={over} />
+                          <p className="text-sm font-semibold tabular-nums">{currency(item.quantity * item.unit_price)}</p>
+                        </div>
+                        {over && <p className="text-xs text-red-500 mt-1.5">Stock insuffisant : {item.stock} disponible{item.stock > 1 ? 's' : ''}.</p>}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
-          )}
 
-          <div className="flex items-center justify-between">
-            <label className="label mb-0">Remise (FCFA)</label>
-            <input type="number" min="0" max={subtotal} className="input w-32 text-right" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+            {/* ---- Colonne droite : type, remise, paiement, livraison ---- */}
+            <div className="md:col-span-2 space-y-4">
+              <div>
+                <label className="label">Type de document</label>
+                <Segmented
+                  label="Type de document"
+                  value={isDraft ? 'devis' : 'facture'}
+                  onChange={(v) => {
+                    const draft = v === 'devis'
+                    setIsDraft(draft)
+                    if (draft) changePayMode('full')
+                  }}
+                  options={[
+                    { value: 'facture', label: 'Facture' },
+                    { value: 'devis', label: 'Devis' },
+                  ]}
+                />
+                {isDraft && <p className="text-xs text-purple-600 dark:text-purple-400 mt-1.5">Le stock n'est pas touché. Vous pourrez confirmer le devis plus tard.</p>}
+              </div>
+
+              <div>
+                <label className="label" htmlFor="sale-discount">Remise (FCFA)</label>
+                <input
+                  id="sale-discount"
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  max={subtotal}
+                  className="input"
+                  placeholder="0"
+                  value={discount}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setDiscount(e.target.value)}
+                />
+              </div>
+
+              {!isDraft && (
+                <div>
+                  <label className="label">Paiement</label>
+                  <Segmented
+                    label="Mode de paiement"
+                    value={payMode}
+                    onChange={changePayMode}
+                    options={[
+                      { value: 'full', label: 'Payé' },
+                      { value: 'advance', label: 'Avance' },
+                      { value: 'credit', label: 'Crédit' },
+                    ]}
+                  />
+                  {payMode === 'full' && <p className="text-xs text-gray-400 mt-1.5">Le client règle la totalité maintenant.</p>}
+                  {payMode === 'credit' && <p className="text-xs text-gray-400 mt-1.5">Rien n'est payé maintenant : le montant s'ajoute à la dette du client.</p>}
+                  {payMode === 'advance' && (
+                    <div className="mt-2 space-y-2">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min="0"
+                        max={total}
+                        aria-label="Montant payé maintenant"
+                        className="input"
+                        placeholder="Montant payé maintenant"
+                        value={amountPaid}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => setAmountPaid(e.target.value)}
+                      />
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { label: 'Moitié', value: Math.round(total / 2) },
+                          { label: 'Tout', value: total },
+                        ].map((chip) => (
+                          <button key={chip.label} type="button" className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" onClick={() => setAmountPaid(String(chip.value))}>
+                            {chip.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!isDraft && (
+                <div>
+                  <label className="label">Livraison</label>
+                  <Segmented
+                    label="Livraison"
+                    value={deliveryMode}
+                    onChange={setDeliveryMode}
+                    options={[
+                      { value: 'immediate', label: 'Tout de suite' },
+                      { value: 'staged', label: 'Plus tard' },
+                    ]}
+                  />
+                  {deliveryMode === 'staged' && (
+                    <p className="text-xs text-gray-400 mt-1.5">Le stock sort au fur et à mesure des bons de livraison.</p>
+                  )}
+                </div>
+              )}
+
+              <dl className="rounded-lg bg-gray-50 dark:bg-gray-800/60 p-3 space-y-1.5 text-sm">
+                <div className="flex justify-between text-gray-500 dark:text-gray-400"><dt>Sous-total</dt><dd className="tabular-nums">{currency(subtotal)}</dd></div>
+                {Number(discount) > 0 && (
+                  <div className="flex justify-between text-gray-500 dark:text-gray-400"><dt>Remise</dt><dd className="tabular-nums">- {currency(discount)}</dd></div>
+                )}
+                {!isDraft && payMode !== 'full' && (
+                  <>
+                    <div className="flex justify-between text-gray-500 dark:text-gray-400"><dt>Payé maintenant</dt><dd className="tabular-nums">{currency(Number(amountPaid || 0))}</dd></div>
+                    <div className="flex justify-between font-medium text-red-500"><dt>Reste à payer</dt><dd className="tabular-nums">{currency(Math.max(0, total - Number(amountPaid || 0)))}</dd></div>
+                  </>
+                )}
+              </dl>
+            </div>
           </div>
 
-          <label className="flex items-center gap-2.5 p-3 rounded-lg bg-purple-50 dark:bg-purple-500/10 cursor-pointer border border-purple-200 dark:border-purple-500/30">
-            <input
-              type="checkbox"
-              className="h-4 w-4"
-              checked={isDraft}
-              onChange={(e) => {
-                setIsDraft(e.target.checked)
-                if (e.target.checked) {
-                  setPartialPayment(false)
-                  setAmountPaid('')
-                }
-              }}
-            />
-            <div>
-              <span className="text-sm font-medium text-purple-700 dark:text-purple-300">Enregistrer comme devis (brouillon)</span>
-              <p className="text-xs text-purple-500 dark:text-purple-400">Ne pas décrémenter le stock. Ce devis pourra être confirmé plus tard en facture.</p>
+          {/* ---- Pied collant : le total et le bouton restent toujours visibles ---- */}
+          <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-5 px-5 sm:px-6 py-3 bg-white dark:bg-darkcard border-t border-gray-200 dark:border-gray-700/60 rounded-b-xl">
+            {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400 mb-2">{error}</p>}
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs text-gray-400">Total à payer</p>
+                <p className="text-xl font-semibold tabular-nums leading-tight">{currency(total)}</p>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" className="btn-secondary" onClick={() => { setNewSaleOpen(false); setNewQuoteOpen(false) }}>Annuler</button>
+                <button type="submit" className="btn-primary" disabled={createSale.isPending || cart.length === 0}>
+                  {createSale.isPending ? 'Enregistrement...' : isDraft ? 'Enregistrer le devis' : 'Valider la vente'}
+                </button>
+              </div>
             </div>
-          </label>
-
-          {!isDraft && (
-            <label className="flex items-center gap-2.5 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/60 cursor-pointer">
-              <input
-                type="checkbox"
-                className="h-4 w-4"
-                checked={partialPayment}
-                onChange={(e) => { setPartialPayment(e.target.checked); setAmountPaid('') }}
-              />
-              <span className="text-sm font-medium">Vente à crédit / avance (le client paiera le reste plus tard)</span>
-            </label>
-          )}
-
-          <label className="flex items-center gap-2.5 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/60 cursor-pointer">
-            <input
-              type="checkbox"
-              className="h-4 w-4"
-              checked={deliveryMode === 'staged'}
-              onChange={(e) => setDeliveryMode(e.target.checked ? 'staged' : 'immediate')}
-            />
-            <div>
-              <span className="text-sm font-medium">Livraison échelonnée</span>
-              <p className="text-xs text-gray-400">Le stock ne sera pas décrémenté immédiatement. Vous livrerez la marchandise étape par étape.</p>
-            </div>
-          </label>
-
-          {partialPayment && (
-            <div>
-              <label className="label">Montant payé maintenant (avance)</label>
-              <input
-                type="number"
-                min="0"
-                max={total}
-                className="input"
-                placeholder="0 si le client ne paie rien pour l'instant"
-                value={amountPaid}
-                onChange={(e) => setAmountPaid(e.target.value)}
-              />
-              <p className="text-xs text-gray-400 mt-1">
-                Reste à payer par le client : <strong className="text-red-500">{currency(Math.max(0, total - Number(amountPaid || 0)))}</strong>
-              </p>
-            </div>
-          )}
-
-          <div className="border-t border-gray-200 dark:border-gray-700/60 pt-3 space-y-1">
-            <div className="flex justify-between text-sm text-gray-500"><span>Sous-total</span><span>{currency(subtotal)}</span></div>
-            <div className="flex justify-between text-sm text-gray-500"><span>Remise</span><span>-{currency(discount)}</span></div>
-            <div className="flex justify-between text-lg font-bold"><span>Total</span><span>{currency(total)}</span></div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className="btn-secondary" onClick={() => { setNewSaleOpen(false); setNewQuoteOpen(false) }}>Annuler</button>
-            <button type="submit" className={isDraft ? 'btn-secondary' : 'btn-primary'} disabled={createSale.isPending}>
-              {createSale.isPending ? (isDraft ? 'Création...' : 'Création...') : (isDraft ? 'Enregistrer le devis' : 'Créer la facture')}
-            </button>
           </div>
         </form>
       </Modal>
 
       {/* ---- Modal: modifier une facture (client, remise, articles) ---- */}
-      <Modal open={!!editSale} onClose={() => setEditSale(null)} title={`Modifier facture ${editSale?.invoice_number || ''}`} maxWidth="max-w-2xl">
-        {editSale && (
-          <form onSubmit={handleUpdateSale} className="space-y-4">
-            <div>
-              <label className="label">Client (optionnel)</label>
-              <SearchableSelect
-                value={editClientId}
-                onChange={setEditClientId}
-                options={clientOptions}
-                placeholder="Rechercher un client..."
-                emptyMessage="Aucun client trouvé"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="label">Ajouter un produit à la facture</label>
-              <div className="flex gap-2">
-                <div className="flex-1 min-w-0">
+      <Modal open={!!editSale} onClose={() => setEditSale(null)} title={<>Modifier la facture <span className="whitespace-nowrap font-mono">{editSale?.invoice_number}</span></>} maxWidth="max-w-2xl">
+        {editSale && (() => {
+          const editSubtotal = editSaleItems.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
+          const editTotal = Math.max(0, editSubtotal - Number(editDiscount || 0))
+          return (
+            <form onSubmit={handleUpdateSale}>
+              <div className="space-y-4">
+                <div>
+                  <label className="label">Client <span className="text-gray-400 font-normal">(optionnel)</span></label>
                   <SearchableSelect
-                    value={editProductToAdd}
-                    onChange={setEditProductToAdd}
-                    options={productOptions}
-                    placeholder="Rechercher un produit..."
-                    emptyMessage="Aucun produit trouvé"
+                    value={editClientId}
+                    onChange={setEditClientId}
+                    options={clientOptions}
+                    placeholder="Client comptoir, ou rechercher un client..."
+                    emptyMessage="Aucun client trouvé"
                   />
                 </div>
-                <button type="button" className="btn-secondary shrink-0" onClick={addEditProduct}>
-                  <Plus size={16} /> Ajouter
-                </button>
-              </div>
-              <p className="text-xs text-gray-400">Modifiez la quantité et le prix unitaire, ou supprimez des articles puis enregistrez.</p>
-            </div>
 
-            <div className="space-y-2">
-              <label className="label">Articles de la facture</label>
-              <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
-                {editSaleItems.length === 0 ? (
-                  <p className="text-sm text-gray-400 p-3">Aucun article</p>
-                ) : (
-                  editSaleItems.map(item => (
-                    <div key={item.id} className="flex items-center gap-3 p-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{item.product_name}</p>
-                        <p className="text-xs text-gray-400">Prix unitaire</p>
+                <div>
+                  <label className="label">Ajouter un produit</label>
+                  <SearchableSelect
+                    value=""
+                    onChange={(id) => addEditProduct(id)}
+                    options={productOptions}
+                    placeholder="Tapez le nom du produit puis Entrée..."
+                    emptyMessage="Aucun produit trouvé"
+                    clearOnSelect
+                  />
+                </div>
+
+                <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
+                  {editSaleItems.length === 0 ? (
+                    <p className="text-sm text-gray-400 p-4 text-center">Aucun article : ajoutez-en au moins un.</p>
+                  ) : (
+                    editSaleItems.map((item) => (
+                      <div key={item.id} className="p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-sm font-medium truncate">{item.product_name}</p>
+                          <button
+                            type="button"
+                            aria-label={`Retirer ${item.product_name}`}
+                            className="p-1.5 -mr-1.5 -mt-1 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg"
+                            onClick={() => handleRemoveEditSaleItem(item.id)}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap items-end justify-between gap-3 mt-2">
+                          <div className="flex items-end gap-3">
+                            <div>
+                              <p className="text-[11px] text-gray-400 mb-1">Quantité</p>
+                              <QtyStepper value={item.quantity} onChange={(q) => handleEditSaleItemQuantity(item.id, q)} />
+                            </div>
+                            <div>
+                              <p className="text-[11px] text-gray-400 mb-1">Prix unitaire</p>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min="0"
+                                aria-label="Prix unitaire"
+                                className="input w-28 h-9 text-right"
+                                value={item.unit_price}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) => handleEditSaleItemPrice(item.id, e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <p className="text-sm font-semibold tabular-nums">{currency(item.quantity * item.unit_price)}</p>
+                        </div>
                       </div>
-                      <input
-                        type="number"
-                        min="1"
-                        className="input w-16 text-center"
-                        value={item.quantity}
-                        onChange={(e) => handleEditSaleItemQuantity(item.id, Number(e.target.value))}
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        className="input w-24 text-right"
-                        value={item.unit_price}
-                        onChange={(e) => handleEditSaleItemPrice(item.id, Number(e.target.value))}
-                      />
-                      <p className="w-24 text-right text-sm font-semibold">{currency(item.quantity * item.unit_price)}</p>
-                      <button
-                        type="button"
-                        className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg"
-                        onClick={() => handleRemoveEditSaleItem(item.id)}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+                    ))
+                  )}
+                </div>
 
-            <div>
-              <label className="label">Remise (FCFA)</label>
-              <input type="number" min="0" className="input" value={editDiscount} onChange={(e) => setEditDiscount(e.target.value)} />
-            </div>
+                <div>
+                  <label className="label" htmlFor="edit-discount">Remise (FCFA)</label>
+                  <input id="edit-discount" type="number" inputMode="numeric" min="0" className="input sm:w-48" value={editDiscount} onFocus={(e) => e.target.select()} onChange={(e) => setEditDiscount(e.target.value)} />
+                </div>
 
-            <div className="border-t border-gray-200 dark:border-gray-700/60 pt-3 space-y-1">
-              <div className="flex justify-between text-sm text-gray-500">
-                <span>Sous-total</span>
-                <span>{currency(editSaleItems.reduce((sum, item) => sum + item.quantity * item.unit_price, 0))}</span>
+                <dl className="rounded-lg bg-gray-50 dark:bg-gray-800/60 p-3 space-y-1.5 text-sm">
+                  <div className="flex justify-between text-gray-500 dark:text-gray-400"><dt>Sous-total</dt><dd className="tabular-nums">{currency(editSubtotal)}</dd></div>
+                  {Number(editDiscount) > 0 && (
+                    <div className="flex justify-between text-gray-500 dark:text-gray-400"><dt>Remise</dt><dd className="tabular-nums">- {currency(editDiscount)}</dd></div>
+                  )}
+                  <div className="flex justify-between text-gray-500 dark:text-gray-400"><dt>Déjà payé</dt><dd className="tabular-nums">{currency(editSale.amount_paid)}</dd></div>
+                </dl>
               </div>
-              <div className="flex justify-between text-sm text-gray-500">
-                <span>Remise</span>
-                <span>-{currency(editDiscount)}</span>
-              </div>
-              <div className="flex justify-between text-lg font-bold">
-                <span>Total</span>
-                <span>{currency(Math.max(0, editSaleItems.reduce((sum, item) => sum + item.quantity * item.unit_price, 0) - Number(editDiscount || 0)))}</span>
-              </div>
-            </div>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" className="btn-secondary" onClick={() => setEditSale(null)}>Annuler</button>
-              <button type="submit" className="btn-primary" disabled={updateSaleItems.isPending}>
-                {updateSaleItems.isPending ? 'Enregistrement...' : 'Enregistrer'}
-              </button>
-            </div>
-          </form>
-        )}
+              <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-5 px-5 sm:px-6 py-3 bg-white dark:bg-darkcard border-t border-gray-200 dark:border-gray-700/60 rounded-b-xl">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs text-gray-400">Nouveau total</p>
+                    <p className="text-xl font-semibold tabular-nums leading-tight">{currency(editTotal)}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" className="btn-secondary" onClick={() => setEditSale(null)}>Annuler</button>
+                    <button type="submit" className="btn-primary" disabled={updateSaleItems.isPending || editSaleItems.length === 0}>
+                      {updateSaleItems.isPending ? 'Enregistrement...' : 'Enregistrer'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </form>
+          )
+        })()}
       </Modal>
 
       {/* ---- Modal: gestion des livraisons ---- */}
@@ -1134,13 +1184,13 @@ export default function Sales() {
                     <div key={delivery.id} className="p-3">
                       <div className="flex items-center justify-between mb-2">
                         <div>
-                          <span className="text-sm font-semibold">{delivery.delivery_number}</span>
+                          <span className="text-sm font-semibold whitespace-nowrap">{delivery.delivery_number}</span>
                           <span className="text-xs text-gray-400 ml-2">{new Date(delivery.created_at).toLocaleString('fr-FR')}</span>
                         </div>
                         <button
                           type="button"
                           className="text-xs btn-secondary py-1 px-2"
-                          onClick={() => downloadDeliveryPDF(delivery)}
+                          onClick={() => downloadDeliveryPDF(buildDeliveryPdfData(delivery))}
                         >
                           <Download size={12} /> PDF
                         </button>
@@ -1171,21 +1221,19 @@ export default function Sales() {
               </button>
             ) : (
               <form onSubmit={handleCreateDelivery} className="space-y-3 border border-gray-200 dark:border-gray-700/60 rounded-lg p-3">
-                <label className="label">Articles à livrer maintenant</label>
+                <label className="label">Quantités à livrer maintenant</label>
                 {deliveryItems.length === 0 && <p className="text-xs text-gray-400">Tous les articles ont déjà été livrés.</p>}
                 {deliveryItems.map((item) => (
-                  <div key={item.sale_item_id} className="flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
+                  <div key={item.sale_item_id} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
                       <p className="text-sm font-medium truncate">{item.product_name}</p>
-                      <p className="text-xs text-gray-400">Quantité commandée : {item.quantity}</p>
+                      <p className="text-xs text-gray-400">Commandé : {item.quantity} · reste à livrer : {item.available}</p>
                     </div>
-                    <input
-                      type="number"
-                      min="0"
+                    <QtyStepper
+                      min={0}
                       max={item.available}
-                      className="input w-20 text-center"
                       value={item.quantity_delivered}
-                      onChange={(e) => handleDeliveryItemQuantity(item.sale_item_id, Number(e.target.value))}
+                      onChange={(q) => handleDeliveryItemQuantity(item.sale_item_id, q)}
                     />
                   </div>
                 ))}
@@ -1202,7 +1250,7 @@ export default function Sales() {
                 <div className="flex justify-end gap-2 pt-2">
                   <button type="button" className="btn-secondary" onClick={() => setNewDeliveryOpen(false)}>Annuler</button>
                   <button type="submit" className="btn-primary" disabled={createDelivery.isPending}>
-                    {createDelivery.isPending ? 'Création...' : 'Créer le bon de livraison'}
+                    {createDelivery.isPending ? 'Création...' : 'Valider la livraison'}
                   </button>
                 </div>
               </form>
@@ -1220,167 +1268,234 @@ export default function Sales() {
       />
 
       {/* ---- Modal: détail vente ---- */}
-      <Modal open={!!detailSale} onClose={() => setDetailSale(null)} title={detailSale?.quote_status === 'draft' ? `Devis ${detailSale?.invoice_number || ''}` : `Facture ${detailSale?.invoice_number || ''}`} maxWidth="max-w-lg">
-        {detailSale && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <ClientAvatar name={detailSale.clients?.name} />
-              <div>
-                <p className="text-sm font-medium">{detailSale.clients?.name || 'Client comptoir'}</p>
-                <p className="text-xs text-gray-400">{new Date(detailSale.created_at).toLocaleString('fr-FR')}</p>
-              </div>
-            </div>
-            {detailSale.quote_status === 'draft' && (
-              <div className="p-3 rounded-lg bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30">
-                <p className="text-sm font-medium text-purple-700 dark:text-purple-300">Ceci est un devis (brouillon).</p>
-                <p className="text-xs text-purple-500 dark:text-purple-400 mt-1">Il n'affecte pas le stock et ne compte pas dans le chiffre d'affaires.</p>
-              </div>
-            )}
-            <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
-              {detailSale.sale_items?.map((item) => (
-                <div key={item.id} className="flex justify-between p-3 text-sm">
-                  <span>{item.product_name} × {item.quantity}</span>
-                  <span className="font-medium tabular-nums">{currency(item.line_total)}</span>
-                </div>
-              ))}
-            </div>
-            <div className="space-y-1">
-              <div className="flex justify-between text-sm text-gray-500"><span>Total</span><span>{currency(detailSale.total)}</span></div>
-              {detailSale.quote_status !== 'draft' && (
-                <>
-                  <div className="flex justify-between text-sm text-gray-500"><span>Payé</span><span>{currency(detailSale.amount_paid)}</span></div>
-                  <div className="flex justify-between text-lg font-bold">
-                    <span>Reste dû</span>
-                    <span className={Number(detailSale.total) - Number(detailSale.amount_paid) > 0 ? 'text-red-500' : ''}>
-                      {currency(Number(detailSale.total) - Number(detailSale.amount_paid))}
-                    </span>
-                  </div>
-                </>
+      <Modal
+        open={!!detailSale}
+        onClose={() => setDetailSale(null)}
+        title={<>{detailSale?.quote_status === 'draft' ? 'Devis' : 'Facture'} <span className="whitespace-nowrap font-mono">{detailSale?.invoice_number}</span></>}
+        maxWidth="max-w-lg"
+      >
+        {detailSale && (() => {
+          const isDraft = detailSale.quote_status === 'draft'
+          const isCancelled = detailSale.status === 'annulee'
+          const due = Number(detailSale.total) - Number(detailSale.amount_paid)
+          const discount = Number(detailSale.discount || 0)
+          return (
+            <div className="space-y-4">
+              <DetailHeader
+                avatar={<ClientAvatar name={detailSale.clients?.name} />}
+                title={detailSale.clients?.name || 'Client comptoir'}
+                subtitle={`${detailSale.clients?.phone ? `${detailSale.clients.phone} · ` : ''}${new Date(detailSale.created_at).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}`}
+              >
+                {isCancelled ? (
+                  <StatusBadge status="annulee" />
+                ) : isDraft ? (
+                  <QuoteStatusBadge quoteStatus="draft" />
+                ) : (
+                  <>
+                    <StatusBadge status={detailSale.status} />
+                    <DeliveryStatusBadge deliveryStatus={detailSale.delivery_status} />
+                  </>
+                )}
+              </DetailHeader>
+
+              {isDraft && !isCancelled && (
+                <Callout tone="purple" title="Ceci est un devis (brouillon)">
+                  Il n'affecte pas le stock et ne compte pas dans le chiffre d'affaires.
+                </Callout>
               )}
-            </div>
-            {detailSale.status === 'annulee' && (
-              <p className="text-xs text-red-500 text-center font-medium">Facture annulée - stock réintégré.</p>
-            )}
-            {detailSale.quote_status === 'draft' ? (
-              <div className="flex gap-2">
-                <button
-                  className="btn-success flex-1"
-                  onClick={() => confirmQuote.mutateAsync({ saleId: detailSale.id, userId: user?.id }).then(() => setDetailSale(null))}
-                  disabled={confirmQuote.isPending}
-                >
-                  <FileText size={15} /> Confirmer le devis
-                </button>
-                {isAdmin && (
-                <button
-                  className="btn-secondary flex-1"
-                  onClick={() => { setDetailSale(null); setConfirmCancel(detailSale) }}
-                >
-                  Annuler le devis
-                </button>
-                )}
-              </div>
-            ) : (
-              <>
-                {detailSale.delivery_status !== 'livree' && detailSale.status !== 'annulee' && (
-                  <button
-                    className="btn-success w-full"
-                    onClick={() => setDeliverySale(detailSale)}
-                  >
-                    <Truck size={15} /> Gérer les livraisons
-                  </button>
-                )}
-                {detailSale.status !== 'annulee' && Number(detailSale.total) - Number(detailSale.amount_paid) > 0 && (
-                  <button
-                    className="btn-success w-full"
-                    onClick={() => { setPaymentOpen(detailSale); setPaymentAmount(''); setPaymentError('') }}
-                  >
-                    <CreditCard size={15} /> Enregistrer un paiement
-                  </button>
-                )}
-              </>
-            )}
-            {detailPayments.length > 0 && (
-              <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
-                <div className="px-3 py-2 text-xs font-semibold text-gray-600 dark:text-gray-300">Historique des paiements</div>
-                {detailPayments.map((p) => (
-                  <div key={p.id} className="px-3 py-2 flex items-center justify-between text-xs">
-                    <div>
-                      <p className="font-medium">{currency(p.amount)} — {p.method}</p>
-                      {p.reference && <p className="text-gray-500">Réf : {p.reference}</p>}
-                      {p.notes && <p className="text-gray-500">{p.notes}</p>}
+              {isCancelled && (
+                <Callout tone="red" title="Facture annulée">
+                  Les quantités sorties ont été remises en stock{Number(detailSale.amount_paid) > 0 ? ' et les encaissements remboursés.' : '.'}
+                </Callout>
+              )}
+
+              <DetailList title="Articles">
+                {detailSale.sale_items?.map((item) => (
+                  <div key={item.id} className="flex items-start justify-between gap-4 px-3 py-2.5 text-sm">
+                    <div className="min-w-0">
+                      <p className="font-medium">{item.product_name}</p>
+                      <p className="text-xs text-gray-400 tabular-nums">{item.quantity} × {currency(item.unit_price)}</p>
                     </div>
-                    <span className="text-[11px] text-gray-500">{new Date(p.created_at).toLocaleString('fr-FR')}</span>
+                    <span className="font-medium tabular-nums whitespace-nowrap">{currency(item.line_total)}</span>
                   </div>
                 ))}
-              </div>
-            )}
-            <div className="flex gap-2">
-              <button className="btn-secondary flex-1" onClick={() => downloadInvoicePDF(detailSale)}>
-                <Download size={15} /> Télécharger PDF
-              </button>
-              {detailSale.quote_status !== 'draft' && (
-                <button className="btn-success flex-1" disabled={!detailSale.clients?.phone} onClick={() => sendInvoiceViaWhatsApp(detailSale)}>
-                  <MessageCircle size={15} /> Envoyer WhatsApp
-                </button>
+              </DetailList>
+
+              <DetailList>
+                {discount > 0 && <DetailRow label="Sous-total">{currency(detailSale.subtotal)}</DetailRow>}
+                {discount > 0 && <DetailRow label="Remise">- {currency(discount)}</DetailRow>}
+                <DetailRow label="Total" strong>{currency(detailSale.total)}</DetailRow>
+                {!isDraft && <DetailRow label="Payé">{currency(detailSale.amount_paid)}</DetailRow>}
+                {!isDraft && !isCancelled && (
+                  <DetailRow label="Reste dû" strong tone={due > 0 ? 'red' : 'emerald'}>{currency(due)}</DetailRow>
+                )}
+              </DetailList>
+
+              {detailPayments.length > 0 && (
+                <DetailList title="Paiements">
+                  {detailPayments.map((p) => {
+                    const refund = Number(p.amount) < 0
+                    return (
+                      <DetailRow
+                        key={p.id}
+                        tone={refund ? 'red' : undefined}
+                        label={
+                          <span>
+                            {refund ? 'Remboursement' : PAYMENT_METHOD_LABELS[p.method] || p.method}
+                            {p.reference && !refund && <span className="text-gray-400"> · Réf {p.reference}</span>}
+                            <span className="block text-xs text-gray-400">{new Date(p.created_at).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                            {p.notes && !refund && <span className="block text-xs text-gray-400">{p.notes}</span>}
+                          </span>
+                        }
+                      >
+                        {currency(p.amount)}
+                      </DetailRow>
+                    )
+                  })}
+                </DetailList>
               )}
+
+              {!isDraft && !detailSale.clients?.phone && !isCancelled && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">Ce client n'a pas de numéro WhatsApp enregistré.</p>
+              )}
+
+              <DetailActions>
+                {isDraft ? (
+                  <>
+                    <button className="btn-secondary" onClick={() => downloadInvoicePDF(detailSale)}>
+                      <Download size={15} /> PDF
+                    </button>
+                    {isAdmin && (
+                      <button className="btn-secondary" onClick={() => { setDetailSale(null); setConfirmCancel(detailSale) }}>
+                        Annuler le devis
+                      </button>
+                    )}
+                    <button
+                      className="btn-success"
+                      onClick={() => confirmQuote.mutateAsync({ saleId: detailSale.id, userId: user?.id }).then(() => setDetailSale(null))}
+                      disabled={confirmQuote.isPending}
+                    >
+                      <FileText size={15} /> Confirmer le devis
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button className="btn-secondary" onClick={() => downloadInvoicePDF(detailSale)}>
+                      <Download size={15} /> PDF
+                    </button>
+                    <button className="btn-secondary" disabled={!detailSale.clients?.phone} onClick={() => sendInvoiceViaWhatsApp(detailSale)}>
+                      <MessageCircle size={15} /> WhatsApp
+                    </button>
+                    {detailSale.delivery_status !== 'livree' && !isCancelled && (
+                      <button className="btn-secondary" onClick={() => setDeliverySale(detailSale)}>
+                        <Truck size={15} /> Livraisons
+                      </button>
+                    )}
+                    {!isCancelled && due > 0 && (
+                      <button
+                        className="btn-success"
+                        onClick={() => { setPaymentOpen(detailSale); setPaymentAmount(''); setPaymentError('') }}
+                      >
+                        <CreditCard size={15} /> Enregistrer un paiement
+                      </button>
+                    )}
+                  </>
+                )}
+              </DetailActions>
             </div>
-            {!detailSale.clients?.phone && detailSale.quote_status !== 'draft' && (
-              <p className="text-xs text-amber-500 text-center">Ce client n'a pas de numéro WhatsApp enregistré.</p>
-            )}
-          </div>
-        )}
+          )
+        })()}
       </Modal>
 
       {/* ---- Modal: paiement d'une facture (avance / crédit) ---- */}
       <Modal open={!!paymentOpen} onClose={() => setPaymentOpen(null)} title="Enregistrer un paiement">
-        {paymentOpen && (
-          <form onSubmit={handleAddPayment} className="space-y-4">
-            {paymentError && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">{paymentError}</div>}
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Client <strong>{paymentOpen.clients?.name || 'Client comptoir'}</strong> — facture {paymentOpen.invoice_number} — solde dû :{' '}
-              <span className="text-red-500 font-semibold">{currency(Number(paymentOpen.total) - Number(paymentOpen.amount_paid))}</span>
-            </p>
-            <div>
-              <label className="label">Montant du paiement (FCFA)</label>
-              <input
-                type="number"
-                min="1"
-                max={Number(paymentOpen.total) - Number(paymentOpen.amount_paid)}
-                required
-                autoFocus
-                className="input"
-                value={paymentAmount}
-                onChange={(e) => setPaymentAmount(e.target.value)}
+        {paymentOpen && (() => {
+          const due = Number(paymentOpen.total) - Number(paymentOpen.amount_paid)
+          const afterPayment = Math.max(0, due - Number(paymentAmount || 0))
+          return (
+            <form onSubmit={handleAddPayment} className="space-y-4">
+              <DetailHeader
+                avatar={<ClientAvatar name={paymentOpen.clients?.name} />}
+                title={paymentOpen.clients?.name || 'Client comptoir'}
+                subtitle={<>Facture <span className="whitespace-nowrap font-mono">{paymentOpen.invoice_number}</span></>}
               />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <DetailList>
+                <DetailRow label="Total de la facture">{currency(paymentOpen.total)}</DetailRow>
+                <DetailRow label="Déjà payé">{currency(paymentOpen.amount_paid)}</DetailRow>
+                <DetailRow label="Reste dû" strong tone="red">{currency(due)}</DetailRow>
+              </DetailList>
+
+              <div>
+                <label className="label" htmlFor="pay-amount">Montant reçu (FCFA)</label>
+                <input
+                  id="pay-amount"
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max={due}
+                  required
+                  autoFocus
+                  className="input text-lg font-semibold"
+                  placeholder="0"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                />
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                  <button type="button" className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" onClick={() => setPaymentAmount(String(due))}>
+                    Solder : {currency(due)}
+                  </button>
+                  {due > 1 && (
+                    <button type="button" className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" onClick={() => setPaymentAmount(String(Math.round(due / 2)))}>
+                      Moitié
+                    </button>
+                  )}
+                  {paymentAmount !== '' && <span className="text-xs text-gray-400 ml-auto tabular-nums">Il restera {currency(afterPayment)}</span>}
+                </div>
+              </div>
+
               <div>
                 <label className="label">Mode de paiement</label>
-                <select className="input" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
-                  <option value="especes">Espèces</option>
-                  <option value="mobile_money">Mobile Money</option>
-                  <option value="virement">Virement</option>
-                  <option value="cheque">Chèque</option>
-                  <option value="carte">Carte</option>
-                </select>
+                <Segmented
+                  label="Mode de paiement"
+                  value={['especes', 'mobile_money'].includes(paymentMethod) ? paymentMethod : 'autre'}
+                  onChange={(v) => setPaymentMethod(v === 'autre' ? 'virement' : v)}
+                  options={[
+                    { value: 'especes', label: 'Espèces' },
+                    { value: 'mobile_money', label: 'Mobile Money' },
+                    { value: 'autre', label: 'Autre' },
+                  ]}
+                />
+                {!['especes', 'mobile_money'].includes(paymentMethod) && (
+                  <select className="input mt-2" aria-label="Autre mode de paiement" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+                    <option value="virement">Virement</option>
+                    <option value="cheque">Chèque</option>
+                    <option value="carte">Carte</option>
+                  </select>
+                )}
               </div>
-              <div>
-                <label className="label">Référence (optionnel)</label>
-                <input className="input" value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} placeholder="Ex: N° chèque / transaction" />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="label" htmlFor="pay-ref">Référence <span className="text-gray-400 font-normal">(optionnel)</span></label>
+                  <input id="pay-ref" className="input" value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} placeholder="N° chèque / transaction" />
+                </div>
+                <div>
+                  <label className="label" htmlFor="pay-notes">Note <span className="text-gray-400 font-normal">(optionnel)</span></label>
+                  <input id="pay-notes" className="input" value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} placeholder="Ex: acompte" />
+                </div>
               </div>
-            </div>
-            <div>
-              <label className="label">Note (optionnel)</label>
-              <textarea className="input" rows={2} value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} placeholder="Ex: avance, acompte..." />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" className="btn-secondary" onClick={() => setPaymentOpen(null)}>Annuler</button>
-              <button type="submit" className="btn-primary" disabled={addPayment.isPending}>
-                {addPayment.isPending ? 'Enregistrement...' : 'Confirmer le paiement'}
-              </button>
-            </div>
-          </form>
-        )}
+
+              {paymentError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{paymentError}</p>}
+
+              <DetailActions>
+                <button type="button" className="btn-secondary" onClick={() => setPaymentOpen(null)}>Annuler</button>
+                <button type="submit" className="btn-success" disabled={addPayment.isPending}>
+                  {addPayment.isPending ? 'Enregistrement...' : 'Confirmer le paiement'}
+                </button>
+              </DetailActions>
+            </form>
+          )
+        })()}
       </Modal>
 
       {/* ---- Modal: reçu de paiement ---- */}

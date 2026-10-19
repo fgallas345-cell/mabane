@@ -1,273 +1,187 @@
-import { SHOP, currency } from '../lib/constants'
-import { ensureFont, setFontSafe } from './pdfFonts'
+import { currency } from '../lib/constants'
+import { setFontSafe } from './pdfFonts'
+import {
+  BLUE,
+  BLUE_LIGHT,
+  LETTERHEAD_H,
+  newDoc,
+  safeText,
+  fitText,
+  amountInWords,
+  drawFrame,
+  drawLetterhead,
+  drawDateLine,
+  drawTitleLine,
+  dashedLine,
+  drawWatermark,
+  wrapRows,
+  tableHeight,
+  drawTable,
+} from './pdfCommon'
+
+const MARGIN = 5
+const PAGE_W = 120
+const MIN_ROWS = 5
+const SUMMARY_ROW_H = 7
 
 /**
- * Génère le PDF de facture pour une vente et retourne le doc jsPDF.
- * Toutes les dimensions sont en millimètres réels (pas de conversion px->mm
- * appliquée aux hauteurs de blocs, source du chevauchement précédent).
- * @param {object} sale - { invoice_number, created_at, clients: {name, phone}, sale_items: [...], subtotal, discount, total }
+ * Génère le PDF de la facture (ou du devis) et retourne le doc jsPDF.
+ * La hauteur de la page s'adapte au nombre d'articles : rien n'est jamais tronqué.
+ * @param {object} sale - { invoice_number, created_at, clients, sale_items, subtotal, discount, total, amount_paid, status, quote_status, delivery_status }
  */
 export async function generateInvoicePDF(sale) {
-  // ---- Constantes de mise en page (mm) ----
-  const MARGIN = 5
-  const PAGE_W = 120
-  const NUM_ROWS = 10
-  const ROW_H = 8
-
-  const HEADER_TITLE_H = 11
-  const HEADER_SUB_H = 7
-  const INFO_H = 18 // 3 lignes de texte + marges
-  const GAP_S = 3   // petit espace
-  const GAP_M = 4   // espace moyen
-  const DATE_H = 6
-  const TITLE_H = 9
-  const CLIENT_H = 7
-  const TABLE_HEADER_H = 8
-  const TOTAL_ROW_H = 8
-  const ARRETE_H = 5
-  const UNDERLINE_GAP = 6
-
-  const contentHeight =
-    HEADER_TITLE_H + HEADER_SUB_H + GAP_S +
-    INFO_H + GAP_M +
-    DATE_H + GAP_S +
-    TITLE_H + GAP_S +
-    CLIENT_H + GAP_M +
-    TABLE_HEADER_H + ROW_H * NUM_ROWS +
-    TOTAL_ROW_H + GAP_M +
-    ARRETE_H + UNDERLINE_GAP
-
-  const PAGE_H = MARGIN * 2 + contentHeight
-
-  // jspdf (~350 Ko) n'est chargé qu'au premier PDF généré, pas au démarrage de l'app
-  const { default: jsPDF } = await import('jspdf')
-  const doc = new jsPDF({ unit: 'mm', format: [PAGE_W, PAGE_H] })
-  await ensureFont(doc)
-
-  const safeText = (s) =>
-    String(s || '')
-      .replace(/\u2013|\u2014/g, '-')
-      .replace(/\u202F|\u00A0/g, ' ')
-
   const innerX = MARGIN
   const innerY = MARGIN
   const innerW = PAGE_W - MARGIN * 2
 
-  // Cadre extérieur
-  doc.setFillColor(253, 251, 245)
-  doc.setDrawColor(26, 79, 160)
-  doc.setLineWidth(0.5)
-  doc.setLineDashPattern([], 0)
-  doc.rect(innerX, innerY, innerW, contentHeight, 'FD')
-
-  let y = innerY
-
-  // Bandeau titre
-  doc.setFillColor(26, 79, 160)
-  doc.rect(innerX, y, innerW, HEADER_TITLE_H, 'F')
-  setFontSafe(doc, 'bold')
-  doc.setTextColor(255, 255, 255)
-  doc.setFontSize(14)
-  doc.text(safeText(SHOP.name), innerX + innerW / 2, y + HEADER_TITLE_H / 2 + 1.5, { align: 'center' })
-  y += HEADER_TITLE_H
-
-  // Sous-bandeau Gérant
-  doc.setFillColor(26, 79, 160)
-  doc.rect(innerX, y, innerW, HEADER_SUB_H, 'F')
-  doc.setDrawColor(255, 255, 255)
-  doc.setLineWidth(0.3)
-  doc.line(innerX, y, innerX + innerW, y)
-  setFontSafe(doc, 'bold')
-  doc.setFontSize(8)
-  doc.text(safeText(`Gérant : ${SHOP.owner}`), innerX + innerW / 2, y + HEADER_SUB_H / 2 + 1, { align: 'center' })
-  y += HEADER_SUB_H + GAP_S
-
-  // Boîtes d'infos (2 colonnes)
-  const halfW = innerW / 2 - 1.5
-  doc.setDrawColor(26, 79, 160)
-  doc.setLineWidth(0.4)
-  doc.rect(innerX, y, halfW, INFO_H, 'D')
-  doc.rect(innerX + innerW / 2 + 1.5, y, halfW, INFO_H, 'D')
-
-  const lineH = 4.6
-  setFontSafe(doc, 'bold')
-  doc.setFontSize(7.5)
-  doc.setTextColor(26, 79, 160)
-
-  // Colonne gauche : activités
-  const leftX = innerX + 3
-  let ty = y + 5
-  const activities = SHOP.activities || ['Vente Ciment, Fer', 'Béton, Matériel Electrique', 'Plomberie & Divers']
-  activities.forEach((line) => {
-    doc.text(safeText(line), leftX, ty)
-    ty += lineH
-  })
-
-  // Colonne droite : téléphones + localisation
-  const rightX = innerX + innerW / 2 + 3
-  ty = y + 5
-  const phones = SHOP.phones || []
-  if (phones[0]) {
-    doc.text(safeText(`Tél. : ${phones[0]}`), rightX, ty)
-    ty += lineH
-  }
-  if (phones[1] || phones[2]) {
-    const rest = [phones[1], phones[2]].filter(Boolean).join(' - ')
-    doc.text(safeText(rest), rightX, ty)
-    ty += lineH
-  }
-  doc.text(safeText(SHOP.location || 'DIOUROUP - SENEGAL'), rightX, ty)
-
-  y += INFO_H + GAP_M
-
-  // Ligne Date
-  setFontSafe(doc, 'normal')
-  doc.setFontSize(8.5)
-  doc.setTextColor(34, 34, 34)
-  doc.text('Date :', innerX + 3, y + DATE_H / 2 + 1)
-
-  const dateUnderlineX = innerX + 16
-  const dateUnderlineW = 50
-  const invoiceDate = sale.created_at ? new Date(sale.created_at).toLocaleDateString('fr-FR') : ''
-  if (invoiceDate) {
-    doc.text(invoiceDate, dateUnderlineX, y + DATE_H / 2 + 1)
-  }
-  doc.setDrawColor(120)
-  doc.setLineWidth(0.25)
-  doc.setLineDashPattern([1, 1], 0)
-  doc.line(dateUnderlineX, y + DATE_H / 2 + 2, dateUnderlineX + dateUnderlineW, y + DATE_H / 2 + 2)
-  doc.setLineDashPattern([], 0)
-
-  y += DATE_H + GAP_S
-
-  // Titre FACTURE + N°
-  setFontSafe(doc, 'bold')
-  doc.setTextColor(26, 79, 160)
-  doc.setFontSize(15)
   const isDraft = sale.quote_status === 'draft'
-  doc.text(isDraft ? 'DEVIS' : 'FACTURE', innerX + 5, y + TITLE_H / 2 + 2)
+  const isCancelled = sale.status === 'annulee'
+  const total = Number(sale.total || 0)
+  const discount = Number(sale.discount || 0)
+  const paid = isDraft ? 0 : Number(sale.amount_paid || 0)
+  const due = Math.max(0, total - paid)
+  const showDelivery = !isDraft && sale.delivery_status && sale.delivery_status !== 'livree'
 
-  if (isDraft) {
+  const qteW = 16
+  const punitW = 25
+  const totalW = 26
+  const designationW = innerW - qteW - punitW - totalW
+  const columns = [
+    { key: 'qty', label: 'QTÉ', w: qteW },
+    { key: 'label', label: 'DÉSIGNATION', w: designationW },
+    { key: 'unit', label: 'P. UNIT.', w: punitW, align: 'right' },
+    { key: 'total', label: 'PRIX TOTAL', w: totalW, align: 'right' },
+  ]
+
+  const rawRows = (sale.sale_items || []).map((item) => ({
+    label: item.product_name || '',
+    cells: {
+      qty: String(item.quantity ?? ''),
+      unit: currency(item.unit_price),
+      total: currency(Number(item.quantity || 0) * Number(item.unit_price || 0)),
+    },
+  }))
+
+  // Récapitulatif sous le tableau
+  const summary = []
+  if (discount > 0) {
+    summary.push({ label: 'Sous-total', value: currency(Number(sale.subtotal || total + discount)) })
+    summary.push({ label: 'Remise', value: `- ${currency(discount)}` })
+  }
+  summary.push({ label: 'MONTANT TOTAL', value: currency(total), strong: true })
+  if (!isDraft && !isCancelled) {
+    if (paid > 0) summary.push({ label: 'Payé', value: currency(paid) })
+    if (due > 0) summary.push({ label: 'RESTE À PAYER', value: currency(due), strong: true, alert: true })
+  }
+
+  const words = isDraft
+    ? `Arrêté le présent devis à la somme de : ${amountInWords(total)}.`
+    : `Arrêtée la présente facture à la somme de : ${amountInWords(total)}.`
+
+  // ---- Mesure (un doc temporaire sert à découper les textes) ----
+  const measure = await newDoc([PAGE_W, 200])
+  const rows = wrapRows(measure, rawRows, designationW - 4)
+  setFontSafe(measure, 'normal')
+  measure.setFontSize(7)
+  const wordsLines = measure.splitTextToSize(safeText(words), innerW - 4)
+
+  const hasPhone = !!sale.clients?.phone
+  const CLIENT_H = hasPhone ? 12 : 7
+  const contentHeight =
+    LETTERHEAD_H +
+    9 + // date
+    12 + // titre
+    CLIENT_H + 3 +
+    (showDelivery ? 4 : 0) +
+    tableHeight(rows, MIN_ROWS) +
+    summary.length * SUMMARY_ROW_H + 4 +
+    wordsLines.length * 3.4 + 3 +
+    8 // merci
+
+  const doc = await newDoc([PAGE_W, MARGIN * 2 + contentHeight])
+  drawFrame(doc, innerX, innerY, innerW, contentHeight)
+
+  let y = drawLetterhead(doc, innerX, innerY, innerW)
+  y = drawDateLine(doc, innerX, y, sale.created_at ? new Date(sale.created_at).toLocaleDateString('fr-FR') : '')
+  y = drawTitleLine(doc, innerX, y, innerW, isDraft ? 'DEVIS' : 'FACTURE', isDraft ? '' : sale.invoice_number)
+  if (isDraft && sale.invoice_number) {
+    setFontSafe(doc, 'bold')
     doc.setTextColor(128, 0, 128)
     doc.setFontSize(8)
-    doc.text('BROUILLON', innerX + innerW - 25, y + TITLE_H / 2 + 1, { align: 'right' })
-  } else {
-    doc.setTextColor(192, 57, 43)
-    doc.setFontSize(7.5)
-    doc.text('N°', innerX + innerW - 42, y + TITLE_H / 2 + 1)
-
-    doc.setDrawColor(192, 57, 43)
-    doc.setLineWidth(0.4)
-    const noX = innerX + innerW - 34
-    const noUnderlineW = 30
-    doc.line(noX, y + TITLE_H / 2 + 2, noX + noUnderlineW, y + TITLE_H / 2 + 2)
-
-    doc.setFontSize(8.5)
-    doc.text(String(safeText(sale.invoice_number || '')), noX + noUnderlineW - 0.5, y + TITLE_H / 2 + 1, { align: 'right' })
+    doc.text(safeText(sale.invoice_number), innerX + innerW - 4, y - 5.5, { align: 'right' })
   }
 
-  y += TITLE_H + GAP_S
-
-  // Ligne Client
+  // Client
   setFontSafe(doc, 'normal')
   doc.setFontSize(8.5)
   doc.setTextColor(34, 34, 34)
-  doc.text('Client :', innerX + 3, y + CLIENT_H / 2 + 1)
+  doc.text('Client :', innerX + 3, y + 4)
   setFontSafe(doc, 'bold')
-  doc.text(safeText(sale.clients?.name || ''), innerX + 18, y + CLIENT_H / 2 + 1)
-  doc.text('DOIT', innerX + innerW - 14, y + CLIENT_H / 2 + 1)
+  doc.text(safeText(sale.clients?.name || 'Client comptoir'), innerX + 18, y + 4)
+  dashedLine(doc, innerX + 16, y + 5, innerX + innerW - 4)
+  if (hasPhone) {
+    setFontSafe(doc, 'normal')
+    doc.setFontSize(7.5)
+    doc.setTextColor(80, 80, 80)
+    doc.text(safeText(`Tél. : ${sale.clients.phone}`), innerX + 18, y + 9.5)
+  }
+  y += CLIENT_H + 3
 
-  const clientUnderlineX = innerX + 16
-  const clientUnderlineW = innerW - 45
-  doc.setDrawColor(120)
-  doc.setLineWidth(0.25)
-  doc.setLineDashPattern([1, 1], 0)
-  doc.line(clientUnderlineX, y + CLIENT_H / 2 + 2, clientUnderlineX + clientUnderlineW, y + CLIENT_H / 2 + 2)
-  doc.setLineDashPattern([], 0)
-
-  y += CLIENT_H + GAP_S
-
-  if (sale.delivery_status && sale.delivery_status !== 'livree') {
+  if (showDelivery) {
     setFontSafe(doc, 'normal')
     doc.setFontSize(7.5)
     doc.setTextColor(34, 34, 34)
-    const deliveryLabel = sale.delivery_status === 'en_attente' ? 'Livraison : En attente' : 'Livraison : Partiellement livrée'
-    doc.text(deliveryLabel, innerX + 3, y + 4)
-    y += GAP_S
+    doc.text(sale.delivery_status === 'en_attente' ? 'Livraison : en attente' : 'Livraison : partielle', innerX + 3, y + 0.5)
+    y += 4
   }
 
-  y += GAP_M - GAP_S
+  // Tableau
+  const tableTop = y
+  y = drawTable(doc, { x: innerX, y, w: innerW, columns, rows, minRows: MIN_ROWS })
+  const tableBottom = y
 
-  // ---- Tableau ----
-  const qteW = 16
-  const punitW = 24
-  const totalW = 24
-  const designationW = innerW - qteW - punitW - totalW
-
-  const tableY = y
-  doc.setFillColor(207, 224, 247)
-  doc.setDrawColor(26, 79, 160)
-  doc.setLineWidth(0.4)
-  doc.rect(innerX, tableY, innerW, TABLE_HEADER_H, 'FD')
-  setFontSafe(doc, 'bold')
-  doc.setFontSize(7.5)
-  doc.setTextColor(26, 79, 160)
-  doc.text('QTE', innerX + qteW / 2, tableY + TABLE_HEADER_H / 2 + 1.5, { align: 'center' })
-  doc.text('DESIGNATION', innerX + qteW + designationW / 2, tableY + TABLE_HEADER_H / 2 + 1.5, { align: 'center' })
-  doc.text('P. UNIT.', innerX + qteW + designationW + punitW / 2, tableY + TABLE_HEADER_H / 2 + 1.5, { align: 'center' })
-  doc.text('PRIX TOTAL', innerX + qteW + designationW + punitW + totalW / 2, tableY + TABLE_HEADER_H / 2 + 1.5, { align: 'center' })
-  doc.line(innerX + qteW, tableY, innerX + qteW, tableY + TABLE_HEADER_H)
-  doc.line(innerX + qteW + designationW, tableY, innerX + qteW + designationW, tableY + TABLE_HEADER_H)
-  doc.line(innerX + qteW + designationW + punitW, tableY, innerX + qteW + designationW + punitW, tableY + TABLE_HEADER_H)
-
-  setFontSafe(doc, 'normal')
-  doc.setFontSize(7)
-  doc.setTextColor(0)
-  const items = sale.sale_items || []
-  for (let i = 0; i < NUM_ROWS; i++) {
-    const rowY = tableY + TABLE_HEADER_H + ROW_H * i
-    doc.setDrawColor(26, 79, 160)
-    doc.setLineWidth(0.3)
-    doc.rect(innerX, rowY, innerW, ROW_H, 'D')
-    doc.line(innerX + qteW, rowY, innerX + qteW, rowY + ROW_H)
-    doc.line(innerX + qteW + designationW, rowY, innerX + qteW + designationW, rowY + ROW_H)
-    doc.line(innerX + qteW + designationW + punitW, rowY, innerX + qteW + designationW + punitW, rowY + ROW_H)
-
-    const item = items[i]
-    if (item) {
-      const lineTotal = Number(item.quantity || 0) * Number(item.unit_price || 0)
-      doc.text(String(item.quantity || ''), innerX + qteW / 2, rowY + ROW_H / 2 + 1.5, { align: 'center' })
-      doc.text(safeText(item.product_name || ''), innerX + qteW + 2, rowY + ROW_H / 2 + 1.5)
-      doc.text(currency(item.unit_price), innerX + qteW + designationW + punitW - 2, rowY + ROW_H / 2 + 1.5, { align: 'right' })
-      doc.text(currency(lineTotal), innerX + qteW + designationW + punitW + totalW - 2, rowY + ROW_H / 2 + 1.5, { align: 'right' })
+  // Récapitulatif : libellé fusionné sur les 3 premières colonnes, montant dans la dernière
+  const valueX = innerX + qteW + designationW + punitW
+  summary.forEach((line) => {
+    if (line.strong) {
+      doc.setFillColor(...(line.alert ? [250, 226, 222] : BLUE_LIGHT))
+      doc.setDrawColor(...BLUE)
+      doc.setLineWidth(0.4)
+      doc.rect(innerX, y, innerW, SUMMARY_ROW_H, 'FD')
+    } else {
+      doc.setDrawColor(...BLUE)
+      doc.setLineWidth(0.3)
+      doc.rect(innerX, y, innerW, SUMMARY_ROW_H, 'D')
     }
-  }
+    doc.line(valueX, y, valueX, y + SUMMARY_ROW_H)
+    setFontSafe(doc, line.strong ? 'bold' : 'normal')
+    doc.setTextColor(...(line.alert ? [192, 57, 43] : BLUE))
+    doc.setFontSize(line.strong ? 8.5 : 7.5)
+    doc.text(line.label, valueX - 3, y + SUMMARY_ROW_H / 2 + 1.3, { align: 'right' })
+    const size = fitText(doc, line.value, totalW - 3, line.strong ? 8.5 : 7.5)
+    doc.setFontSize(size)
+    doc.text(line.value, valueX + totalW - 1.8, y + SUMMARY_ROW_H / 2 + 1.3, { align: 'right' })
+    y += SUMMARY_ROW_H
+  })
+  y += 4
 
-  const totalRowY = tableY + TABLE_HEADER_H + ROW_H * NUM_ROWS
-  doc.setFillColor(207, 224, 247)
-  doc.setDrawColor(26, 79, 160)
-  doc.setLineWidth(0.4)
-  doc.rect(innerX, totalRowY, innerW, TOTAL_ROW_H, 'FD')
-  doc.line(innerX + qteW + designationW + punitW, totalRowY, innerX + qteW + designationW + punitW, totalRowY + TOTAL_ROW_H)
-  setFontSafe(doc, 'bold')
-  doc.setFontSize(8.5)
-  doc.setTextColor(26, 79, 160)
-  doc.text('MONTANT TOTAL', innerX + (qteW + designationW + punitW) / 2, totalRowY + TOTAL_ROW_H / 2 + 1.5, { align: 'center' })
-  doc.text(currency(sale.total || 0), innerX + qteW + designationW + punitW + totalW / 2, totalRowY + TOTAL_ROW_H / 2 + 1.5, { align: 'center' })
-
-  y = totalRowY + TOTAL_ROW_H + GAP_M
-
-  // Texte "Arrêtée à présente facture..."
+  // Montant en lettres
   setFontSafe(doc, 'normal')
   doc.setFontSize(7)
   doc.setTextColor(51, 51, 51)
-  doc.text('Arrêtée à présente facture à la somme de', innerX + 2, y + ARRETE_H / 2)
+  doc.text(wordsLines, innerX + 2, y + 1.5)
+  y += wordsLines.length * 3.4 + 3
 
-  doc.setDrawColor(120)
-  doc.setLineWidth(0.25)
-  doc.setLineDashPattern([1, 1], 0)
-  doc.line(innerX + 60, y + ARRETE_H / 2, innerX + innerW - 2, y + ARRETE_H / 2)
-  doc.setLineDashPattern([], 0)
+  // Merci
+  setFontSafe(doc, 'bold')
+  doc.setFontSize(7.5)
+  doc.setTextColor(...BLUE)
+  doc.text('Merci pour votre confiance !', innerX + innerW / 2, y + 3.5, { align: 'center' })
+
+  // Filigrane au centre du tableau, par-dessus (semi-transparent)
+  const wmY = (tableTop + tableBottom) / 2 + 6
+  if (isCancelled) drawWatermark(doc, 'ANNULÉE', PAGE_W / 2, wmY)
+  else if (isDraft) drawWatermark(doc, 'DEVIS', PAGE_W / 2, wmY, [110, 60, 160])
 
   return doc
 }
