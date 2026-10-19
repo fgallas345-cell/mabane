@@ -86,8 +86,8 @@ export default function UsersAdmin() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Utilisateurs</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Gérez les comptes et les rôles de l'équipe (admin, caissier, employé)</p>
+          <h1 className="page-title">Utilisateurs</h1>
+          <p className="page-subtitle">Gérez les comptes et les rôles de l'équipe (admin, caissier, employé)</p>
         </div>
         <button className="btn-primary" onClick={() => { setForm(emptyForm); setCreateOpen(true) }}>
           <UserPlus size={16} /> Nouveau compte

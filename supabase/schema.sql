@@ -199,8 +199,6 @@ alter table public.payments enable row level security;
 
 drop policy if exists "Authenticated read payments" on public.payments;
 create policy "Authenticated read payments" on public.payments for select using (auth.role() = 'authenticated');
-drop policy if exists "Authenticated write payments" on public.payments;
-create policy "Authenticated write payments" on public.payments for insert with check (auth.role() = 'authenticated');
 
 -- ============================================================================
 -- 9. TABLE deliveries (bons de livraison)
@@ -641,8 +639,10 @@ begin
     raise exception 'Ce devis est déjà annulé.';
   end if;
 
+  -- status passe aussi à 'annulee' : sinon le devis annulé resterait compté comme vente/dette
   update public.sales
-  set quote_status = 'cancelled'
+  set quote_status = 'cancelled',
+      status = 'annulee'
   where id = p_sale_id
   returning * into v_sale;
 
@@ -719,6 +719,11 @@ begin
     raise exception 'Impossible de livrer un devis : confirmez-le d''abord.';
   end if;
 
+  -- Une facture déjà livrée (vente immédiate ou BL complets) a déjà sorti son stock
+  if v_sale_item.delivery_status = 'livree' then
+    raise exception 'Cette facture est déjà entièrement livrée.';
+  end if;
+
   if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
     raise exception 'La livraison doit contenir au moins un article.';
   end if;
@@ -734,9 +739,11 @@ begin
       raise exception 'La quantité livrée doit être supérieure à zéro.';
     end if;
 
+    -- la ligne doit appartenir à CETTE facture
     select quantity into v_remaining_to_deliver
     from public.sale_items
-    where id = (v_item->>'sale_item_id')::uuid;
+    where id = (v_item->>'sale_item_id')::uuid
+      and sale_id = p_sale_id;
 
     if v_remaining_to_deliver is null then
       raise exception 'Article de facture introuvable.';
@@ -1222,6 +1229,14 @@ begin
   end loop;
 
   update public.purchases set status = 'annulee' where id = p_purchase_id;
+
+  -- Le coût catalogue revient à celui de l'achat précédent
+  for v_item in
+    select distinct product_id from public.purchase_items
+    where purchase_id = p_purchase_id and product_id is not null
+  loop
+    perform public.refresh_product_cost(v_item.product_id);
+  end loop;
 end;
 $$;
 
@@ -1273,6 +1288,10 @@ begin
 
   if v_sale.status = 'annulee' then
     raise exception 'Cette facture est annulée, impossible d''y enregistrer un paiement.';
+  end if;
+
+  if v_sale.quote_status <> 'confirmed' then
+    raise exception 'Confirmez d''abord le devis avant d''enregistrer un paiement.';
   end if;
 
   v_new_paid := v_sale.amount_paid + p_amount;
@@ -1349,7 +1368,7 @@ begin
   end if;
 
   if v_sale.quote_status = 'draft' then
-    update public.sales set status = 'annulee' where id = p_sale_id;
+    update public.sales set status = 'annulee', quote_status = 'cancelled' where id = p_sale_id;
     return;
   end if;
 
@@ -1401,6 +1420,20 @@ begin
   update public.sales
   set status = 'annulee'
   where id = p_sale_id;
+
+  -- Trace du remboursement : un paiement négatif annule les encaissements de la facture
+  -- (la caisse reste juste ; l'admin rend l'argent au client).
+  if v_sale.amount_paid > 0 then
+    insert into public.payments (sale_id, amount, method, reference, notes, created_by)
+    values (
+      p_sale_id,
+      -v_sale.amount_paid,
+      coalesce(v_sale.payment_method, 'especes'),
+      'Remboursement',
+      'Annulation de la facture ' || v_sale.invoice_number,
+      p_user_id
+    );
+  end if;
 end;
 $$;
 
@@ -1529,6 +1562,10 @@ declare
   v_new_subtotal numeric := 0;
   v_line_total numeric;
 begin
+  if not public.is_admin() then
+    raise exception 'Seul un administrateur peut modifier une petite vente.';
+  end if;
+
   select * into v_sale
   from public.small_sales
   where id = p_sale_id
@@ -1562,7 +1599,7 @@ begin
         v_old_item.product_id,
         'entree',
         v_old_item.quantity,
-        'Rectification petite vente ' || p_sale_id::text,
+        'Rectification petite vente #' || left(p_sale_id::text, 8),
         auth.uid()
       );
     end if;
@@ -1607,7 +1644,7 @@ begin
       (v_item->>'product_id')::uuid,
       'sortie',
       v_new_quantity,
-      'Petite vente rectifiée ' || p_sale_id::text,
+      'Petite vente rectifiée #' || left(p_sale_id::text, 8),
       auth.uid()
     );
 
@@ -1672,7 +1709,7 @@ begin
       v_item.product_id,
       'entree',
       v_item.quantity,
-      'Annulation petite vente ' || p_sale_id::text,
+      'Annulation petite vente #' || left(p_sale_id::text, 8),
       auth.uid()
     );
   end loop;
@@ -1872,6 +1909,33 @@ $$;
 -- FONCTION RPC : modifier les articles d'un achat (gestion de stock atomique)
 -- items = jsonb array: [{product_id, product_name, quantity, unit_cost}, ...]
 -- ============================================================================
+-- Prix d'achat catalogue = coût de l'achat NON annulé le plus récent du produit
+-- (appelé après modification / annulation d'un achat pour ne pas figer un coût périmé).
+create or replace function public.refresh_product_cost(p_product_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_cost numeric;
+begin
+  select pi.unit_cost into v_cost
+  from public.purchase_items pi
+  join public.purchases pu on pu.id = pi.purchase_id
+  where pi.product_id = p_product_id and pu.status <> 'annulee'
+  order by pu.created_at desc
+  limit 1;
+
+  if v_cost is not null then
+    update public.products set purchase_price = v_cost, updated_at = now() where id = p_product_id;
+  end if;
+end;
+$$;
+
+-- Le stock ne bouge que de la DIFFÉRENCE entre anciennes et nouvelles quantités :
+-- corriger un prix ou une quantité reste possible même si une partie a déjà été vendue,
+-- tant que le stock ne devient pas négatif.
 create or replace function public.update_purchase_items(
   p_purchase_id uuid,
   p_items jsonb
@@ -1884,11 +1948,12 @@ as $$
 declare
   v_purchase public.purchases;
   v_item jsonb;
-  v_old_item record;
+  v_row record;
   v_new_quantity integer;
   v_new_subtotal numeric := 0;
   v_line_total numeric;
   v_current_stock integer;
+  v_pid uuid;
 begin
   if not public.is_admin() then
     raise exception 'Seul un administrateur peut modifier un achat.';
@@ -1911,82 +1976,67 @@ begin
     raise exception 'L''achat doit contenir au moins un article.';
   end if;
 
-  -- Remove stock for old items (reversal of original purchase)
-  for v_old_item in
-    select id, product_id, quantity
-    from public.purchase_items
-    where purchase_id = p_purchase_id
-  loop
-    if v_old_item.product_id is not null then
-      select stock into v_current_stock
-      from public.products
-      where id = v_old_item.product_id
-      for update;
-
-      if v_current_stock is null then
-        raise exception 'Produit introuvable : %', v_old_item.product_id;
-      end if;
-
-      if v_current_stock < v_old_item.quantity then
-        raise exception 'Impossible de modifier : le produit "%" a déjà été vendu ou son stock a changé.', v_old_item.product_id;
-      end if;
-
-      update public.products
-      set stock = stock - v_old_item.quantity, updated_at = now()
-      where id = v_old_item.product_id;
-
-      insert into public.stock_movements (product_id, type, quantity, reason, user_id)
-      values (
-        v_old_item.product_id,
-        'sortie',
-        v_old_item.quantity,
-        'Rectification achat ' || v_purchase.purchase_number,
-        auth.uid()
-      );
-    end if;
-
-    delete from public.purchase_items where id = v_old_item.id;
-  end loop;
-
-  -- Insert new items
   for v_item in select * from jsonb_array_elements(p_items)
   loop
     v_new_quantity := (v_item->>'quantity')::integer;
-
-    if v_new_quantity <= 0 then
+    if v_new_quantity is null or v_new_quantity <= 0 then
       raise exception 'La quantité doit être supérieure à zéro pour le produit %', v_item->>'product_name';
     end if;
-
     if (v_item->>'unit_cost')::numeric < 0 then
       raise exception 'Le prix d''achat ne peut pas être négatif pour le produit %', v_item->>'product_name';
     end if;
+    v_new_subtotal := v_new_subtotal + v_new_quantity * (v_item->>'unit_cost')::numeric;
+  end loop;
 
-    v_line_total := v_new_quantity * (v_item->>'unit_cost')::numeric;
-    v_new_subtotal := v_new_subtotal + v_line_total;
+  if v_purchase.amount_paid > v_new_subtotal then
+    raise exception 'Le nouveau total (%) est inférieur au montant déjà payé (%). Réduisez d''abord le paiement.', v_new_subtotal, v_purchase.amount_paid;
+  end if;
 
-    select stock into v_current_stock
-    from public.products
-    where id = (v_item->>'product_id')::uuid
-    for update;
+  -- Différence de stock par produit (nouvelle quantité - ancienne quantité)
+  for v_row in
+    select pid, sum(new_q) - sum(old_q) as delta
+    from (
+      select product_id as pid, 0 as new_q, quantity as old_q
+      from public.purchase_items
+      where purchase_id = p_purchase_id and product_id is not null
+      union all
+      select (e->>'product_id')::uuid, (e->>'quantity')::integer, 0
+      from jsonb_array_elements(p_items) e
+    ) d
+    group by pid
+    having sum(new_q) - sum(old_q) <> 0
+  loop
+    select stock into v_current_stock from public.products where id = v_row.pid for update;
 
     if v_current_stock is null then
-      raise exception 'Produit introuvable : %', v_item->>'product_name';
+      raise exception 'Produit introuvable.';
+    end if;
+
+    if v_current_stock + v_row.delta < 0 then
+      raise exception 'Modification impossible : une partie de ce produit a déjà été vendue (stock actuel %, retrait demandé %).', v_current_stock, -v_row.delta;
     end if;
 
     update public.products
-    set stock = stock + v_new_quantity,
-        purchase_price = (v_item->>'unit_cost')::numeric,
-        updated_at = now()
-    where id = (v_item->>'product_id')::uuid;
+    set stock = stock + v_row.delta, updated_at = now()
+    where id = v_row.pid;
 
     insert into public.stock_movements (product_id, type, quantity, reason, user_id)
     values (
-      (v_item->>'product_id')::uuid,
-      'entree',
-      v_new_quantity,
+      v_row.pid,
+      case when v_row.delta > 0 then 'entree' else 'sortie' end,
+      abs(v_row.delta),
       'Achat rectifié ' || v_purchase.purchase_number,
       auth.uid()
     );
+  end loop;
+
+  -- Remplacer les lignes
+  delete from public.purchase_items where purchase_id = p_purchase_id;
+
+  for v_item in select * from jsonb_array_elements(p_items)
+  loop
+    v_new_quantity := (v_item->>'quantity')::integer;
+    v_line_total := v_new_quantity * (v_item->>'unit_cost')::numeric;
 
     insert into public.purchase_items (purchase_id, product_id, product_name, quantity, unit_cost, line_total)
     values (
@@ -1999,11 +2049,6 @@ begin
     );
   end loop;
 
-  if v_purchase.amount_paid > v_new_subtotal then
-    raise exception 'Le nouveau total (%) est inférieur au montant déjà payé (%). Réduisez d''abord le paiement.', v_new_subtotal, v_purchase.amount_paid;
-  end if;
-
-  -- Recalculate and update purchase totals
   update public.purchases
   set subtotal = v_new_subtotal,
       total = v_new_subtotal,
@@ -2014,6 +2059,54 @@ begin
       end
   where id = p_purchase_id
   returning * into v_purchase;
+
+  -- Coût catalogue : celui de l'achat le plus récent, pas forcément celui qu'on vient de corriger
+  for v_pid in
+    select distinct (e->>'product_id')::uuid from jsonb_array_elements(p_items) e
+  loop
+    perform public.refresh_product_cost(v_pid);
+  end loop;
+
+  return v_purchase;
+end;
+$$;
+
+-- Modifier le fournisseur / les notes d'un achat (remplace l'UPDATE direct sur la table)
+create or replace function public.update_purchase_info(
+  p_purchase_id uuid,
+  p_supplier_id uuid,
+  p_notes text default null
+)
+returns public.purchases
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_purchase public.purchases;
+  v_supplier_name text;
+begin
+  if not public.is_admin() then
+    raise exception 'Seul un administrateur peut modifier un achat.';
+  end if;
+
+  if p_supplier_id is not null then
+    select name into v_supplier_name from public.suppliers where id = p_supplier_id;
+    if v_supplier_name is null then
+      raise exception 'Fournisseur introuvable.';
+    end if;
+  end if;
+
+  update public.purchases
+  set supplier_id = p_supplier_id,
+      supplier_name = coalesce(v_supplier_name, supplier_name),
+      notes = nullif(p_notes, '')
+  where id = p_purchase_id
+  returning * into v_purchase;
+
+  if v_purchase.id is null then
+    raise exception 'Achat introuvable.';
+  end if;
 
   return v_purchase;
 end;
@@ -2176,36 +2269,24 @@ create policy "Authenticated delete supplier_products" on public.supplier_produc
 
 drop policy if exists "Authenticated read purchases" on public.purchases;
 create policy "Authenticated read purchases" on public.purchases for select using (auth.role() = 'authenticated');
-drop policy if exists "Authenticated write purchases" on public.purchases;
-create policy "Authenticated write purchases" on public.purchases for insert with check (auth.role() = 'authenticated');
-drop policy if exists "Authenticated update purchases" on public.purchases;
-create policy "Authenticated update purchases" on public.purchases for update using (auth.role() = 'authenticated');
 drop policy if exists "Authenticated delete purchases" on public.purchases;
-create policy "Authenticated delete purchases" on public.purchases for delete using (public.is_admin());
+create policy "Authenticated delete purchases" on public.purchases for delete using (public.is_admin() and status = 'annulee');
 
 drop policy if exists "Authenticated read purchase_items" on public.purchase_items;
 create policy "Authenticated read purchase_items" on public.purchase_items for select using (auth.role() = 'authenticated');
-drop policy if exists "Authenticated write purchase_items" on public.purchase_items;
-create policy "Authenticated write purchase_items" on public.purchase_items for insert with check (auth.role() = 'authenticated');
 
 drop policy if exists "Authenticated read sales" on public.sales;
 create policy "Authenticated read sales" on public.sales for select using (auth.role() = 'authenticated');
-drop policy if exists "Authenticated write sales" on public.sales;
-create policy "Authenticated write sales" on public.sales for insert with check (auth.role() = 'authenticated');
 drop policy if exists "Authenticated update sales" on public.sales;
 create policy "Authenticated update sales" on public.sales for update using (public.is_admin());
 drop policy if exists "Authenticated delete sales" on public.sales;
-create policy "Authenticated delete sales" on public.sales for delete using (public.is_admin());
+create policy "Authenticated delete sales" on public.sales for delete using (public.is_admin() and status = 'annulee');
 
 drop policy if exists "Authenticated read sale_items" on public.sale_items;
 create policy "Authenticated read sale_items" on public.sale_items for select using (auth.role() = 'authenticated');
-drop policy if exists "Authenticated write sale_items" on public.sale_items;
-create policy "Authenticated write sale_items" on public.sale_items for insert with check (auth.role() = 'authenticated');
 
 drop policy if exists "Authenticated read stock_movements" on public.stock_movements;
 create policy "Authenticated read stock_movements" on public.stock_movements for select using (auth.role() = 'authenticated');
-drop policy if exists "Authenticated write stock_movements" on public.stock_movements;
-create policy "Authenticated write stock_movements" on public.stock_movements for insert with check (auth.role() = 'authenticated');
 
 drop policy if exists "Authenticated read expenses" on public.expenses;
 create policy "Authenticated read expenses" on public.expenses for select using (auth.role() = 'authenticated');
@@ -2218,13 +2299,9 @@ create policy "Authenticated delete expenses" on public.expenses for delete usin
 
 drop policy if exists "Authenticated read deliveries" on public.deliveries;
 create policy "Authenticated read deliveries" on public.deliveries for select using (auth.role() = 'authenticated');
-drop policy if exists "Authenticated write deliveries" on public.deliveries;
-create policy "Authenticated write deliveries" on public.deliveries for insert with check (auth.role() = 'authenticated');
 
 drop policy if exists "Authenticated read delivery_items" on public.delivery_items;
 create policy "Authenticated read delivery_items" on public.delivery_items for select using (auth.role() = 'authenticated');
-drop policy if exists "Authenticated write delivery_items" on public.delivery_items;
-create policy "Authenticated write delivery_items" on public.delivery_items for insert with check (auth.role() = 'authenticated');
 
 alter table public.deliveries enable row level security;
 alter table public.delivery_items enable row level security;
@@ -2238,15 +2315,11 @@ create policy "Admin update shop_settings" on public.shop_settings for update us
 -- SMALL SALES : chacun lit/écrit, l'admin supprime
 drop policy if exists "Authenticated read small_sales" on public.small_sales;
 create policy "Authenticated read small_sales" on public.small_sales for select using (auth.role() = 'authenticated');
-drop policy if exists "Authenticated write small_sales" on public.small_sales;
-create policy "Authenticated write small_sales" on public.small_sales for insert with check (auth.role() = 'authenticated');
 drop policy if exists "Admin delete small_sales" on public.small_sales;
 create policy "Admin delete small_sales" on public.small_sales for delete using (public.is_admin());
 
 drop policy if exists "Authenticated read small_sale_items" on public.small_sale_items;
 create policy "Authenticated read small_sale_items" on public.small_sale_items for select using (auth.role() = 'authenticated');
-drop policy if exists "Authenticated write small_sale_items" on public.small_sale_items;
-create policy "Authenticated write small_sale_items" on public.small_sale_items for insert with check (auth.role() = 'authenticated');
 
 -- ============================================================================
 -- CONTRAINTES MÉTIER (idempotentes)
@@ -2310,6 +2383,79 @@ begin
   end if;
 end $$;
 
+
+-- ============================================================================
+-- VERROUILLAGE DES ÉCRITURES : tout passe par les RPC (security definer)
+-- Plus aucun INSERT / UPDATE direct possible depuis le navigateur sur les tables
+-- qui pilotent le stock et l'argent. Les anciennes policies sont retirées ici
+-- pour les bases déjà déployées.
+-- ============================================================================
+drop policy if exists "Authenticated write purchases" on public.purchases;
+drop policy if exists "Authenticated update purchases" on public.purchases;
+drop policy if exists "Authenticated write purchase_items" on public.purchase_items;
+drop policy if exists "Authenticated write sales" on public.sales;
+drop policy if exists "Authenticated write sale_items" on public.sale_items;
+drop policy if exists "Authenticated write stock_movements" on public.stock_movements;
+drop policy if exists "Authenticated write deliveries" on public.deliveries;
+drop policy if exists "Authenticated write delivery_items" on public.delivery_items;
+drop policy if exists "Authenticated write payments" on public.payments;
+drop policy if exists "Authenticated write small_sales" on public.small_sales;
+drop policy if exists "Authenticated write small_sale_items" on public.small_sale_items;
+
+-- products reste modifiable (prix, nom...) mais JAMAIS le stock en direct
+create or replace function public.guard_product_stock()
+returns trigger
+language plpgsql
+as $$
+begin
+  -- Les RPC (security definer) s'exécutent sous le rôle propriétaire ; un appel direct
+  -- depuis le navigateur s'exécute sous 'authenticated' / 'anon'.
+  if new.stock is distinct from old.stock and current_user in ('authenticated', 'anon') then
+    raise exception 'Le stock ne se modifie pas directement : utilisez la page Stock (mouvement d''entrée ou de sortie).';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists guard_products_stock on public.products;
+create trigger guard_products_stock
+  before update on public.products
+  for each row execute function public.guard_product_stock();
+
+-- Un produit créé avec un stock initial génère son mouvement d'entrée
+create or replace function public.log_initial_stock()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.stock > 0 then
+    insert into public.stock_movements (product_id, type, quantity, reason, user_id)
+    values (new.id, 'entree', new.stock, 'Stock initial', auth.uid());
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists log_products_initial_stock on public.products;
+create trigger log_products_initial_stock
+  after insert on public.products
+  for each row execute function public.log_initial_stock();
+
+-- Supprimer un produit ne doit pas effacer l'historique de ses mouvements
+alter table public.stock_movements drop constraint if exists stock_movements_product_id_fkey;
+alter table public.stock_movements
+  add constraint stock_movements_product_id_fkey
+  foreign key (product_id) references public.products(id) on delete set null;
+
+-- Migration des données : un devis annulé avant ce correctif restait en statut 'credit'
+update public.sales
+set status = 'annulee'
+where quote_status = 'cancelled' and status <> 'annulee';
+
+revoke execute on function public.refresh_product_cost(uuid) from public, anon, authenticated;
+
 -- ============================================================================
 -- REALTIME (multi-utilisateurs en temps réel)
 -- ============================================================================
@@ -2340,6 +2486,7 @@ grant execute on function public.update_small_sale(uuid, jsonb, text, numeric) t
 grant execute on function public.cancel_small_sale(uuid) to authenticated;
 grant execute on function public.update_sale_items(uuid, jsonb, numeric, uuid, boolean) to authenticated;
 grant execute on function public.update_purchase_items(uuid, jsonb) to authenticated;
+grant execute on function public.update_purchase_info(uuid, uuid, text) to authenticated;
 notify pgrst, 'reload schema';
 
 -- ============================================================================

@@ -62,6 +62,24 @@
 
 ---
 
+## 0 bis. Correctifs du 19 octobre 2026 (cohérence stock / argent)
+
+> ⚠️ **Ré-exécuter `supabase/schema.sql`** (idempotent). Il migre aussi les devis déjà annulés (`status` → `annulee`).
+
+- Devis annulé : `cancel_quote` / `cancel_sale` posent `status='annulee'` **et** `quote_status='cancelled'` ; `isCountedSale`, Dashboard, Clients et Sales n'acceptent plus que `quote_status='confirmed'`.
+- `create_delivery` : refuse une facture déjà `livree` (double sortie de stock) et une ligne n'appartenant pas à la facture.
+- RLS : plus d'INSERT/UPDATE direct sur `purchases`, `purchase_items`, `sales`, `sale_items`, `stock_movements`, `payments`, `deliveries`, `delivery_items`, `small_sales(_items)` ; suppression d'une vente/achat limitée aux annulés. Trigger `guard_products_stock` : le stock ne se modifie plus que via les RPC. `update_purchase_info` remplace l'UPDATE direct.
+- Produit créé avec un stock : mouvement « Stock initial » automatique. Supprimer un produit conserve l'historique des mouvements (`on delete set null`).
+- `update_small_sale` réservé à l'admin ; libellés de mouvements lisibles (`#xxxxxxxx` au lieu de l'UUID).
+- `update_purchase_items` : seule la **différence** de quantité touche au stock (corriger un prix reste possible après des ventes) ; `refresh_product_cost` remet le coût catalogue de l'achat non annulé le plus récent (aussi à l'annulation d'un achat).
+- `cancel_sale` enregistre un paiement négatif « Remboursement » ; `add_sale_payment` refuse un devis non confirmé.
+- Dashboard : encaissements = table `payments` (date du paiement, remboursements inclus), marge sur les quantités facturées comme Finances ; « Revenus » renommé « Encaissements ». Finances garde le **chiffre d'affaires facturé**.
+- `fetchAll` : pagination par 1000 lignes (ventes, petites ventes, dashboard) pour éviter la troncature silencieuse.
+
+**À savoir** : les contraintes `not valid` ne sont pas validées automatiquement ; exécuter `alter table … validate constraint …` après avoir corrigé d'éventuelles anciennes données. Les encaissements antérieurs à la table `payments` ne figurent pas dans les « Encaissements » du Dashboard.
+
+---
+
 ## 1. Synthèse
 
 L'application est fonctionnellement riche et l'interface est soignée. Mais l'état actuel présente **une faille de sécurité bloquante** (n'importe qui peut se créer un compte administrateur), **un script SQL qui ne s'installe pas sur une base vierge**, et **plusieurs RPC qui corrompent le stock** dans les scénarios de livraison échelonnée. Plusieurs points « corrigés » depuis l'audit précédent ne le sont pas réellement (`onError` sur `useQuery` est ignoré par React Query v5 ; le trigger de rôle a été modifié dans le sens inverse de la spécification).

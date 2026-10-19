@@ -34,21 +34,22 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-darkbg px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-brand-600 text-white mb-3">
-            <img src="/mabane.png" alt="Logo Mabane" className="h-12 w-12 rounded-lg object-cover" />
-          </div>
-          <h1 className="text-xl font-bold">{SHOP.name}</h1>
+          <img src="/mabane.png" alt="Logo Mabane" className="h-16 w-16 rounded-2xl object-cover mx-auto mb-4 shadow-sm" />
+          <h1 className="text-xl font-semibold tracking-tight">{SHOP.name}</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Connectez-vous à votre espace de gestion</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="card p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="card p-6 space-y-4 shadow-md">
           {error && (
-            <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">{error}</div>
+            <div role="alert" className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">{error}</div>
           )}
           <div>
-            <label className="label">Email</label>
+            <label htmlFor="login-email" className="label">Email</label>
             <input
+              id="login-email"
               type="email"
+              autoComplete="username"
+              autoFocus
               required
               className="input"
               placeholder="vous@exemple.com"
@@ -57,10 +58,12 @@ export default function Login() {
             />
           </div>
           <div>
-            <label className="label">Mot de passe</label>
+            <label htmlFor="login-password" className="label">Mot de passe</label>
             <div className="relative">
               <input
+                id="login-password"
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
                 required
                 className="input pr-10"
                 placeholder="••••••••"
@@ -69,7 +72,8 @@ export default function Login() {
               />
               <button
                 type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
                 onClick={() => setShowPassword((s) => !s)}
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}

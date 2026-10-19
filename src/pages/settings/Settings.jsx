@@ -54,8 +54,8 @@ export default function Settings() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h1 className="text-2xl font-bold">Paramètres</h1>
-        <p className="text-gray-500 dark:text-gray-400 text-sm">Votre profil et les préférences de l'application</p>
+        <h1 className="page-title">Paramètres</h1>
+        <p className="page-subtitle">Votre profil et les préférences de l'application</p>
       </div>
 
       <div className="card p-5 space-y-4">

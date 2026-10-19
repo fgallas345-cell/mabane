@@ -47,17 +47,17 @@ export default function Modal({ open, onClose, title, children, maxWidth = 'max-
 
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="absolute inset-0 bg-black/50 animate-fade-in" onClick={onClose} />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`relative w-full ${maxWidth} card p-6 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150`}
+        className={`relative w-full ${maxWidth} card rounded-b-none sm:rounded-b-xl p-5 sm:p-6 max-h-[92vh] sm:max-h-[90vh] overflow-y-auto animate-pop-in`}
       >
         <div className="flex items-center justify-between mb-4">
-          <h3 id={titleId} className="text-lg font-semibold">{title}</h3>
+          <h3 id={titleId} className="text-lg font-semibold tracking-tight">{title}</h3>
           <button
             type="button"
             onClick={onClose}

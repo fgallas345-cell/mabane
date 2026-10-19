@@ -1,18 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabase'
+import { fetchAll } from '../lib/fetchAll'
 
 export function useSales() {
   return useQuery({
     queryKey: ['sales'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('sales')
-        .select('*, clients(id, name, phone), sale_items(*)')
-        .order('created_at', { ascending: false })
-      if (error) throw error
-      return data
-    },
+    queryFn: () =>
+      fetchAll(() =>
+        supabase
+          .from('sales')
+          .select('*, clients(id, name, phone), sale_items(*)')
+          .order('created_at', { ascending: false })
+      ),
   })
 }
 

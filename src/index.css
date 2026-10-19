@@ -29,36 +29,55 @@ body {
 
 @layer components {
   .card {
-    @apply bg-white dark:bg-darkcard border border-gray-200 dark:border-gray-700/60 rounded-xl shadow-sm;
+    @apply bg-white dark:bg-darkcard border border-gray-200/80 dark:border-gray-700/60 rounded-xl shadow-sm;
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors
+      focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-darkbg
+      disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-primary {
     @apply btn bg-brand-600 text-white hover:bg-brand-700 shadow-sm;
   }
   .btn-secondary {
-    @apply btn bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700;
+    @apply btn bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-700 dark:hover:bg-gray-700;
   }
   .btn-danger {
-    @apply btn bg-red-600 text-white hover:bg-red-700;
+    @apply btn bg-red-600 text-white hover:bg-red-700 shadow-sm;
   }
   .btn-success {
-    @apply btn bg-emerald-600 text-white hover:bg-emerald-700;
+    @apply btn bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm;
   }
   .input {
-    @apply w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 placeholder:text-gray-400;
+    @apply w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm outline-none transition-colors
+      focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 placeholder:text-gray-400
+      disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed dark:disabled:bg-gray-800/60;
   }
   .label {
     @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1;
   }
   .table-th {
-    @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400;
+    @apply px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400 bg-gray-50/70 dark:bg-gray-800/40;
   }
   .table-td {
     @apply px-4 py-3 text-sm text-gray-700 dark:text-gray-200;
   }
   .badge {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap;
   }
+  /* En-tête de page : même titre / sous-titre partout */
+  .page-title {
+    @apply text-xl sm:text-2xl font-semibold tracking-tight text-gray-900 dark:text-gray-50;
+  }
+  .page-subtitle {
+    @apply text-sm text-gray-500 dark:text-gray-400 mt-0.5;
+  }
+}
+
+/* Chiffres alignés dans les tableaux et cartes */
+table, .tabular { font-variant-numeric: tabular-nums; }
+
+/* Respecte la préférence « réduire les animations » */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

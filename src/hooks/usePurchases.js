@@ -112,12 +112,11 @@ export function useUpdatePurchase() {
   const toast = useToast()
   return useMutation({
     mutationFn: async ({ purchaseId, supplierId, notes }) => {
-      const { data, error } = await supabase
-        .from('purchases')
-        .update({ supplier_id: supplierId || null, notes: notes || null })
-        .eq('id', purchaseId)
-        .select()
-        .single()
+      const { data, error } = await supabase.rpc('update_purchase_info', {
+        p_purchase_id: purchaseId,
+        p_supplier_id: supplierId || null,
+        p_notes: notes || null,
+      })
       if (error) throw error
       return data
     },

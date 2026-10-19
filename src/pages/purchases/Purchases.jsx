@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import Pagination from '../../components/Pagination'
 import Modal from '../../components/Modal'
+import ActionButton from '../../components/ActionButton'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { currency } from '../../lib/constants'
 import SearchableSelect from '../../components/SearchableSelect'
@@ -36,25 +37,6 @@ function StatusBadge({ status }) {
   }
   const s = map[status] || map.credit
   return <span className={`badge ${s.cls}`}>{s.label}</span>
-}
-
-function ActionButton({ icon: Icon, title, onClick, disabled, tone = 'gray' }) {
-  const tones = {
-    gray: 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200',
-    emerald: 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10',
-    red: 'text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10',
-  }
-  return (
-    <button
-      type="button"
-      title={title}
-      disabled={disabled}
-      onClick={onClick}
-      className={`p-2 rounded-lg transition-colors disabled:opacity-30 disabled:pointer-events-none ${tones[tone]}`}
-    >
-      <Icon size={15} />
-    </button>
-  )
 }
 
 export default function Purchases() {
@@ -350,8 +332,8 @@ export default function Purchases() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Achats fournisseurs</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">
+          <h1 className="page-title">Achats fournisseurs</h1>
+          <p className="page-subtitle">
             Enregistrez vos approvisionnements : le stock est mis à jour automatiquement.
           </p>
         </div>
@@ -844,6 +826,9 @@ export default function Purchases() {
         onClose={() => setConfirmCancel(null)}
         onConfirm={handleCancelPurchase}
         loading={cancelPurchase.isPending}
+        title="Annuler l'achat"
+        confirmLabel="Annuler l'achat"
+        loadingLabel="Annulation..."
         message={`Annuler l'achat "${confirmCancel?.purchase_number}" ? Les quantités seront retirées du stock.`}
       />
 

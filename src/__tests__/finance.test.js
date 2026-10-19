@@ -37,6 +37,7 @@ describe('isCountedSale', () => {
     expect(isCountedSale({ status: 'payee', quote_status: 'confirmed' })).toBe(true)
     expect(isCountedSale({ status: 'annulee', quote_status: 'confirmed' })).toBe(false)
     expect(isCountedSale({ status: 'credit', quote_status: 'draft' })).toBe(false)
+    expect(isCountedSale({ status: 'credit', quote_status: 'cancelled' })).toBe(false)
   })
 })
 

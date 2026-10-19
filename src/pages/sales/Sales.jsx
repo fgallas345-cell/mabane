@@ -7,8 +7,10 @@ import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import Pagination from '../../components/Pagination'
 import Modal from '../../components/Modal'
+import ActionButton from '../../components/ActionButton'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { currency } from '../../lib/constants'
+import { isCountedSale } from '../../utils/finance'
 import { downloadInvoicePDF } from '../../utils/invoicePdf'
 import { downloadDeliveryPDF } from '../../utils/deliveryPdf'
 import { sendInvoiceViaWhatsApp, sendReceiptViaWhatsApp } from '../../utils/whatsapp'
@@ -97,28 +99,6 @@ function formatRelativeDate(dateStr) {
   if (isYesterday) return { label: `Hier, ${time}`, tag: 'Hier', tone: 'gray' }
   return { label: date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }), tag: null, tone: null }
 }
-
-function ActionButton({ icon: Icon, title, onClick, disabled, tone = 'gray' }) {
-  const tones = {
-    gray: 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200',
-    emerald: 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10',
-    brand: 'text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-500/10',
-    red: 'text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10',
-  }
-  return (
-    <button
-      type="button"
-      title={title}
-      disabled={disabled}
-      onClick={onClick}
-      className={`p-2 rounded-lg transition-colors disabled:opacity-30 disabled:pointer-events-none ${tones[tone]}`}
-    >
-      <Icon size={15} />
-    </button>
-  )
-}
-
-
 
 export default function Sales() {
   const { user, isAdmin } = useAuth()
@@ -346,7 +326,7 @@ export default function Sales() {
     }
     setConfirmCancel(null)
     if (detailSale?.id === confirmCancel.id) {
-      setDetailSale((sale) => (isDraft ? { ...sale, quote_status: 'cancelled' } : { ...sale, status: 'annulee' }))
+      setDetailSale((sale) => (isDraft ? { ...sale, quote_status: 'cancelled', status: 'annulee' } : { ...sale, status: 'annulee' }))
     }
   }
 
@@ -560,7 +540,7 @@ export default function Sales() {
   const paginatedSales = filteredSales.slice((page - 1) * pageSize, page * pageSize)
 
   const totalDette = sales
-    .filter((s) => s.status !== 'annulee' && s.quote_status !== 'draft')
+    .filter(isCountedSale)
     .reduce((sum, s) => sum + (Number(s.total) - Number(s.amount_paid)), 0)
 
   const clientOptions = useMemo(
@@ -605,8 +585,8 @@ export default function Sales() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Ventes / Facturation</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Créez des factures et consultez l'historique des ventes</p>
+          <h1 className="page-title">Ventes / Facturation</h1>
+          <p className="page-subtitle">Créez des factures et consultez l'historique des ventes</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -1448,6 +1428,9 @@ export default function Sales() {
         onClose={() => setConfirmCancel(null)}
         onConfirm={handleCancelSale}
         loading={cancelSale.isPending || cancelQuote.isPending}
+        title={confirmCancel?.quote_status === 'draft' ? 'Annuler le devis' : 'Annuler la facture'}
+        confirmLabel={confirmCancel?.quote_status === 'draft' ? 'Annuler le devis' : 'Annuler la facture'}
+        loadingLabel="Annulation..."
         message={confirmCancel?.quote_status === 'draft' ? `Annuler le devis "${confirmCancel?.invoice_number}" ? Il n'a aucun effet sur le stock.` : `Annuler la facture "${confirmCancel?.invoice_number}" ? Les quantités déjà sorties du stock seront remises en stock.`}
       />
     </div>

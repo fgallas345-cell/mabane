@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { Plus, Pencil, Trash2, Search, Package, ImagePlus, FileSpreadsheet, AlertTriangle, TrendingUp, Truck, Eye } from 'lucide-react'
 import { useProducts, uploadProductImage, deleteProductImage } from '../../hooks/useProducts'
@@ -6,6 +7,7 @@ import { usePurchases } from '../../hooks/usePurchases'
 import { useShopSettings } from '../../hooks/useShopSettings'
 import { useToast } from '../../context/ToastContext'
 import Modal from '../../components/Modal'
+import ActionButton from '../../components/ActionButton'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Pagination from '../../components/Pagination'
 import { currency } from '../../lib/constants'
@@ -105,18 +107,6 @@ function MarginPill({ purchase, sale }) {
   )
 }
 
-function ActionButton({ icon: Icon, title, onClick, tone = 'gray' }) {
-  const tones = {
-    gray: 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200',
-    red: 'text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10',
-  }
-  return (
-    <button type="button" title={title} onClick={onClick} className={`p-2 rounded-lg transition-colors ${tones[tone]}`}>
-      <Icon size={15} />
-    </button>
-  )
-}
-
 export default function Products() {
   const toast = useToast()
   const { data: products = [], isLoading, createItem, updateItem, deleteItem } = useProducts()
@@ -129,7 +119,12 @@ export default function Products() {
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(emptyForm)
   const [confirmDelete, setConfirmDelete] = useState(null)
-  const [search, setSearch] = useState('')
+  const [searchParams] = useSearchParams()
+  const [search, setSearch] = useState(searchParams.get('q') || '')
+  useEffect(() => {
+    const q = searchParams.get('q')
+    if (q !== null) setSearch(q)
+  }, [searchParams])
   const [uploading, setUploading] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('')
   const [page, setPage] = useState(1)
@@ -222,8 +217,8 @@ export default function Products() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Produits</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Gérez votre catalogue de produits</p>
+          <h1 className="page-title">Produits</h1>
+          <p className="page-subtitle">Gérez votre catalogue de produits</p>
         </div>
         <button className="btn-primary" onClick={openCreate}>
           <Plus size={16} /> Nouveau produit
@@ -487,7 +482,7 @@ export default function Products() {
                 </div>
                 {history.length > 1 && (
                   <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
-                    💡 {history.length} fournisseurs différents pour ce produit — comparez les derniers prix ci-dessus avant votre prochain achat.
+                    {history.length} fournisseurs différents pour ce produit — comparez les derniers prix ci-dessus avant votre prochain achat.
                   </p>
                 )}
               </div>

@@ -20,6 +20,17 @@ export default {
         darkbg: '#0f172a',
         darkcard: '#1e293b',
       },
+      keyframes: {
+        'pop-in': {
+          '0%': { opacity: '0', transform: 'translateY(8px) scale(0.98)' },
+          '100%': { opacity: '1', transform: 'none' },
+        },
+        'fade-in': { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
+      },
+      animation: {
+        'pop-in': 'pop-in 160ms ease-out',
+        'fade-in': 'fade-in 160ms ease-out',
+      },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
       },

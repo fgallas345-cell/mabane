@@ -67,7 +67,7 @@ export default function Dashboard() {
 
   // --- Données pour le graphique Revenus / Dépenses / Bénéfice ---
   const financeData = [
-    { name: 'Revenus', value: data.totalMonth, color: BRAND },
+    { name: 'Encaissements', value: data.totalMonth, color: BRAND },
     { name: 'Marge', value: data.grossMarginMonth, color: EMERALD },
     { name: 'Dépenses', value: data.totalExpensesMonth, color: RED },
     { name: 'Bénéfice', value: data.profitMonth, color: data.profitMonth >= 0 ? EMERALD : RED },
@@ -94,9 +94,9 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Bonjour, {profile?.full_name?.split(' ')[0] || ''} 👋</h1>
-        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-          Voici un aperçu de l'activité de la quincaillerie aujourd'hui.
+        <h1 className="page-title">Bonjour{profile?.full_name ? `, ${profile.full_name.split(' ')[0]}` : ''}</h1>
+        <p className="page-subtitle">
+          Voici un aperçu de l'activité de la quincaillerie.
         </p>
       </div>
 
@@ -106,12 +106,12 @@ export default function Dashboard() {
           icon={ShoppingBag}
           label="Ventes du jour"
           value={data.salesTodayCount}
-          sub={currency(data.totalToday)}
+          sub={`${currency(data.totalToday)} encaissés`}
           color="brand"
         />
         <StatCard
           icon={TrendingUp}
-          label="Revenus du mois"
+          label="Encaissements du mois"
           value={currency(data.totalMonth)}
           sub={`${data.salesMonthCount} ventes`}
           color="emerald"
@@ -136,7 +136,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="card p-5 lg:col-span-2">
           <h3 className="font-semibold mb-1 flex items-center gap-2">
-            <Wallet size={18} className="text-brand-500" /> Revenus, dépenses & bénéfice
+            <Wallet size={18} className="text-brand-500" /> Encaissements, dépenses & bénéfice
           </h3>
           <p className="text-xs text-gray-400 mb-3">Vue d'ensemble du mois en cours</p>
           <ResponsiveContainer width="100%" height={220}>
@@ -189,7 +189,7 @@ export default function Dashboard() {
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-2xl font-bold">{healthyCount}</span>
+                <span className="text-2xl font-semibold">{healthyCount}</span>
                 <span className="text-[11px] text-gray-400">en bon état</span>
               </div>
             </div>
@@ -219,7 +219,7 @@ export default function Dashboard() {
             {data.lowStock.length === 0 ? 'Aucun produit en dessous du seuil d’alerte.' : `${data.lowStock.length} produit${data.lowStock.length > 1 ? 's' : ''} en alerte`}
           </p>
           {lowStockList.length === 0 ? (
-            <p className="text-sm text-gray-400">Aucun produit en dessous du seuil d’alerte. 👍</p>
+            <p className="text-sm text-gray-400">Tout est en ordre : aucun produit sous le seuil d’alerte.</p>
           ) : (
             <div className="space-y-2">
               {lowStockList.slice(0, 10).map((p) => (

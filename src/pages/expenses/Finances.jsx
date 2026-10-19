@@ -6,6 +6,7 @@ import { useSmallSales } from '../../hooks/useSmallSales'
 import { useAuth } from '../../context/AuthContext'
 import StatCard from '../../components/StatCard'
 import Modal from '../../components/Modal'
+import ActionButton from '../../components/ActionButton'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Pagination from '../../components/Pagination'
 import { currency } from '../../lib/constants'
@@ -47,18 +48,6 @@ function formatRelativeDate(dateStr) {
   if (isSameDay) return "Aujourd'hui"
   if (isYesterday) return 'Hier'
   return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-function ActionButton({ icon: Icon, title, onClick, tone = 'gray' }) {
-  const tones = {
-    gray: 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200',
-    red: 'text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10',
-  }
-  return (
-    <button type="button" title={title} onClick={onClick} className={`p-2 rounded-lg transition-colors ${tones[tone]}`}>
-      <Icon size={15} />
-    </button>
-  )
 }
 
 export default function Finances() {
@@ -147,8 +136,8 @@ export default function Finances() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Finances</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Recettes, dépenses et bénéfices</p>
+          <h1 className="page-title">Finances</h1>
+          <p className="page-subtitle">Recettes, dépenses et bénéfices</p>
         </div>
         <div className="flex gap-2">
           <button className="btn-secondary" onClick={() => exportSalesToExcel(activeSales)}>

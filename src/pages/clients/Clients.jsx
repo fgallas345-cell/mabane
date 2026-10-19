@@ -1,10 +1,13 @@
+import { useSearchParams } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { Plus, Pencil, Trash2, Search, Phone, History, Users, MapPin, Receipt, CreditCard, Wallet } from 'lucide-react'
 import { useClients } from '../../hooks/useEntities'
 import { useSales, useAddSalePayment } from '../../hooks/useSales'
 import Modal from '../../components/Modal'
+import ActionButton from '../../components/ActionButton'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Pagination from '../../components/Pagination'
+import { isCountedSale } from '../../utils/finance'
 import { currency } from '../../lib/constants'
 
 const emptyForm = { name: '', phone: '', address: '' }
@@ -50,18 +53,6 @@ function LoyaltyBadge({ count }) {
   )
 }
 
-function ActionButton({ icon: Icon, title, onClick, tone = 'gray' }) {
-  const tones = {
-    gray: 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200',
-    red: 'text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10',
-  }
-  return (
-    <button type="button" title={title} onClick={onClick} className={`p-2 rounded-lg transition-colors ${tones[tone]}`}>
-      <Icon size={15} />
-    </button>
-  )
-}
-
 export default function Clients() {
   const { data: clients = [], isLoading, createItem, updateItem, deleteItem } = useClients()
   const { data: sales = [] } = useSales()
@@ -71,7 +62,12 @@ export default function Clients() {
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(emptyForm)
   const [confirmDelete, setConfirmDelete] = useState(null)
-  const [search, setSearch] = useState('')
+  const [searchParams] = useSearchParams()
+  const [search, setSearch] = useState(searchParams.get('q') || '')
+  useEffect(() => {
+    const q = searchParams.get('q')
+    if (q !== null) setSearch(q)
+  }, [searchParams])
   const [page, setPage] = useState(1)
   const [payingSale, setPayingSale] = useState(null)
   const [paymentAmount, setPaymentAmount] = useState('')
@@ -82,13 +78,11 @@ export default function Clients() {
   const clientStats = useMemo(() => {
     const map = {}
     sales.forEach((s) => {
-      if (!s.client_id) return
+      if (!s.client_id || !isCountedSale(s)) return // ni annulée, ni devis
       if (!map[s.client_id]) map[s.client_id] = { total: 0, count: 0, dette: 0 }
       map[s.client_id].total += Number(s.total) || 0
       map[s.client_id].count += 1
-      if (s.status !== 'annulee') {
-        map[s.client_id].dette += Number(s.total) - Number(s.amount_paid)
-      }
+      map[s.client_id].dette += Number(s.total) - Number(s.amount_paid)
     })
     return map
   }, [sales])
@@ -157,7 +151,7 @@ export default function Clients() {
   const clientSales = historyClient ? sales.filter((s) => s.client_id === historyClient.id) : []
   const historyTotal = clientSales.reduce((sum, s) => sum + Number(s.total || 0), 0)
   const historyDette = clientSales
-    .filter((s) => s.status !== 'annulee')
+    .filter(isCountedSale)
     .reduce((sum, s) => sum + (Number(s.total) - Number(s.amount_paid)), 0)
   const totalDette = Object.values(clientStats).reduce((sum, st) => sum + st.dette, 0)
 
@@ -165,8 +159,8 @@ export default function Clients() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Clients</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Gérez votre base de clients</p>
+          <h1 className="page-title">Clients</h1>
+          <p className="page-subtitle">Gérez votre base de clients</p>
         </div>
         <button className="btn-primary" onClick={openCreate}>
           <Plus size={16} /> Nouveau client

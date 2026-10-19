@@ -21,9 +21,9 @@ export function getSmallSaleGrossMargin(sale) {
   return itemsGrossMargin(sale.small_sale_items) - Number(sale.discount || 0)
 }
 
-/** Une facture compte dans le chiffre d'affaires si elle n'est ni annulée ni un devis */
+/** Une facture compte dans le chiffre d'affaires si elle n'est ni annulée ni un devis (brouillon ou annulé) */
 export function isCountedSale(sale) {
-  return sale.status !== 'annulee' && sale.quote_status !== 'draft'
+  return sale.status !== 'annulee' && sale.quote_status === 'confirmed'
 }
 
 /** Reste dû d'une facture (jamais négatif) */

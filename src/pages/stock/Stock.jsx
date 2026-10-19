@@ -4,6 +4,7 @@ import { useProducts } from '../../hooks/useProducts'
 import { useStockMovements, useAddStockEntry, useUpdateStockMovement, useDeleteStockMovement } from '../../hooks/useSales'
 import { useAuth } from '../../context/AuthContext'
 import Modal from '../../components/Modal'
+import ActionButton from '../../components/ActionButton'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Pagination from '../../components/Pagination'
 
@@ -45,18 +46,6 @@ function QuantitySigned({ type, quantity }) {
     <span className={`tabular-nums font-semibold ${isEntry ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>
       {isEntry ? '+' : '-'}{quantity}
     </span>
-  )
-}
-
-function ActionButton({ icon: Icon, title, onClick, tone = 'gray' }) {
-  const tones = {
-    gray: 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200',
-    red: 'text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10',
-  }
-  return (
-    <button type="button" title={title} onClick={onClick} className={`p-2 rounded-lg transition-colors ${tones[tone]}`}>
-      <Icon size={15} />
-    </button>
   )
 }
 
@@ -165,8 +154,8 @@ export default function Stock() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Gestion du stock</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Suivez les entrées, sorties et alertes de stock</p>
+          <h1 className="page-title">Gestion du stock</h1>
+          <p className="page-subtitle">Suivez les entrées, sorties et alertes de stock</p>
         </div>
         <button className="btn-primary" onClick={() => setModalOpen(true)}>
           <Plus size={16} /> Entrée de stock

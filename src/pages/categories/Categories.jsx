@@ -62,8 +62,8 @@ export default function Categories() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Catégories</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Organisez vos produits par catégorie</p>
+          <h1 className="page-title">Catégories</h1>
+          <p className="page-subtitle">Organisez vos produits par catégorie</p>
         </div>
         <button className="btn-primary" onClick={openCreate}>
           <Plus size={16} /> Nouvelle catégorie

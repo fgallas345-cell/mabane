@@ -195,7 +195,7 @@ export default function SmallSales() {
           unit_price: c.unit_price,
         })),
       })
-      const message = `Vente de ${currency(total)} enregistrée ✅`
+      const message = `Vente de ${currency(total)} enregistrée`
       setSuccess(message)
       toast.success(message)
       resetForm()
@@ -265,7 +265,7 @@ export default function SmallSales() {
           unit_price: item.unit_price,
         })),
       })
-      setSuccess('Vente modifiée avec succès ✅')
+      setSuccess('Vente modifiée avec succès')
       handleCloseEdit()
     } catch (err) {
       const message = err.message || 'Erreur lors de la mise à jour de la vente.'
@@ -280,7 +280,7 @@ export default function SmallSales() {
     setSuccess('')
     try {
       await deleteSmallSale.mutateAsync(deleteSaleTarget.id)
-      const message = 'Vente annulée et stock restitué ✅'
+      const message = 'Vente annulée et stock restitué'
       setSuccess(message)
       toast.success(message)
       setDeleteSaleTarget(null)
@@ -343,12 +343,12 @@ export default function SmallSales() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold">Petites ventes</h1>
+            <h1 className="page-title">Petites ventes</h1>
             <span className="badge bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-400">
               <Zap size={12} className="mr-1" /> Mode rapide
             </span>
           </div>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">
+          <p className="page-subtitle">
             Enregistrez rapidement une vente sans générer de facture
           </p>
         </div>
@@ -688,7 +688,9 @@ export default function SmallSales() {
         open={!!deleteSaleTarget}
         onClose={() => setDeleteSaleTarget(null)}
         onConfirm={handleDeleteSale}
-        title="Supprimer la vente"
+        title="Annuler la petite vente"
+        confirmLabel="Annuler la vente"
+        loadingLabel="Annulation..."
         message="Confirmez-vous l'annulation de cette petite vente ? Le stock sera restitué automatiquement."
         loading={deleteSmallSale.isPending}
       />

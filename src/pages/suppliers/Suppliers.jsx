@@ -229,8 +229,8 @@ export default function Suppliers() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Fournisseurs</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Gérez vos fournisseurs, contacts, conditions de paiement et produits fournis.</p>
+          <h1 className="page-title">Fournisseurs</h1>
+          <p className="page-subtitle">Gérez vos fournisseurs, contacts, conditions de paiement et produits fournis.</p>
         </div>
         <button className="btn-primary" onClick={openCreate}>
           <Plus size={16} /> Nouveau fournisseur
