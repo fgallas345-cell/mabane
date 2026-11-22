@@ -26,6 +26,7 @@ const pages = {
   Categories: () => import('../pages/categories/Categories'),
   Stock: () => import('../pages/stock/Stock'),
   Clients: () => import('../pages/clients/Clients'),
+  Deposits: () => import('../pages/deposits/Deposits'),
   Suppliers: () => import('../pages/suppliers/Suppliers'),
   Purchases: () => import('../pages/purchases/Purchases'),
   Finances: () => import('../pages/expenses/Finances'),

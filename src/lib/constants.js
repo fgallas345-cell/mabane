@@ -45,6 +45,18 @@ export const PAYMENT_METHOD_LABELS = {
   virement: 'Virement',
   cheque: 'Chèque',
   carte: 'Carte',
+  depot: 'Dépôt client',
+}
+
+// Modes de paiement « en argent » (tout sauf le dépôt client, qui n'est pas de l'argent reçu)
+export const CASH_PAYMENT_METHODS = ['especes', 'mobile_money', 'virement', 'cheque', 'carte']
+
+export const DEPOSIT_TYPE_LABELS = {
+  depot: 'Dépôt',
+  retrait: 'Retrait',
+  achat: 'Achat payé avec le dépôt',
+  remboursement: 'Remboursement (facture annulée)',
+  correction: 'Correction',
 }
 
 export const STOCK_MOVEMENT_TYPES = {

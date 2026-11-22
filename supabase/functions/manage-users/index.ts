@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
       const fullName = String(body.full_name ?? '').trim()
       const role = String(body.role ?? 'employe')
       if (!email || !fullName) return json({ error: 'Email et nom complet requis' }, 400)
-      if (password.length < 6) return json({ error: 'Mot de passe : 6 caractères minimum' }, 400)
+      if (password.length < 8) return json({ error: 'Mot de passe : 8 caractères minimum' }, 400)
       if (!ALLOWED_ROLES.includes(role)) return json({ error: 'Rôle invalide' }, 400)
 
       const { data, error } = await admin.auth.admin.createUser({

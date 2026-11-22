@@ -10,8 +10,11 @@ export function useSmallSales() {
       fetchAll(() =>
         supabase
           .from('small_sales')
-          .select('*, users(id, full_name), small_sale_items(*)')
+          .select('*, users!small_sales_user_id_fkey(id, full_name), small_sale_items(*)')
+          // Les petites ventes annulées restent en base (trace comptable) mais ne s'affichent plus
+          .is('cancelled_at', null)
           .order('created_at', { ascending: false })
+          .order('id', { ascending: true })
       ),
   })
 }
@@ -81,7 +84,7 @@ export function useDeleteSmallSale() {
       if (error) throw error
     },
     onSuccess: () => {
-      toast.success('Petite vente annulée et supprimée.')
+      toast.success('Petite vente annulée (conservée dans l’historique).')
       queryClient.invalidateQueries({ queryKey: ['small_sales'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stock_movements'] })

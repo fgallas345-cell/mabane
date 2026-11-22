@@ -14,6 +14,7 @@ Stack : **React (Vite) + Tailwind CSS + React Query + Supabase (PostgreSQL/Auth/
 - 👥 Gestion des clients (avec historique d'achats)
 - 🚚 Gestion des fournisseurs
 - 🧾 Facturation (panier, calcul automatique, remise) avec génération PDF au design personnalisé Mabane
+- 🐷 Dépôts clients : argent confié par un client, retiré plus tard ou utilisé pour payer ses factures (reçus et relevé PDF)
 - 📲 Envoi de facture par **WhatsApp** en un clic (lien `wa.me` pré-rempli — voir note ci-dessous pour l'envoi 100% automatique côté serveur)
 - 💸 Finances (recettes, dépenses, bénéfice)
 - 📊 Tableau de bord (ventes du jour, revenus du mois, ruptures de stock, top produits)

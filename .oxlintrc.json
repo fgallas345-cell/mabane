@@ -2,6 +2,7 @@
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["react", "oxc", "import"],
   "env": { "browser": true, "es2022": true },
+  "globals": { "Deno": "readonly" },
   "categories": {
     "correctness": "error",
     "suspicious": "warn"

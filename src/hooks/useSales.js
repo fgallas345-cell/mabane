@@ -36,8 +36,9 @@ export function useCreateSale() {
   const queryClient = useQueryClient()
   const toast = useToast()
   return useMutation({
-    mutationFn: async ({ clientId, userId, discount, items, amountPaid, deliveryMode, quoteStatus }) => {
+    mutationFn: async ({ clientId, userId, discount, items, amountPaid, deliveryMode, quoteStatus, paymentMethod }) => {
       const { data, error } = await supabase.rpc('create_sale', {
+        p_payment_method: paymentMethod || 'especes',
         p_client_id: clientId || null,
         p_user_id: userId || null,
         p_discount: discount || 0,
@@ -52,6 +53,7 @@ export function useCreateSale() {
     onSuccess: () => {
       toast.success('Vente créée avec succès.')
       queryClient.invalidateQueries({ queryKey: ['sales'] })
+      queryClient.invalidateQueries({ queryKey: ['client_deposits'] }) // paiement / remboursement par dépôt
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
@@ -80,6 +82,7 @@ export function useAddSalePayment() {
     onSuccess: () => {
       toast.success('Paiement ajouté avec succès.')
       queryClient.invalidateQueries({ queryKey: ['sales'] })
+      queryClient.invalidateQueries({ queryKey: ['client_deposits'] }) // paiement / remboursement par dépôt
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       queryClient.invalidateQueries({ queryKey: ['payments'] })
     },
@@ -103,6 +106,7 @@ export function useCancelSale() {
     onSuccess: () => {
       toast.success('Vente annulée avec succès.')
       queryClient.invalidateQueries({ queryKey: ['sales'] })
+      queryClient.invalidateQueries({ queryKey: ['client_deposits'] }) // paiement / remboursement par dépôt
       queryClient.invalidateQueries({ queryKey: ['payments'] }) // le remboursement est une nouvelle ligne de paiement
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
@@ -166,6 +170,31 @@ export function useAddStockEntry() {
     },
     onError: (error) => {
       toast.error(error?.message || 'Erreur lors de la mise à jour du stock.')
+    },
+  })
+}
+
+// Sortie manuelle (casse, perte, usage interne, inventaire) : le stock est contrôlé côté base
+export function useAddStockExit() {
+  const queryClient = useQueryClient()
+  const toast = useToast()
+  return useMutation({
+    mutationFn: async ({ productId, quantity, reason }) => {
+      const { error } = await supabase.rpc('add_stock_exit', {
+        p_product_id: productId,
+        p_quantity: quantity,
+        p_reason: reason,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('Sortie de stock enregistrée.')
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['stock_movements'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'Erreur lors de la sortie de stock.')
     },
   })
 }

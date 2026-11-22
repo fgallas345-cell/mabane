@@ -77,15 +77,17 @@ export function useDashboard() {
             .from("small_sales")
             .select("id, total, created_at")
             .gte("created_at", since(startOfMonth))
+            .is("cancelled_at", null)
             .order("id"),
         ),
         fetchAll(() =>
           supabase
             .from("small_sale_items")
             .select(
-              "id, product_name, quantity, unit_price, purchase_price, line_total, small_sales!inner(id, created_at, discount)",
+              "id, product_name, quantity, unit_price, purchase_price, line_total, small_sales!inner(id, created_at, discount, cancelled_at)",
             )
             .gte("small_sales.created_at", since(startOfMonth))
+            .is("small_sales.cancelled_at", null)
             .order("id"),
         ),
       ]);
@@ -201,11 +203,13 @@ export function useLowStock() {
   return useQuery({
     queryKey: ["products", "low-stock"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("products")
-        .select("id, name, stock, alert_threshold, unit")
-        .order("stock", { ascending: true });
-      if (error) throw error;
+      const data = await fetchAll(() =>
+        supabase
+          .from("products")
+          .select("id, name, stock, alert_threshold, unit")
+          .order("stock", { ascending: true })
+          .order("id", { ascending: true }),
+      );
       return data.filter((p) => p.stock <= p.alert_threshold);
     },
     staleTime: 60 * 1000,

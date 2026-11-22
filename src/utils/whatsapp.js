@@ -92,3 +92,28 @@ export async function sendReceiptViaWhatsApp(receipt) {
 
   openWhatsAppLink(phone, message)
 }
+
+/**
+ * Reçu de dépôt / retrait d'un client (PDF partagé si possible, sinon message WhatsApp).
+ * @param {object} entry - ligne client_deposits
+ * @param {object} client - { name, phone }
+ */
+export async function sendDepositReceiptViaWhatsApp(entry, client) {
+  const phone = normalizePhone(client?.phone)
+  if (!phone) return
+
+  const amount = currency(Math.abs(Number(entry.amount || 0)))
+  const action = entry.type === 'retrait' ? `Retrait de ${amount}` : entry.type === 'depot' ? `Dépôt de ${amount}` : `Opération de ${amount}`
+  const message = `Bonjour${client?.name ? ` ${client.name}` : ''}, ${action} enregistré (${entry.number}). Solde de votre dépôt : ${currency(entry.balance_after)}. Merci pour votre confiance.`
+
+  try {
+    const { getDepositReceiptPDFBlob } = await import('./depositPdf')
+    const blob = await getDepositReceiptPDFBlob(entry, client)
+    const shared = await sharePdf({ title: `Reçu ${entry.number}`, text: message, blob, fileName: `${entry.number || 'depot'}.pdf` })
+    if (shared) return
+  } catch (error) {
+    console.warn('Génération du PDF impossible, ouverture de WhatsApp en fallback', error)
+  }
+
+  openWhatsAppLink(phone, message)
+}

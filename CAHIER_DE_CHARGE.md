@@ -41,8 +41,10 @@ Trois rôles, stockés dans `users.role` : `admin`, `caissier`, `employe`.
 | Produits, catégories, clients, fournisseurs : **supprimer** | ✔ | – | – |
 | Ventes : créer facture / devis, encaisser un paiement, créer un bon de livraison, confirmer un devis, PDF, WhatsApp | ✔ | ✔ | ✔ |
 | Ventes : **modifier**, **annuler** (facture ou devis), supprimer une facture annulée | ✔ | – | – |
-| Petites ventes : créer, modifier | ✔ | ✔ | ✔ |
-| Petites ventes : **annuler/supprimer** | ✔ | – | – |
+| Petites ventes : créer | ✔ | ✔ | ✔ |
+| Petites ventes : **modifier**, **annuler** (la vente reste dans l'historique, marquée annulée) | ✔ | – | – |
+| Dépôts clients : enregistrer un dépôt / un retrait, payer une facture avec le dépôt, reçu, relevé | ✔ | ✔ | ✔ |
+| Dépôts clients : **annuler** un dépôt / retrait saisi par erreur (ligne de correction) | ✔ | – | – |
 | Achats : créer, payer | ✔ | ✔ | ✔ |
 | Achats : **modifier**, **annuler**, supprimer un achat annulé | ✔ | – | – |
 | Stock : entrée / sortie manuelle | ✔ | ✔ | ✔ |
@@ -57,6 +59,8 @@ Règles :
 - Le **premier** compte créé devient `admin` automatiquement ; les suivants sont `employe` jusqu'à promotion par un admin. Le rôle éventuellement transmis à l'inscription est **ignoré** par le serveur.
 - Un admin ne peut ni se rétrograder lui-même ni supprimer son propre compte ; le dernier admin ne peut pas être supprimé ou rétrogradé.
 - Ces droits sont appliqués **côté serveur** (RLS + contrôles dans les RPC). L'interface ne fait que masquer les boutons.
+- Les RPC ne sont exécutables que par le rôle `authenticated` (EXECUTE retiré à `public` et `anon`) et refusent tout appel sans `auth.uid()`. L'auteur d'une opération est toujours l'utilisateur connecté, jamais un identifiant envoyé par le client.
+- Le dernier administrateur et l'auto-rétrogradation sont bloqués par le trigger `guard_users_last_admin`.
 
 ---
 
@@ -130,10 +134,10 @@ Toutes les clés primaires sont des `uuid` (`uuid_generate_v4()`), toutes les ta
 |---|---|---|
 | `sales` | `invoice_number` (unique, `FAC-AAAA-0001`), `client_id` (nullable = client comptoir), `user_id`, `subtotal`, `discount`, `total`, `amount_paid`, `status`, `delivery_status`, `quote_status`, `payment_method`, `receipt_number`, `last_payment_at`, `updated_at` | `status in ('payee','partielle','credit','annulee')` · `delivery_status in ('en_attente','partielle','livree')` · `quote_status in ('draft','confirmed','cancelled')` · `payment_method in ('especes','mobile_money','virement','cheque','carte')` · `0 ≤ discount ≤ subtotal` · `0 ≤ amount_paid ≤ total` |
 | `sale_items` | `sale_id` (cascade), `product_id` (set null), `product_name`, `quantity`, `purchase_price` (copie du catalogue), `unit_price`, `line_total` | quantité > 0, prix ≥ 0 |
-| `payments` | `sale_id` (cascade), `amount`, `method`, `reference`, `notes`, `created_by` | |
+| `payments` | `sale_id` (set null : supprimer une facture annulée garde ses encaissements), `amount`, `method`, `reference`, `notes`, `created_by` | |
 | `deliveries` | `sale_id` (cascade), `delivery_number` (unique, `BL-AAAA-0001`), `notes`, `created_by` | |
 | `delivery_items` | `delivery_id` (cascade), `sale_item_id` (cascade), `product_id`, `quantity_delivered` | > 0 |
-| `small_sales` | `user_id`, `notes`, `subtotal`, `discount`, `total` | pas de numéro, pas de client |
+| `small_sales` | `user_id`, `notes`, `subtotal`, `discount`, `total`, `cancelled_at`, `cancelled_by` | pas de numéro, pas de client ; `discount ≤ subtotal` |
 | `small_sale_items` | `small_sale_id` (cascade), `product_id`, `product_name`, `quantity`, `purchase_price`, `unit_price`, `line_total` | |
 
 ### 4.3 Achats, stock, finances
@@ -143,6 +147,7 @@ Toutes les clés primaires sont des `uuid` (`uuid_generate_v4()`), toutes les ta
 | `purchase_items` | `purchase_id` (cascade), `product_id`, `product_name`, `quantity`, `unit_cost`, `line_total` | |
 | `stock_movements` | `product_id` (cascade), `type`, `quantity`, `reason`, `user_id` | `type in ('entree','sortie')`, quantité > 0 |
 | `expenses` | `label`, `amount`, `category`, `user_id` | montant ≥ 0 |
+| `client_deposits` | `number` (DEP/RET/UTI/REM/COR-AAAA-NNNN), `client_id` (restrict), `client_name`, `type` (depot, retrait, achat, remboursement, correction), `amount` **signé**, `balance_after`, `method`, `sale_id`, `reverses_id`, `reversed_at`, `notes`, `created_by` | `balance_after ≥ 0` ; écriture uniquement par RPC ; vue `client_deposit_balances` (solde par client) |
 
 ### 4.4 Index
 `products(category_id)`, `suppliers(name)`, `supplier_products(supplier_id)`, `(product_id)`, `purchases(supplier_id)`, `(status)`, `purchase_items(purchase_id)`, `(product_id)`, `payments(sale_id)`, `(created_at)`, `deliveries(sale_id)`, `delivery_items(delivery_id)`, `(sale_item_id)`, `stock_movements(product_id)`, `small_sales(user_id)`, `(created_at)`, `small_sale_items(small_sale_id)`, `(product_id)`.
@@ -187,7 +192,7 @@ Un devis reçoit son numéro `FAC-…` dès sa création (il le conserve à la c
 | Modification / annulation d'une petite vente | restitue puis re-sort / restitue | `Rectification petite vente …`, `Annulation petite vente …` |
 | Achat fournisseur | + quantité ; `products.purchase_price` ← dernier `unit_cost` | `Achat ACH-… — fournisseur` (entrée) |
 | Annulation / modification d'un achat | − quantité (refus si stock insuffisant) | `Annulation achat ACH-…`, `Rectification achat ACH-…` |
-| Entrée/sortie manuelle | ± quantité | motif saisi (`Réapprovisionnement` par défaut) |
+| Entrée/sortie manuelle | ± quantité | motif saisi (`Réapprovisionnement` / `Sortie manuelle` par défaut ; un motif imitant un mouvement système est préfixé `Manuel : `) |
 | Correction d'un mouvement manuel | annule l'ancien delta, applique le nouveau | le mouvement est mis à jour |
 
 Contrôles :
@@ -224,18 +229,22 @@ Toutes sont accordées au rôle `authenticated`, lèvent des exceptions en fran�
 
 | Fonction | Paramètres | Comportement | Restriction |
 |---|---|---|---|
-| `create_sale` | `p_client_id, p_user_id, p_discount, p_items jsonb, p_amount_paid, p_delivery_mode ('immediate'\|'staged'), p_quote_status ('confirmed'\|'draft')` | Valide lignes/remise/paiement, numérote, insère vente + lignes (prix d'achat lu du catalogue) + paiement initial + mouvements de stock (si immédiate et confirmée). Retourne la vente. | — |
+| `create_sale` | `p_client_id, p_user_id, p_discount, p_items jsonb, p_amount_paid, p_delivery_mode ('immediate'\|'staged'), p_quote_status ('confirmed'\|'draft'), p_payment_method` | Valide lignes/remise/paiement, numérote, insère vente + lignes (prix d'achat lu du catalogue) + paiement initial + mouvements de stock (si immédiate et confirmée). Retourne la vente. | — |
 | `update_sale_items` | `p_sale_id, p_items, p_discount, p_client_id, p_keep_client` | Remplace les lignes, la remise et le client ; recalcule sous-total/total/statut ; gère le stock selon §5.3 ; refuse si BL existant ou si `amount_paid > nouveau total`. | admin |
 | `add_sale_payment` | `p_sale_id, p_amount, p_method, p_reference, p_notes` | Paiement partiel + reçu. | — |
 | `confirm_quote` / `cancel_quote` | `p_sale_id, p_user_id` | Voir §5.5. | cancel : admin |
 | `cancel_sale` | `p_sale_id, p_user_id` | Annulation + restitution selon §5.3. | admin |
 | `create_delivery` | `p_sale_id, p_items [{sale_item_id, quantity_delivered}], p_notes` | Numérote, vérifie reste à livrer et stock, sort le stock, met à jour `delivery_status`. Refuse devis et factures annulées. | — |
-| `create_small_sale` / `update_small_sale` / `cancel_small_sale` | `p_items, p_user_id, p_notes, p_discount` / `p_sale_id, …` / `p_sale_id` | Petite vente atomique ; annulation = restitution + suppression. | cancel : admin |
+| `create_small_sale` / `update_small_sale` / `cancel_small_sale` | `p_items, p_user_id, p_notes, p_discount` / `p_sale_id, …` / `p_sale_id` | Petite vente atomique ; remise ≤ sous-total ; annulation = restitution du stock + marquage `cancelled_at` / `cancelled_by` (plus de suppression). | update, cancel : admin |
 | `create_purchase` | `p_supplier_id, p_user_id, p_amount_paid, p_notes, p_items [{product_id, product_name, quantity, unit_cost}]` | Numérote, insère, entre le stock, met à jour le prix d'achat catalogue. | — |
 | `update_purchase_items` | `p_purchase_id, p_items` | Reverse puis réapplique ; refuse si stock insuffisant ou total < payé. | admin |
 | `add_purchase_payment` | `p_purchase_id, p_amount` | Paiement fournisseur. | — |
 | `cancel_purchase` | `p_purchase_id, p_user_id` | Retire le stock (refus si déjà vendu). | admin |
 | `add_stock_entry` | `p_product_id, p_quantity, p_reason, p_user_id` | Entrée manuelle. | — |
+| `add_stock_exit` | `p_product_id, p_quantity, p_reason` | Sortie manuelle (casse, perte, inventaire), stock vérifié sous verrou. | — |
+| `add_client_deposit` / `withdraw_client_deposit` | `p_client_id, p_amount, p_method, p_notes` | Dépôt / retrait d'argent d'un client ; verrou sur le client, solde jamais négatif. | — |
+| `reverse_client_deposit` | `p_entry_id, p_reason` | Annule un dépôt / retrait par une ligne de correction inverse (rien n'est effacé). | admin |
+| (paiement `depot`) | `create_sale` / `add_sale_payment` avec le mode `depot` | Débite le dépôt du client de la facture (ligne `achat`) ; `cancel_sale` le recrédite (ligne `remboursement`). Le client d'une facture payée par dépôt ne peut plus être changé. | — |
 | `update_stock_movement` / `delete_stock_movement` | `p_movement_id, p_product_id, p_quantity, p_reason, p_type, p_user_id` / `p_movement_id` | Correction d'un mouvement **manuel**, stock recalculé, jamais négatif. | admin |
 | `next_invoice_number`, `next_purchase_number`, `next_delivery_number`, `next_receipt_number` | — | Numérotation §5.1. | interne |
 | `is_admin()` | — | `true` si `auth.uid()` a le rôle admin. | — |
@@ -258,7 +267,7 @@ Supabase Auth, email + mot de passe, session persistante avec rafraîchissement 
 | `supplier_products` | authentifié | authentifié | authentifié | authentifié |
 | `sales` | authentifié | authentifié | admin | admin |
 | `sale_items`, `purchase_items`, `payments`, `deliveries`, `delivery_items`, `stock_movements`, `small_sale_items` | authentifié | authentifié | — (RPC) | — (RPC) |
-| `small_sales` | authentifié | authentifié | — (RPC) | admin |
+| `small_sales` | authentifié | authentifié | — (RPC) | admin (ventes annulées seulement) |
 | `shop_settings` | public | — | admin | — |
 
 ### 7.3 Edge Functions
@@ -300,7 +309,10 @@ Blocs : « Revenus, dépenses & bénéfice » (barres : revenus, marge, dépense
 - **Modifier la facture** (admin) : client, remise, lignes (ajout, quantité, prix, suppression, au moins une ligne) ; contrôle du stock disponible = stock actuel + quantités de la facture d'origine (ventes immédiates) ; refus si le total passe sous l'encaissé.
 
 ### 8.4 Petites ventes (`/petites-ventes`)
-Page « caisse » en deux colonnes. Gauche : en-tête avec statistiques du jour (montant, nombre, ticket moyen) ; sélecteur recherchable + **grille de 8 produits rapides** (en stock) ajoutables en un clic ; panier avec stepper −/+, prix unitaire éditable, sous-total par ligne, remise, **total à encaisser** mis en évidence, notes, bouton « Encaisser » ; message de succès. Droite : cartes statistiques + historique récent (vendeur, lignes, total, boutons Modifier, Supprimer (admin)). Modale de modification avec le même panier.
+Page « caisse » en deux colonnes. Gauche : en-tête avec statistiques du jour (montant, nombre, ticket moyen) ; sélecteur recherchable + **grille de 8 produits rapides** (en stock) ajoutables en un clic ; panier avec stepper −/+, prix unitaire éditable, sous-total par ligne, remise, **total à encaisser** mis en évidence, notes, bouton « Encaisser » ; message de succès. Droite : cartes statistiques + historique récent (vendeur, lignes, total, boutons Modifier et Annuler (admin)). Modale de modification avec le même panier.
+
+### 8.4 bis Dépôts clients (`/depots`)
+Un client confie de l'argent à la boutique, puis achète avec ou le retire, en totalité ou en partie (remplace le carnet « récupéré … R : … »). Cartes : argent des clients détenu (somme des soldes, nombre de clients), dépôts, retraits et achats payés par dépôt du mois. Bandeau rappelant que cet argent n'est pas un revenu. Liste des clients (filtre « Avec un dépôt » / « Tous »), solde, dernière opération, actions Déposer / Retirer / Historique. Fenêtre d'opération : type, client recherchable avec son solde, montant (raccourcis, « Tout » pour un retrait), mode, note, aperçu « solde avant → après ». Après l'opération : reçu PDF (avec signatures) et envoi WhatsApp. Historique : chaque opération avec le reste après opération, reçu PDF, annulation (admin), **relevé PDF**. Dans Ventes, le mode de paiement « Dépôt client » apparaît quand le client a un solde.
 
 ### 8.5 Produits (`/produits`)
 Recherche, filtre catégorie, export Excel (Produit, Catégorie, Fournisseurs, Prix achat, Prix vente, Stock, Seuil), « Nouveau produit ». Liste : image (ou icône), nom, catégorie (badge coloré), prix achat / vente + **pilule de marge %**, stock (badge rouge si ≤ seuil), unité, fournisseurs liés, actions Voir / Modifier / Supprimer (admin).
@@ -328,7 +340,7 @@ Cartes **Recettes totales**, **Dépenses totales**, **Bénéfice réel** (défin
 Profil (nom, email, rôle), thème. Bloc **Boutique** (admin) : nom, gérant, adresse, activités (séparées par virgules), téléphones 1-3, seuil d'alerte par défaut. Les valeurs alimentent immédiatement le logo/nom de l'interface, la page de connexion et les PDF.
 
 ### 8.13 Utilisateurs (`/utilisateurs`, admin)
-Liste (nom, email, rôle modifiable par liste déroulante, badge « Vous »), recherche, « Nouveau compte » (nom, email, mot de passe ≥ 6, rôle) via `manage-users`, suppression (confirmation) sauf soi-même, détail.
+Liste (nom, email, rôle modifiable par liste déroulante, badge « Vous »), recherche, « Nouveau compte » (nom, email, mot de passe ≥ 8, rôle) via `manage-users`, suppression (confirmation) sauf soi-même, détail.
 
 ---
 

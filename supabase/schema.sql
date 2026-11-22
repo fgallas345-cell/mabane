@@ -156,7 +156,7 @@ update public.sales set payment_method = 'especes' where payment_method is null;
 alter table public.sales alter column payment_method set default 'especes';
 alter table public.sales alter column payment_method set not null;
 alter table public.sales drop constraint if exists sales_payment_method_check;
-alter table public.sales add constraint sales_payment_method_check check (payment_method in ('especes', 'mobile_money', 'virement', 'cheque', 'carte'));
+alter table public.sales add constraint sales_payment_method_check check (payment_method in ('especes', 'mobile_money', 'virement', 'cheque', 'carte', 'depot'));
 alter table public.sales add column if not exists receipt_number text;
 alter table public.sales add column if not exists last_payment_at timestamptz;
 alter table public.sales add column if not exists updated_at timestamptz default now();
@@ -295,6 +295,10 @@ create table if not exists public.small_sales (
 create index if not exists idx_small_sales_user on public.small_sales(user_id);
 create index if not exists idx_small_sales_created on public.small_sales(created_at);
 
+-- Annulation = marquage (plus de suppression physique) : la trace comptable est conservée
+alter table public.small_sales add column if not exists cancelled_at timestamptz;
+alter table public.small_sales add column if not exists cancelled_by uuid references public.users(id) on delete set null;
+
 -- ============================================================================
 -- 12. TABLE small_sale_items (lignes des petites ventes)
 -- ============================================================================
@@ -311,6 +315,24 @@ create table if not exists public.small_sale_items (
 
 create index if not exists idx_small_sale_items_sale on public.small_sale_items(small_sale_id);
 create index if not exists idx_small_sale_items_product on public.small_sale_items(product_id);
+
+-- ============================================================================
+-- FONCTION : exiger un utilisateur connecté (à appeler en tête de chaque RPC)
+-- Renvoie auth.uid() ; lève une erreur pour un appel anonyme (clé anon seule).
+-- ============================================================================
+create or replace function public.require_auth()
+returns uuid
+language plpgsql
+stable
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Non authentifié : connectez-vous pour effectuer cette opération.';
+  end if;
+  return auth.uid();
+end;
+$$;
 
 -- ============================================================================
 -- FONCTION : générer le prochain numéro de facture (FAC-2026-0001)
@@ -340,7 +362,11 @@ $$;
 -- items = jsonb array: [{product_id, product_name, quantity, unit_price}, ...]
 -- p_delivery_mode = 'immediate' (défaut) ou 'staged' (livraison échelonnée)
 -- p_quote_status = 'confirmed' (défaut) ou 'draft' (brouillon / devis)
+-- p_payment_method = mode de paiement de l'encaissement initial (especes par défaut)
 -- ============================================================================
+-- Ancienne signature (sans mode de paiement) : supprimée pour éviter une surcharge ambiguë
+drop function if exists public.create_sale(uuid, uuid, numeric, jsonb, numeric, text, text);
+
 create or replace function public.create_sale(
   p_client_id uuid,
   p_user_id uuid,
@@ -348,7 +374,8 @@ create or replace function public.create_sale(
   p_items jsonb,
   p_amount_paid numeric default null,
   p_delivery_mode text default 'immediate',
-  p_quote_status text default 'confirmed'
+  p_quote_status text default 'confirmed',
+  p_payment_method text default 'especes'
 )
 returns public.sales
 language plpgsql
@@ -370,7 +397,7 @@ declare
   v_is_draft boolean;
   v_receipt_number text;
 begin
-  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
+  p_user_id := public.require_auth(); -- l'auteur est TOUJOURS l'utilisateur connecté (l'identifiant envoyé par le client est ignoré)
   if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
     raise exception 'La vente doit contenir au moins un article.';
   end if;
@@ -384,6 +411,14 @@ begin
   end if;
 
   v_is_draft := p_quote_status = 'draft';
+
+  p_payment_method := coalesce(nullif(p_payment_method, ''), 'especes');
+  if p_payment_method not in ('especes', 'mobile_money', 'virement', 'cheque', 'carte', 'depot') then
+    raise exception 'Mode de paiement invalide : %', p_payment_method;
+  end if;
+  if p_payment_method = 'depot' and p_client_id is null then
+    raise exception 'Paiement par dépôt : sélectionnez le client qui a déposé l''argent.';
+  end if;
 
   if coalesce(p_discount, 0) < 0 then
     raise exception 'La remise ne peut pas être négative.';
@@ -447,7 +482,7 @@ begin
     v_status,
     v_delivery_status,
     p_quote_status,
-    'especes',
+    p_payment_method,
     v_receipt_number,
     case when v_amount_paid > 0 then now() else null end,
     now()
@@ -459,11 +494,17 @@ begin
     values (
       v_sale.id,
       v_amount_paid,
-      'especes',
+      p_payment_method,
       'Avance initiale',
       'Paiement lors de la création de la facture',
       p_user_id
     );
+
+    -- Payé avec l'argent déposé par le client : on débite son dépôt (refus si solde insuffisant)
+    if p_payment_method = 'depot' then
+      perform public.client_deposit_post(p_client_id, 'achat', -v_amount_paid, 'depot', v_sale.id,
+        'Paiement facture ' || v_invoice_number, null);
+    end if;
   end if;
 
   for v_item in select * from jsonb_array_elements(p_items)
@@ -539,7 +580,7 @@ declare
   v_current_stock integer;
   v_purchase_price numeric;
 begin
-  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
+  p_user_id := public.require_auth(); -- l'auteur est TOUJOURS l'utilisateur connecté (l'identifiant envoyé par le client est ignoré)
   select * into v_sale from public.sales where id = p_sale_id for update;
   if v_sale.id is null then
     raise exception 'Devis introuvable.';
@@ -621,7 +662,7 @@ as $$
 declare
   v_sale public.sales;
 begin
-  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
+  p_user_id := public.require_auth(); -- l'auteur est TOUJOURS l'utilisateur connecté (l'identifiant envoyé par le client est ignoré)
   if not exists (select 1 from public.users where id = auth.uid() and role = 'admin') then
     raise exception 'Seul un administrateur peut annuler un devis.';
   end if;
@@ -665,9 +706,15 @@ security definer
 set search_path = public
 as $$
 begin
-  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
+  p_user_id := public.require_auth(); -- l'auteur est TOUJOURS l'utilisateur connecté (l'identifiant envoyé par le client est ignoré)
   if p_quantity is null or p_quantity <= 0 then
     raise exception 'La quantité d''entrée doit être supérieure à zéro.';
+  end if;
+
+  p_reason := coalesce(nullif(trim(p_reason), ''), 'Réapprovisionnement');
+  -- Un motif manuel ne doit pas imiter un mouvement de document (il deviendrait non corrigeable)
+  if public.is_system_stock_movement(p_reason) then
+    p_reason := 'Manuel : ' || p_reason;
   end if;
 
   update public.products
@@ -679,7 +726,50 @@ begin
   end if;
 
   insert into public.stock_movements (product_id, type, quantity, reason, user_id)
-  values (p_product_id, 'entree', p_quantity, coalesce(p_reason, 'Réapprovisionnement'), p_user_id);
+  values (p_product_id, 'entree', p_quantity, p_reason, p_user_id);
+end;
+$$;
+
+-- ============================================================================
+-- FONCTION RPC : sortie de stock manuelle (casse, perte, usage interne, inventaire)
+-- ============================================================================
+create or replace function public.add_stock_exit(
+  p_product_id uuid,
+  p_quantity integer,
+  p_reason text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := public.require_auth();
+  v_current_stock integer;
+begin
+  if p_quantity is null or p_quantity <= 0 then
+    raise exception 'La quantité de sortie doit être supérieure à zéro.';
+  end if;
+
+  p_reason := coalesce(nullif(trim(p_reason), ''), 'Sortie manuelle');
+  if public.is_system_stock_movement(p_reason) then
+    p_reason := 'Manuel : ' || p_reason;
+  end if;
+
+  select stock into v_current_stock from public.products where id = p_product_id for update;
+  if v_current_stock is null then
+    raise exception 'Produit introuvable.';
+  end if;
+  if v_current_stock < p_quantity then
+    raise exception 'Stock insuffisant (disponible : %).', v_current_stock;
+  end if;
+
+  update public.products
+  set stock = stock - p_quantity, updated_at = now()
+  where id = p_product_id;
+
+  insert into public.stock_movements (product_id, type, quantity, reason, user_id)
+  values (p_product_id, 'sortie', p_quantity, p_reason, v_user_id);
 end;
 $$;
 
@@ -706,6 +796,7 @@ declare
   v_current_stock integer;
   v_delivery_number text;
 begin
+  perform public.require_auth();
   select * into v_sale_item from public.sales where id = p_sale_id for update;
   if v_sale_item.id is null then
     raise exception 'Facture introuvable.';
@@ -848,7 +939,7 @@ begin
     raise exception 'Seul un administrateur peut corriger un mouvement de stock.';
   end if;
 
-  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
+  p_user_id := public.require_auth(); -- l'auteur est TOUJOURS l'utilisateur connecté (l'identifiant envoyé par le client est ignoré)
   if p_type not in ('entree', 'sortie') then
     raise exception 'Type de mouvement invalide.';
   end if;
@@ -1041,7 +1132,7 @@ declare
   v_status text;
   v_amount_paid numeric := coalesce(p_amount_paid, 0);
 begin
-  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
+  p_user_id := public.require_auth(); -- l'auteur est TOUJOURS l'utilisateur connecté (l'identifiant envoyé par le client est ignoré)
   if p_supplier_id is null then
     raise exception 'Veuillez sélectionner un fournisseur.';
   end if;
@@ -1137,6 +1228,7 @@ declare
   v_purchase public.purchases;
   v_new_paid numeric;
 begin
+  perform public.require_auth();
   if p_amount is null or p_amount <= 0 then
     raise exception 'Le montant du paiement doit être supérieur à zéro.';
   end if;
@@ -1188,7 +1280,7 @@ declare
   v_item record;
   v_current_stock integer;
 begin
-  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
+  p_user_id := public.require_auth(); -- l'auteur est TOUJOURS l'utilisateur connecté (l'identifiant envoyé par le client est ignoré)
   if not exists (select 1 from public.users where id = auth.uid() and role = 'admin') then
     raise exception 'Seul un administrateur peut annuler un achat.';
   end if;
@@ -1276,6 +1368,7 @@ declare
   v_new_paid numeric;
   v_receipt_number text;
 begin
+  perform public.require_auth();
   if p_amount is null or p_amount <= 0 then
     raise exception 'Le montant du paiement doit être supérieur à zéro.';
   end if;
@@ -1300,17 +1393,31 @@ begin
     raise exception 'Ce paiement dépasse le solde restant dû (%).', v_sale.total - v_sale.amount_paid;
   end if;
 
+  p_method := coalesce(nullif(p_method, ''), 'especes');
+  if p_method not in ('especes', 'mobile_money', 'virement', 'cheque', 'carte', 'depot') then
+    raise exception 'Mode de paiement invalide : %', p_method;
+  end if;
+
   v_receipt_number := public.next_receipt_number();
 
   insert into public.payments (sale_id, amount, method, reference, notes, created_by)
   values (
     p_sale_id,
     p_amount,
-    coalesce(nullif(p_method, ''), 'especes'),
+    p_method,
     nullif(p_reference, ''),
     nullif(p_notes, ''),
     auth.uid()
   );
+
+  -- Payé avec l'argent déposé par le client : on débite son dépôt (refus si solde insuffisant)
+  if p_method = 'depot' then
+    if v_sale.client_id is null then
+      raise exception 'Paiement par dépôt impossible : cette facture n''a pas de client.';
+    end if;
+    perform public.client_deposit_post(v_sale.client_id, 'achat', -p_amount, 'depot', p_sale_id,
+      'Paiement facture ' || v_sale.invoice_number, null);
+  end if;
 
   update public.sales
   set amount_paid = v_new_paid,
@@ -1348,8 +1455,9 @@ declare
   v_delivered integer;
   v_undelivered integer;
   v_current_stock integer;
+  v_depot_paid numeric;
 begin
-  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
+  p_user_id := public.require_auth(); -- l'auteur est TOUJOURS l'utilisateur connecté (l'identifiant envoyé par le client est ignoré)
   if not exists (select 1 from public.users where id = auth.uid() and role = 'admin') then
     raise exception 'Seul un administrateur peut annuler une vente.';
   end if;
@@ -1421,14 +1529,33 @@ begin
   set status = 'annulee'
   where id = p_sale_id;
 
-  -- Trace du remboursement : un paiement négatif annule les encaissements de la facture
-  -- (la caisse reste juste ; l'admin rend l'argent au client).
-  if v_sale.amount_paid > 0 then
+  -- Trace du remboursement : un paiement négatif annule les encaissements de la facture.
+  -- La part payée avec le DÉPÔT du client lui est recréditée sur son dépôt ;
+  -- le reste lui est rendu (l'admin rend l'argent, la caisse reste juste).
+  select coalesce(sum(amount), 0) into v_depot_paid
+  from public.payments
+  where sale_id = p_sale_id and method = 'depot';
+
+  if v_depot_paid > 0 then
     insert into public.payments (sale_id, amount, method, reference, notes, created_by)
     values (
       p_sale_id,
-      -v_sale.amount_paid,
-      coalesce(v_sale.payment_method, 'especes'),
+      -v_depot_paid,
+      'depot',
+      'Remboursement',
+      'Annulation de la facture ' || v_sale.invoice_number || ' : recrédité sur le dépôt du client',
+      p_user_id
+    );
+    perform public.client_deposit_post(v_sale.client_id, 'remboursement', v_depot_paid, 'depot', p_sale_id,
+      'Annulation facture ' || v_sale.invoice_number, null);
+  end if;
+
+  if v_sale.amount_paid - v_depot_paid > 0 then
+    insert into public.payments (sale_id, amount, method, reference, notes, created_by)
+    values (
+      p_sale_id,
+      -(v_sale.amount_paid - v_depot_paid),
+      case when v_sale.payment_method = 'depot' or v_sale.payment_method is null then 'especes' else v_sale.payment_method end,
       'Remboursement',
       'Annulation de la facture ' || v_sale.invoice_number,
       p_user_id
@@ -1461,7 +1588,7 @@ declare
   v_current_stock integer;
   v_purchase_price numeric;
 begin
-  p_user_id := coalesce(auth.uid(), p_user_id); -- l'auteur est toujours l'utilisateur connecté
+  p_user_id := public.require_auth(); -- l'auteur est TOUJOURS l'utilisateur connecté (l'identifiant envoyé par le client est ignoré)
   if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
     raise exception 'La petite vente doit contenir au moins un article.';
   end if;
@@ -1575,6 +1702,10 @@ begin
     raise exception 'Petite vente introuvable.';
   end if;
 
+  if v_sale.cancelled_at is not null then
+    raise exception 'Cette petite vente est annulée : elle ne peut plus être modifiée.';
+  end if;
+
   if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
     raise exception 'La petite vente doit contenir au moins un article.';
   end if;
@@ -1660,6 +1791,10 @@ begin
     );
   end loop;
 
+  if coalesce(p_discount, 0) > v_new_subtotal then
+    raise exception 'La remise (%) ne peut pas dépasser le sous-total (%).', coalesce(p_discount, 0), v_new_subtotal;
+  end if;
+
   update public.small_sales
   set notes = nullif(p_notes, ''),
       discount = coalesce(p_discount, 0),
@@ -1685,14 +1820,18 @@ set search_path = public
 as $$
 declare
   v_item record;
+  v_cancelled_at timestamptz;
 begin
   if not public.is_admin() then
     raise exception 'Seul un administrateur peut annuler une petite vente.';
   end if;
 
-  perform 1 from public.small_sales where id = p_sale_id for update;
+  select cancelled_at into v_cancelled_at from public.small_sales where id = p_sale_id for update;
   if not found then
     raise exception 'Petite vente introuvable.';
+  end if;
+  if v_cancelled_at is not null then
+    raise exception 'Cette petite vente est déjà annulée.';
   end if;
 
   for v_item in
@@ -1714,7 +1853,11 @@ begin
     );
   end loop;
 
-  delete from public.small_sales where id = p_sale_id;
+  -- Plus de suppression physique : la vente reste dans l'historique, marquée annulée
+  update public.small_sales
+  set cancelled_at = now(),
+      cancelled_by = auth.uid()
+  where id = p_sale_id;
 end;
 $$;
 
@@ -1785,6 +1928,13 @@ begin
   select exists (select 1 from public.deliveries where sale_id = p_sale_id) into v_has_deliveries;
   if v_has_deliveries then
     raise exception 'Cette facture a déjà des bons de livraison : ses articles ne peuvent plus être modifiés. Annulez-la et créez une nouvelle facture.';
+  end if;
+
+  -- Une facture payée avec le dépôt d'un client reste attachée à ce client
+  -- (en cas d'annulation, c'est lui qui est recrédité)
+  if not p_keep_client and p_client_id is distinct from v_sale.client_id
+     and exists (select 1 from public.payments where sale_id = p_sale_id and method = 'depot') then
+    raise exception 'Cette facture a été payée avec le dépôt du client : son client ne peut plus être changé.';
   end if;
 
   -- Le stock n'a bougé que pour une facture confirmée livrée immédiatement
@@ -2316,7 +2466,7 @@ create policy "Admin update shop_settings" on public.shop_settings for update us
 drop policy if exists "Authenticated read small_sales" on public.small_sales;
 create policy "Authenticated read small_sales" on public.small_sales for select using (auth.role() = 'authenticated');
 drop policy if exists "Admin delete small_sales" on public.small_sales;
-create policy "Admin delete small_sales" on public.small_sales for delete using (public.is_admin());
+create policy "Admin delete small_sales" on public.small_sales for delete using (public.is_admin() and cancelled_at is not null);
 
 drop policy if exists "Authenticated read small_sale_items" on public.small_sale_items;
 create policy "Authenticated read small_sale_items" on public.small_sale_items for select using (auth.role() = 'authenticated');
@@ -2381,7 +2531,59 @@ begin
       check (amount_paid >= 0 and amount_paid <= total)
       not valid;
   end if;
+
+  if not exists (select 1 from pg_constraint where conname = 'small_sales_valid_amounts') then
+    alter table public.small_sales
+      add constraint small_sales_valid_amounts
+      check (subtotal >= 0 and discount >= 0 and discount <= subtotal and total >= 0)
+      not valid;
+  end if;
 end $$;
+
+-- Supprimer une facture annulée ne doit pas effacer ses encaissements ni son remboursement :
+-- les montants des mois passés resteraient sinon modifiés après coup.
+alter table public.payments drop constraint if exists payments_sale_id_fkey;
+alter table public.payments
+  add constraint payments_sale_id_fkey
+  foreign key (sale_id) references public.sales(id) on delete set null;
+
+-- ============================================================================
+-- TRIGGER : jamais sans administrateur
+-- Un admin ne peut pas se rétrograder ; le dernier admin ne peut être ni
+-- rétrogradé ni supprimé (y compris via la suppression du compte auth).
+-- ============================================================================
+create or replace function public.guard_last_admin()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if old.role <> 'admin' then
+    return case when tg_op = 'DELETE' then old else new end;
+  end if;
+
+  if tg_op = 'UPDATE' then
+    if new.role = 'admin' then
+      return new;
+    end if;
+    if old.id = auth.uid() then
+      raise exception 'Vous ne pouvez pas retirer votre propre rôle administrateur.';
+    end if;
+  end if;
+
+  if not exists (select 1 from public.users where role = 'admin' and id <> old.id) then
+    raise exception 'Impossible : ce compte est le dernier administrateur.';
+  end if;
+
+  return case when tg_op = 'DELETE' then old else new end;
+end;
+$$;
+
+drop trigger if exists guard_users_last_admin on public.users;
+create trigger guard_users_last_admin
+  before update of role or delete on public.users
+  for each row execute function public.guard_last_admin();
 
 
 -- ============================================================================
@@ -2457,6 +2659,245 @@ where quote_status = 'cancelled' and status <> 'annulee';
 revoke execute on function public.refresh_product_cost(uuid) from public, anon, authenticated;
 
 -- ============================================================================
+-- DÉPÔTS CLIENTS
+-- Un client confie de l'argent à la boutique ; il achète plus tard avec ce dépôt
+-- ou le retire (en totalité ou en partie). Registre en lignes SIGNÉES :
+--   + depot, remboursement (facture annulée payée par dépôt), correction
+--   − retrait, achat (facture payée avec le dépôt), correction
+-- Solde = somme des montants. Chaque ligne garde le solde après l'opération,
+-- comme le carnet papier (« R : 150 200 F »). Le solde ne peut jamais être négatif.
+-- Aucune écriture directe : tout passe par les RPC ci-dessous.
+-- ============================================================================
+create table if not exists public.client_deposits (
+  id uuid primary key default uuid_generate_v4(),
+  number text not null unique,                 -- DEP-2026-0001, RET-2026-0001, ...
+  client_id uuid references public.clients(id) on delete restrict,
+  client_name text not null,                   -- copie du nom au moment de l'opération
+  type text not null check (type in ('depot', 'retrait', 'achat', 'remboursement', 'correction')),
+  amount numeric(12,2) not null check (amount <> 0),
+  balance_after numeric(12,2) not null check (balance_after >= 0),
+  method text not null default 'especes',
+  sale_id uuid references public.sales(id) on delete set null,
+  reverses_id uuid references public.client_deposits(id) on delete set null, -- correction : opération annulée
+  reversed_at timestamptz,                      -- opération annulée par une correction
+  notes text,
+  created_by uuid references public.users(id) on delete set null,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_client_deposits_client on public.client_deposits(client_id, created_at);
+create index if not exists idx_client_deposits_created on public.client_deposits(created_at);
+
+alter table public.client_deposits enable row level security;
+drop policy if exists "Authenticated read client_deposits" on public.client_deposits;
+create policy "Authenticated read client_deposits" on public.client_deposits for select using (auth.role() = 'authenticated');
+
+-- Solde par client (security_invoker : la RLS de client_deposits s'applique)
+create or replace view public.client_deposit_balances
+with (security_invoker = true) as
+select client_id,
+       sum(amount) as balance,
+       max(created_at) as last_operation_at,
+       count(*) as operations
+from public.client_deposits
+where client_id is not null
+group by client_id;
+
+-- Un client qui a un historique de dépôts ne se supprime pas (l'argent et la trace resteraient orphelins)
+create or replace function public.guard_client_with_deposits()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if exists (select 1 from public.client_deposits where client_id = old.id) then
+    raise exception 'Ce client a un historique de dépôts : il ne peut pas être supprimé.';
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists guard_clients_deposits on public.clients;
+create trigger guard_clients_deposits
+  before delete on public.clients
+  for each row execute function public.guard_client_with_deposits();
+
+-- Numérotation par type : DEP (dépôt), RET (retrait), UTI (utilisé pour un achat),
+-- REM (remboursement d'une facture annulée), COR (correction)
+create or replace function public.next_client_deposit_number(p_type text)
+returns text
+language plpgsql
+as $$
+declare
+  v_prefix text := case p_type
+    when 'depot' then 'DEP' when 'retrait' then 'RET' when 'achat' then 'UTI'
+    when 'remboursement' then 'REM' else 'COR' end;
+  year_part text := to_char(now(), 'YYYY');
+  max_number integer;
+begin
+  perform pg_advisory_xact_lock(hashtext('mabane_deposit_' || v_prefix || year_part));
+  select max((regexp_replace(number, '^' || v_prefix || '-' || year_part || '-', ''))::integer) into max_number
+  from public.client_deposits
+  where number like v_prefix || '-' || year_part || '-%';
+  return v_prefix || '-' || year_part || '-' || lpad(coalesce(max_number + 1, 1)::text, 4, '0');
+end;
+$$;
+
+-- Écriture interne dans le registre (jamais appelée directement par le navigateur) :
+-- verrouille le client, contrôle le solde, numérote, enregistre le solde après opération.
+create or replace function public.client_deposit_post(
+  p_client_id uuid,
+  p_type text,
+  p_amount numeric,        -- signé : + crédit, − débit
+  p_method text,
+  p_sale_id uuid,
+  p_notes text,
+  p_reverses_id uuid
+)
+returns public.client_deposits
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_client_name text;
+  v_balance numeric;
+  v_entry public.client_deposits;
+begin
+  if p_client_id is null then
+    raise exception 'Sélectionnez un client.';
+  end if;
+  if p_amount is null or p_amount = 0 then
+    raise exception 'Le montant doit être supérieur à zéro.';
+  end if;
+
+  -- Verrou sur le client : deux opérations simultanées ne peuvent pas dépenser le même argent
+  select name into v_client_name from public.clients where id = p_client_id for update;
+  if v_client_name is null then
+    raise exception 'Client introuvable.';
+  end if;
+
+  select coalesce(sum(amount), 0) into v_balance from public.client_deposits where client_id = p_client_id;
+
+  if v_balance + p_amount < 0 then
+    raise exception 'Solde de dépôt insuffisant pour %, disponible : % FCFA.', v_client_name, replace(to_char(v_balance, 'FM999G999G999G990'), ',', ' ');
+  end if;
+
+  insert into public.client_deposits (number, client_id, client_name, type, amount, balance_after, method, sale_id, reverses_id, notes, created_by)
+  values (
+    public.next_client_deposit_number(p_type),
+    p_client_id,
+    v_client_name,
+    p_type,
+    p_amount,
+    v_balance + p_amount,
+    coalesce(nullif(p_method, ''), 'especes'),
+    p_sale_id,
+    p_reverses_id,
+    nullif(trim(coalesce(p_notes, '')), ''),
+    auth.uid()
+  )
+  returning * into v_entry;
+
+  return v_entry;
+end;
+$$;
+
+-- RPC : le client dépose de l'argent
+create or replace function public.add_client_deposit(
+  p_client_id uuid,
+  p_amount numeric,
+  p_method text default 'especes',
+  p_notes text default null
+)
+returns public.client_deposits
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.require_auth();
+  if p_amount is null or p_amount <= 0 then
+    raise exception 'Le montant du dépôt doit être supérieur à zéro.';
+  end if;
+  p_method := coalesce(nullif(p_method, ''), 'especes');
+  if p_method not in ('especes', 'mobile_money', 'virement', 'cheque', 'carte') then
+    raise exception 'Mode de paiement invalide : %', p_method;
+  end if;
+  return public.client_deposit_post(p_client_id, 'depot', p_amount, p_method, null, p_notes, null);
+end;
+$$;
+
+-- RPC : le client retire tout ou partie de son argent
+create or replace function public.withdraw_client_deposit(
+  p_client_id uuid,
+  p_amount numeric,
+  p_method text default 'especes',
+  p_notes text default null
+)
+returns public.client_deposits
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.require_auth();
+  if p_amount is null or p_amount <= 0 then
+    raise exception 'Le montant du retrait doit être supérieur à zéro.';
+  end if;
+  p_method := coalesce(nullif(p_method, ''), 'especes');
+  if p_method not in ('especes', 'mobile_money', 'virement', 'cheque', 'carte') then
+    raise exception 'Mode de paiement invalide : %', p_method;
+  end if;
+  return public.client_deposit_post(p_client_id, 'retrait', -p_amount, p_method, null, p_notes, null);
+end;
+$$;
+
+-- RPC (admin) : annuler un dépôt ou un retrait saisi par erreur.
+-- Rien n'est effacé : une ligne de correction de sens inverse est ajoutée.
+create or replace function public.reverse_client_deposit(
+  p_entry_id uuid,
+  p_reason text default null
+)
+returns public.client_deposits
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_entry public.client_deposits;
+  v_correction public.client_deposits;
+begin
+  perform public.require_auth();
+  if not public.is_admin() then
+    raise exception 'Seul un administrateur peut annuler une opération de dépôt.';
+  end if;
+
+  select * into v_entry from public.client_deposits where id = p_entry_id for update;
+  if v_entry.id is null then
+    raise exception 'Opération introuvable.';
+  end if;
+  if v_entry.type not in ('depot', 'retrait') then
+    raise exception 'Seuls les dépôts et retraits s''annulent ici. Un achat se corrige en annulant la facture.';
+  end if;
+  if v_entry.reversed_at is not null then
+    raise exception 'Cette opération est déjà annulée.';
+  end if;
+
+  v_correction := public.client_deposit_post(
+    v_entry.client_id, 'correction', -v_entry.amount, v_entry.method, null,
+    'Annulation ' || v_entry.number || coalesce(' : ' || nullif(trim(p_reason), ''), ''),
+    v_entry.id
+  );
+
+  update public.client_deposits set reversed_at = now() where id = v_entry.id;
+
+  return v_correction;
+end;
+$$;
+
+-- ============================================================================
 -- REALTIME (multi-utilisateurs en temps réel)
 -- ============================================================================
 -- Note: les tables sont ajoutées à la publication supabase_realtime pour l'écoute en temps réel
@@ -2465,12 +2906,22 @@ alter publication supabase_realtime set table public.products, public.sales, pub
 
 -- ============================================================================
 -- GRANTS : fonctions RPC
+-- PostgreSQL accorde EXECUTE à PUBLIC par défaut et Supabase l'accorde aussi au
+-- rôle anon : sans ces revoke, un visiteur NON connecté (clé anon du bundle)
+-- pourrait appeler les RPC security definer (paiements, stock, achats...).
+-- On retire tout, puis on n'accorde qu'au rôle authenticated.
 -- ============================================================================
+revoke execute on all functions in schema public from public, anon;
+alter default privileges in schema public revoke execute on functions from public, anon;
+
+grant execute on function public.require_auth() to authenticated;
+grant execute on function public.is_admin() to authenticated;  -- utilisée par les policies RLS
+grant execute on function public.is_system_stock_movement(text) to authenticated;
 grant execute on function public.next_invoice_number() to authenticated;
 grant execute on function public.next_purchase_number() to authenticated;
 grant execute on function public.next_delivery_number() to authenticated;
 grant execute on function public.next_receipt_number() to authenticated;
-grant execute on function public.create_sale(uuid, uuid, numeric, jsonb, numeric, text, text) to authenticated;
+grant execute on function public.create_sale(uuid, uuid, numeric, jsonb, numeric, text, text, text) to authenticated;
 grant execute on function public.confirm_quote(uuid, uuid) to authenticated;
 grant execute on function public.cancel_quote(uuid, uuid) to authenticated;
 grant execute on function public.create_delivery(uuid, jsonb, text) to authenticated;
@@ -2479,6 +2930,7 @@ grant execute on function public.cancel_sale(uuid, uuid) to authenticated;
 grant execute on function public.add_purchase_payment(uuid, numeric) to authenticated;
 grant execute on function public.cancel_purchase(uuid, uuid) to authenticated;
 grant execute on function public.add_stock_entry(uuid, integer, text, uuid) to authenticated;
+grant execute on function public.add_stock_exit(uuid, integer, text) to authenticated;
 grant execute on function public.update_stock_movement(uuid, uuid, integer, text, text, uuid) to authenticated;
 grant execute on function public.delete_stock_movement(uuid) to authenticated;
 grant execute on function public.create_small_sale(jsonb, uuid, text, numeric) to authenticated;
@@ -2487,6 +2939,34 @@ grant execute on function public.cancel_small_sale(uuid) to authenticated;
 grant execute on function public.update_sale_items(uuid, jsonb, numeric, uuid, boolean) to authenticated;
 grant execute on function public.update_purchase_items(uuid, jsonb) to authenticated;
 grant execute on function public.update_purchase_info(uuid, uuid, text) to authenticated;
+
+-- ============================================================================
+-- GRANTS : tables
+-- Les projets Supabase récents n'exposent plus automatiquement les tables à l'API :
+-- on accorde explicitement. La RLS (activée sur toutes les tables) reste le garde-fou :
+-- sans policy d'écriture, un INSERT/UPDATE direct reste refusé.
+-- anon ne lit que shop_settings (nom / téléphones de la boutique sur la page de connexion).
+-- ============================================================================
+grant usage on schema public to anon, authenticated, service_role;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant all on all tables in schema public to service_role;
+grant usage, select on all sequences in schema public to authenticated, service_role;
+grant execute on all functions in schema public to service_role;
+alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;
+alter default privileges in schema public grant all on tables to service_role;
+grant select on public.shop_settings to anon;
+
+-- Dépôts clients : seules les 3 RPC publiques sont appelables ; l'écriture interne ne l'est pas
+grant execute on function public.add_client_deposit(uuid, numeric, text, text) to authenticated;
+grant execute on function public.withdraw_client_deposit(uuid, numeric, text, text) to authenticated;
+grant execute on function public.reverse_client_deposit(uuid, text) to authenticated;
+revoke execute on function public.client_deposit_post(uuid, text, numeric, text, uuid, text, uuid) from public, anon, authenticated;
+revoke execute on function public.next_client_deposit_number(text) from public, anon, authenticated;
+revoke all on public.client_deposits from anon;
+revoke all on public.client_deposit_balances from anon;
+revoke insert, update, delete, truncate on public.client_deposits from authenticated;
+grant select on public.client_deposits to authenticated;
+grant select on public.client_deposit_balances to authenticated;
 notify pgrst, 'reload schema';
 
 -- ============================================================================

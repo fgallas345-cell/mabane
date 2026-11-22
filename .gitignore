@@ -34,3 +34,6 @@ Thumbs.db
 .kilo/
 .agents/
 .codex/
+
+# Sauvegardes des données (contiennent les données des clients)
+backup/

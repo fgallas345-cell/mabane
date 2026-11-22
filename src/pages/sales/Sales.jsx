@@ -4,6 +4,7 @@ import { useProducts } from '../../hooks/useProducts'
 import { useClients } from '../../hooks/useEntities'
 import { useSales, useCreateSale, useCancelSale, useAddSalePayment, useDeleteSale, useUpdateSaleItems, useDeliveries, useCreateDelivery, useConfirmQuote, useCancelQuote, useSalePayments } from '../../hooks/useSales'
 import { useAuth } from '../../context/AuthContext'
+import { useDepositBalances } from '../../hooks/useClientDeposits'
 import { useToast } from '../../context/ToastContext'
 import Pagination from '../../components/Pagination'
 import Modal from '../../components/Modal'
@@ -11,7 +12,7 @@ import ActionButton from '../../components/ActionButton'
 import { DetailHeader, DetailList, DetailRow, Callout, DetailActions } from '../../components/Detail'
 import RowActions from '../../components/RowActions'
 import ConfirmDialog from '../../components/ConfirmDialog'
-import { currency, PAYMENT_METHOD_LABELS } from '../../lib/constants'
+import { currency, PAYMENT_METHOD_LABELS, CASH_PAYMENT_METHODS } from '../../lib/constants'
 import { isCountedSale } from '../../utils/finance'
 import { downloadInvoicePDF } from '../../utils/invoicePdf'
 import { downloadDeliveryPDF } from '../../utils/deliveryPdf'
@@ -116,6 +117,8 @@ export default function Sales() {
   const updateSaleItems = useUpdateSaleItems()
   const deleteSale = useDeleteSale()
   const confirmQuote = useConfirmQuote()
+  const { data: depositBalances = new Map() } = useDepositBalances()
+  const depositOf = (id) => (id ? depositBalances.get(id)?.balance || 0 : 0)
   const cancelQuote = useCancelQuote()
 
   const [newSaleOpen, setNewSaleOpen] = useState(false)
@@ -153,6 +156,7 @@ export default function Sales() {
   const [amountPaid, setAmountPaid] = useState('')
   const [partialPayment, setPartialPayment] = useState(false)
   const [payMode, setPayMode] = useState('full') // full | advance | credit
+  const [salePayMethod, setSalePayMethod] = useState('especes') // mode de l'encaissement à la création
   const [deliveryMode, setDeliveryMode] = useState('immediate')
   const [isDraft, setIsDraft] = useState(false)
   const [cart, setCart] = useState([]) // {product_id, product_name, quantity, unit_price, stock}
@@ -165,6 +169,7 @@ export default function Sales() {
     setAmountPaid('')
     setPartialPayment(false)
     setPayMode('full')
+    setSalePayMethod('especes')
     setDeliveryMode('immediate')
     setIsDraft(false)
     setCart([])
@@ -187,6 +192,11 @@ export default function Sales() {
   const updateQuantity = (productId, qty) => {
     setCart((c) => c.map((item) => (item.product_id === productId ? { ...item, quantity: Math.max(1, Math.floor(Number(qty)) || 1) } : item)))
   }
+
+  // Le mode « Dépôt client » n'a de sens que si le client choisi a de l'argent en dépôt
+  useEffect(() => {
+    if (salePayMethod === 'depot' && !(depositBalances.get(clientId)?.balance > 0)) setSalePayMethod('especes')
+  }, [salePayMethod, clientId, depositBalances])
 
   const changePayMode = (mode) => {
     setPayMode(mode)
@@ -231,6 +241,21 @@ export default function Sales() {
       toast.error(message)
       return
     }
+    if (!isDraft && payMode !== 'credit' && salePayMethod === 'depot') {
+      const paidNow = partialPayment ? Number(amountPaid || 0) : total
+      if (!clientId) {
+        const message = 'Paiement par dépôt : sélectionnez le client qui a déposé l’argent.'
+        setError(message)
+        toast.error(message)
+        return
+      }
+      if (paidNow > depositOf(clientId)) {
+        const message = `Dépôt insuffisant : ce client n'a que ${currency(depositOf(clientId))} en dépôt.`
+        setError(message)
+        toast.error(message)
+        return
+      }
+    }
     if (!isDraft && partialPayment && !clientId) {
       const message = 'Sélectionnez un client pour une vente à crédit ou avec avance (pour pouvoir suivre sa dette).'
       setError(message)
@@ -252,6 +277,7 @@ export default function Sales() {
          })),
         deliveryMode: isDraft ? 'staged' : deliveryMode,
         quoteStatus: isDraft ? 'draft' : 'confirmed',
+        paymentMethod: payMode === 'credit' ? 'especes' : salePayMethod,
       })
       if (!isDraft && partialPayment && Number(amountPaid) > 0) {
         setInitialReceipt({
@@ -260,7 +286,7 @@ export default function Sales() {
           clientName: clientId ? (clients.find((c) => c.id === clientId)?.name || 'Client comptoir') : 'Client comptoir',
           clientPhone: clientId ? (clients.find((c) => c.id === clientId)?.phone || null) : null,
           amount: Number(amountPaid),
-          method: 'especes',
+          method: salePayMethod,
           reference: null,
           notes: 'Avance initiale',
           remaining: Number(total) - Number(amountPaid),
@@ -284,6 +310,12 @@ export default function Sales() {
     const due = paymentOpen.total - paymentOpen.amount_paid
     if (!paymentAmount || Number(paymentAmount) <= 0) {
       const message = 'Entrez un montant valide.'
+      setPaymentError(message)
+      toast.error(message)
+      return
+    }
+    if (paymentMethod === 'depot' && Number(paymentAmount) > depositOf(paymentOpen.client_id)) {
+      const message = `Dépôt insuffisant : ce client n'a que ${currency(depositOf(paymentOpen.client_id))} en dépôt.`
       setPaymentError(message)
       toast.error(message)
       return
@@ -594,8 +626,8 @@ export default function Sales() {
     const isCancelled = s.status === 'annulee'
     return [
       { icon: Eye, label: 'Voir le détail', onClick: () => setDetailSale(s) },
-      isDraft && { icon: FileText, label: 'Confirmer le devis', tone: 'emerald', onClick: () => confirmQuote.mutateAsync({ saleId: s.id, userId: user?.id }).then(() => setDetailSale(null)) },
-      !isDraft && !isCancelled && due > 0 && { icon: CreditCard, label: 'Enregistrer un paiement', tone: 'emerald', onClick: () => { setPaymentOpen(s); setPaymentAmount(''); setPaymentError('') } },
+      isDraft && { icon: FileText, label: 'Confirmer le devis', tone: 'emerald', onClick: () => confirmQuote.mutateAsync({ saleId: s.id, userId: user?.id }).then(() => setDetailSale(null)).catch(() => {}) },
+      !isDraft && !isCancelled && due > 0 && { icon: CreditCard, label: 'Enregistrer un paiement', tone: 'emerald', onClick: () => { setPaymentOpen(s); setPaymentAmount(''); setPaymentMethod('especes'); setPaymentError('') } },
       !isDraft && !isCancelled && s.delivery_status !== 'livree' && { icon: Truck, label: 'Gérer les livraisons', onClick: () => setDeliverySale(s) },
       !isDraft && { icon: MessageCircle, label: s.clients?.phone ? 'Envoyer par WhatsApp' : 'WhatsApp : aucun numéro', disabled: !s.clients?.phone, onClick: () => sendInvoiceViaWhatsApp(s) },
       isAdmin && !isDraft && !isCancelled && s.delivery_status !== 'partielle' && {
@@ -980,6 +1012,21 @@ export default function Sales() {
                     ]}
                   />
                   {payMode === 'full' && <p className="text-xs text-gray-400 mt-1.5">Le client règle la totalité maintenant.</p>}
+                  {payMode !== 'credit' && (
+                    <select
+                      className="input mt-2"
+                      aria-label="Mode de paiement de l'encaissement"
+                      value={salePayMethod}
+                      onChange={(e) => setSalePayMethod(e.target.value)}
+                    >
+                      {CASH_PAYMENT_METHODS.map((value) => (
+                        <option key={value} value={value}>{PAYMENT_METHOD_LABELS[value]}</option>
+                      ))}
+                      {depositOf(clientId) > 0 && (
+                        <option value="depot">Dépôt client (disponible : {currency(depositOf(clientId))})</option>
+                      )}
+                    </select>
+                  )}
                   {payMode === 'credit' && <p className="text-xs text-gray-400 mt-1.5">Rien n'est payé maintenant : le montant s'ajoute à la dette du client.</p>}
                   {payMode === 'advance' && (
                     <div className="mt-2 space-y-2">
@@ -1372,7 +1419,7 @@ export default function Sales() {
                     )}
                     <button
                       className="btn-success"
-                      onClick={() => confirmQuote.mutateAsync({ saleId: detailSale.id, userId: user?.id }).then(() => setDetailSale(null))}
+                      onClick={() => confirmQuote.mutateAsync({ saleId: detailSale.id, userId: user?.id }).then(() => setDetailSale(null)).catch(() => {})}
                       disabled={confirmQuote.isPending}
                     >
                       <FileText size={15} /> Confirmer le devis
@@ -1394,7 +1441,7 @@ export default function Sales() {
                     {!isCancelled && due > 0 && (
                       <button
                         className="btn-success"
-                        onClick={() => { setPaymentOpen(detailSale); setPaymentAmount(''); setPaymentError('') }}
+                        onClick={() => { setPaymentOpen(detailSale); setPaymentAmount(''); setPaymentMethod('especes'); setPaymentError('') }}
                       >
                         <CreditCard size={15} /> Enregistrer un paiement
                       </button>
@@ -1457,15 +1504,21 @@ export default function Sales() {
                 <label className="label">Mode de paiement</label>
                 <Segmented
                   label="Mode de paiement"
-                  value={['especes', 'mobile_money'].includes(paymentMethod) ? paymentMethod : 'autre'}
+                  value={['especes', 'mobile_money', 'depot'].includes(paymentMethod) ? paymentMethod : 'autre'}
                   onChange={(v) => setPaymentMethod(v === 'autre' ? 'virement' : v)}
                   options={[
                     { value: 'especes', label: 'Espèces' },
                     { value: 'mobile_money', label: 'Mobile Money' },
+                    ...(depositOf(paymentOpen?.client_id) > 0 ? [{ value: 'depot', label: 'Dépôt client' }] : []),
                     { value: 'autre', label: 'Autre' },
                   ]}
                 />
-                {!['especes', 'mobile_money'].includes(paymentMethod) && (
+                {paymentMethod === 'depot' && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
+                    Payé avec l’argent déposé par le client — disponible : <strong className="tabular-nums">{currency(depositOf(paymentOpen?.client_id))}</strong>
+                  </p>
+                )}
+                {!['especes', 'mobile_money', 'depot'].includes(paymentMethod) && (
                   <select className="input mt-2" aria-label="Autre mode de paiement" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
                     <option value="virement">Virement</option>
                     <option value="cheque">Chèque</option>

@@ -74,3 +74,24 @@ describe('génération des PDF', () => {
     expect(recu.getNumberOfPages()).toBe(1)
   })
 })
+
+describe('PDF des dépôts clients', () => {
+  const entries = [
+    { id: '1', number: 'DEP-2026-0001', type: 'depot', amount: 267000, balance_after: 267000, method: 'especes', created_at: '2026-09-01T09:00:00Z' },
+    { id: '2', number: 'RET-2026-0001', type: 'retrait', amount: -5000, balance_after: 262000, method: 'especes', created_at: '2026-09-01T10:00:00Z' },
+    { id: '3', number: 'UTI-2026-0001', type: 'achat', amount: -10000, balance_after: 252000, method: 'depot', created_at: '2026-09-02T10:00:00Z', sales: { invoice_number: 'FAC-2026-0003' } },
+  ]
+
+  it('le reçu de retrait se génère avec le solde restant', async () => {
+    const { generateDepositReceiptPDF } = await import('../utils/depositPdf')
+    const doc = await generateDepositReceiptPDF(entries[1], { name: 'Moussa Diop', phone: '771234567' })
+    expect(doc.getNumberOfPages()).toBe(1)
+  })
+
+  it('le relevé garde toutes les opérations sur une page', async () => {
+    const { generateDepositStatementPDF, depositEntryLabel } = await import('../utils/depositPdf')
+    const doc = await generateDepositStatementPDF({ name: 'Moussa Diop' }, entries)
+    expect(doc.getNumberOfPages()).toBe(1)
+    expect(depositEntryLabel(entries[2])).toBe('Achat facture FAC-2026-0003')
+  })
+})

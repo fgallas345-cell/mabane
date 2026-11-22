@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus, ArrowUpRight, ArrowDownRight, Search, Package, History, AlertTriangle, Eye, Pencil, Trash2 } from 'lucide-react'
 import { useProducts } from '../../hooks/useProducts'
-import { useStockMovements, useAddStockEntry, useUpdateStockMovement, useDeleteStockMovement } from '../../hooks/useSales'
+import { useStockMovements, useAddStockEntry, useAddStockExit, useUpdateStockMovement, useDeleteStockMovement } from '../../hooks/useSales'
 import { useAuth } from '../../context/AuthContext'
 import Modal from '../../components/Modal'
 import ActionButton from '../../components/ActionButton'
@@ -9,6 +9,7 @@ import { DetailHeader, DetailList, DetailRow, Callout, DetailActions } from '../
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
 import QtyStepper from '../../components/QtyStepper'
+import Segmented from '../../components/Segmented'
 import Pagination from '../../components/Pagination'
 
 // --- Helpers d'affichage ---
@@ -78,6 +79,7 @@ export default function Stock() {
   )
   const { data: movements = [], isLoading } = useStockMovements()
   const addEntry = useAddStockEntry()
+  const addExit = useAddStockExit()
   const updateMovement = useUpdateStockMovement()
   const deleteMovement = useDeleteStockMovement()
 
@@ -88,6 +90,7 @@ export default function Stock() {
   const [productId, setProductId] = useState('')
   const selectedProduct = products.find((p) => p.id === productId)
   const [movementType, setMovementType] = useState('entree')
+  const [newType, setNewType] = useState('entree') // formulaire de création : entree | sortie
   const [quantity, setQuantity] = useState('')
   const [reason, setReason] = useState('')
   const [formError, setFormError] = useState('')
@@ -118,8 +121,14 @@ export default function Stock() {
       setFormError('Choisissez un produit.')
       return
     }
+    const qty = Number(quantity) || 1 // le sélecteur affiche 1 tant que rien n'est saisi
+    if (newType === 'sortie' && selectedProduct && qty > Number(selectedProduct.stock)) {
+      setFormError(`Stock insuffisant (disponible : ${selectedProduct.stock}).`)
+      return
+    }
     try {
-      await addEntry.mutateAsync({ productId, quantity: Number(quantity) || 1, reason, userId: user?.id })
+      if (newType === 'sortie') await addExit.mutateAsync({ productId, quantity: qty, reason })
+      else await addEntry.mutateAsync({ productId, quantity: qty, reason, userId: user?.id })
       setModalOpen(false)
       setProductId('')
       setQuantity('')
@@ -166,8 +175,21 @@ export default function Stock() {
     }
   }
 
+  const openNew = () => {
+    setNewType('entree')
+    setProductId('')
+    setQuantity('')
+    setReason('')
+    setFormError('')
+    setModalOpen(true)
+  }
+
   const handleDelete = async () => {
-    await deleteMovement.mutateAsync(confirmDelete.id)
+    try {
+      await deleteMovement.mutateAsync(confirmDelete.id)
+    } catch {
+      return // toast déjà affiché par le hook
+    }
     if (detailMovement?.id === confirmDelete.id) setDetailMovement(null)
     setConfirmDelete(null)
   }
@@ -179,8 +201,8 @@ export default function Stock() {
           <h1 className="page-title">Gestion du stock</h1>
           <p className="page-subtitle">Suivez les entrées, sorties et alertes de stock</p>
         </div>
-        <button className="btn-primary" onClick={() => setModalOpen(true)}>
-          <Plus size={16} /> Entrée de stock
+        <button className="btn-primary" onClick={openNew}>
+          <Plus size={16} /> Mouvement de stock
         </button>
       </div>
 
@@ -251,8 +273,8 @@ export default function Stock() {
             </p>
           </div>
           {!search && (
-            <button className="btn-primary mt-1" onClick={() => setModalOpen(true)}>
-              <Plus size={16} /> Entrée de stock
+            <button className="btn-primary mt-1" onClick={openNew}>
+              <Plus size={16} /> Mouvement de stock
             </button>
           )}
         </div>
@@ -344,8 +366,20 @@ export default function Stock() {
         </>
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Nouvelle entrée de stock">
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={newType === 'sortie' ? 'Nouvelle sortie de stock' : 'Nouvelle entrée de stock'}>
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="label">Type de mouvement</label>
+            <Segmented
+              label="Type de mouvement"
+              value={newType}
+              onChange={(v) => { setNewType(v); setReason(''); setFormError('') }}
+              options={[
+                { value: 'entree', label: 'Entrée' },
+                { value: 'sortie', label: 'Sortie' },
+              ]}
+            />
+          </div>
           <div>
             <label className="label">Produit</label>
             <SearchableSelect
@@ -359,12 +393,12 @@ export default function Stock() {
           </div>
 
           <div>
-            <label className="label">Quantité reçue</label>
+            <label className="label">{newType === 'sortie' ? 'Quantité sortie' : 'Quantité reçue'}</label>
             <div className="flex items-center gap-3">
               <QtyStepper value={quantity === '' ? 1 : quantity} min={1} onChange={(q) => setQuantity(q)} />
               {selectedProduct && (
                 <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
-                  Stock : {selectedProduct.stock} → <strong className="text-emerald-600 dark:text-emerald-400">{Number(selectedProduct.stock) + (Number(quantity) || 1)}</strong> {selectedProduct.unit || ''}
+                  Stock : {selectedProduct.stock} → <strong className={newType === 'sortie' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}>{Number(selectedProduct.stock) + (newType === 'sortie' ? -1 : 1) * (Number(quantity) || 1)}</strong> {selectedProduct.unit || ''}
                 </p>
               )}
             </div>
@@ -372,9 +406,9 @@ export default function Stock() {
 
           <div>
             <label className="label" htmlFor="stock-reason">Motif</label>
-            <input id="stock-reason" className="input" placeholder="Achat fournisseur, réapprovisionnement..." value={reason} onChange={(e) => setReason(e.target.value)} />
+            <input id="stock-reason" className="input" placeholder={newType === 'sortie' ? 'Casse, perte, usage interne...' : 'Achat fournisseur, réapprovisionnement...'} value={reason} onChange={(e) => setReason(e.target.value)} />
             <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {['Réapprovisionnement', 'Retour client', 'Inventaire', 'Don / échantillon'].map((r) => (
+              {(newType === 'sortie' ? ['Casse', 'Perte / vol', 'Usage interne', 'Inventaire'] : ['Réapprovisionnement', 'Retour client', 'Inventaire', 'Don / échantillon']).map((r) => (
                 <button key={r} type="button" className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" onClick={() => setReason(r)}>
                   {r}
                 </button>
@@ -386,8 +420,8 @@ export default function Stock() {
 
           <DetailActions>
             <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>Annuler</button>
-            <button type="submit" className="btn-primary" disabled={addEntry.isPending || !productId}>
-              {addEntry.isPending ? 'Enregistrement...' : 'Enregistrer l’entrée'}
+            <button type="submit" className="btn-primary" disabled={addEntry.isPending || addExit.isPending || !productId}>
+              {addEntry.isPending || addExit.isPending ? 'Enregistrement...' : newType === 'sortie' ? 'Enregistrer la sortie' : 'Enregistrer l’entrée'}
             </button>
           </DetailActions>
         </form>

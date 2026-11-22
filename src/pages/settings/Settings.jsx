@@ -1,9 +1,54 @@
 import { useEffect, useState } from 'react'
-import { Moon, Sun, Store, Phone, MapPin, User, Pencil, Save, X } from 'lucide-react'
+import { Moon, Sun, Store, Phone, MapPin, User, Pencil, Save, X, KeyRound } from 'lucide-react'
+import { supabase } from '../../lib/supabase'
+import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { ROLE_LABELS } from '../../lib/constants'
 import { useShopSettings, useUpdateShopSettings, DEFAULT_SHOP_SETTINGS } from '../../hooks/useShopSettings'
+
+// Chaque utilisateur change lui-même son mot de passe (ex. mot de passe provisoire reçu de l'admin)
+function PasswordCard() {
+  const toast = useToast()
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (password.length < 8) return setError('8 caractères minimum.')
+    if (password !== confirm) return setError('Les deux mots de passe ne sont pas identiques.')
+    setSaving(true)
+    const { error: updateError } = await supabase.auth.updateUser({ password })
+    setSaving(false)
+    if (updateError) return setError(updateError.message)
+    setPassword('')
+    setConfirm('')
+    toast.success('Mot de passe modifié.')
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="card p-5 space-y-4">
+      <h3 className="font-semibold flex items-center gap-2"><KeyRound size={18} /> Changer mon mot de passe</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="label" htmlFor="new-password">Nouveau mot de passe</label>
+          <input id="new-password" type="password" autoComplete="new-password" minLength={8} required className="input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 8 caractères" />
+        </div>
+        <div>
+          <label className="label" htmlFor="confirm-password">Confirmer</label>
+          <input id="confirm-password" type="password" autoComplete="new-password" minLength={8} required className="input" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+        </div>
+      </div>
+      {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      <div className="flex justify-end">
+        <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Enregistrement...' : 'Changer le mot de passe'}</button>
+      </div>
+    </form>
+  )
+}
 
 export default function Settings() {
   const { profile, user, isAdmin } = useAuth()
@@ -75,6 +120,8 @@ export default function Settings() {
           </div>
         </div>
       </div>
+
+      <PasswordCard />
 
       <div className="card p-5 space-y-4">
         <h3 className="font-semibold">Apparence</h3>

@@ -12,6 +12,7 @@ import {
   Wallet,
   Settings,
   ShieldCheck,
+  PiggyBank,
   X,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -28,6 +29,7 @@ const navGroups = [
       { to: '/ventes', label: 'Ventes / Facturation', icon: ShoppingCart },
       { to: '/petites-ventes', label: 'Petites ventes', icon: Zap },
       { to: '/clients', label: 'Clients', icon: Users },
+      { to: '/depots', label: 'Dépôts clients', icon: PiggyBank },
     ],
   },
   {

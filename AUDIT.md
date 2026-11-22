@@ -88,6 +88,33 @@
 
 ---
 
+## 0 quater. Audit et correctifs du 21 novembre 2026
+
+> ⚠️ **À faire en production** : ré-exécuter `supabase/schema.sql` (idempotent, testé deux fois de suite sur PostgreSQL 16 vierge), puis `supabase functions deploy manage-users`. Vérifier dans Supabase que *Authentication → Email → Allow new users to sign up* est **désactivé** (non vérifiable depuis le dépôt).
+
+| Niveau | Constat | Correctif | Fichiers |
+|---|---|---|---|
+| 🔴 Critique | `EXECUTE` sur les fonctions reste accordé à `public` / `anon` par défaut : sans être connecté (clé anon du bundle), on pouvait appeler `add_sale_payment` (factures marquées payées), `create_sale`, `create_purchase` (stock + prix d'achat catalogue), `add_stock_entry`, `create_delivery`, `confirm_quote`, `add_purchase_payment`, `create_small_sale` ; `coalesce(auth.uid(), p_user_id)` acceptait alors l'identifiant envoyé | `revoke execute on all functions … from public, anon` + `alter default privileges`, grants explicites à `authenticated` (dont `is_admin()` utilisée par la RLS) ; nouvelle `require_auth()` appelée en tête des RPC ; `p_user_id` toujours = `auth.uid()` | `schema.sql` |
+| 🟠 Élevé | `npm run lint` en échec (`Deno` non défini) → CI rouge | `globals.Deno` dans oxlint | `.oxlintrc.json` |
+| 🟠 Élevé | Listes (produits, clients, fournisseurs, catégories, dépenses, utilisateurs) et alertes de stock tronquées à 1000 lignes sans erreur | `useSupabaseTable` et `useLowStock` passent par `fetchAll` (tri secondaire `id`) | `useSupabaseTable.js`, `useDashboard.js` |
+| 🟠 Élevé | Sortie de stock manuelle impossible (prévue au cahier §2) | RPC `add_stock_exit` (stock vérifié sous verrou) ; formulaire Stock « Entrée / Sortie » avec motifs rapides | `schema.sql`, `useSales.js`, `Stock.jsx` |
+| 🟡 Moyen | `update_small_sale` sans contrôle remise ≤ sous-total | contrôle dans la RPC + contrainte `small_sales_valid_amounts` | `schema.sql` |
+| 🟡 Moyen | Dernier admin / auto-rétrogradation protégés seulement par l'UI | trigger `guard_users_last_admin` (update du rôle et delete, y compris par cascade depuis `auth.users`) | `schema.sql` |
+| 🟡 Moyen | Mode de paiement forcé à « espèces » à la création d'une facture | paramètre `p_payment_method` de `create_sale` + sélecteur dans le formulaire (Payé / Avance) ; reçu initial avec le bon mode | `schema.sql`, `useSales.js`, `Sales.jsx` |
+| 🟡 Moyen | Supprimer une facture annulée effaçait ses paiements (cascade) → encaissements passés modifiés | `payments.sale_id` en `on delete set null` | `schema.sql` |
+| 🟡 Moyen | `cancel_small_sale` supprimait la vente (aucune trace comptable) | annulation = `cancelled_at` / `cancelled_by` ; ventes annulées exclues de la liste, des Finances et du Dashboard ; suppression physique réservée à l'admin et aux ventes annulées | `schema.sql`, `useSmallSales.js`, `useDashboard.js` |
+| 🟡 Moyen | Cahier : petites ventes modifiables par tous ; code : admin seulement | cahier aligné sur le code (modifier une petite vente restitue du stock : réservé à l'admin) | `CAHIER_DE_CHARGE.md` |
+| 🟢 Faible | Un motif manuel commençant par « Vente … » rendait le mouvement non corrigeable | motif préfixé `Manuel : ` | `schema.sql` |
+| 🟢 Faible | Rejets non gérés (confirmation de devis, suppression de mouvement) | `.catch` / `try` | `Sales.jsx`, `Stock.jsx` |
+| 🟢 Faible | Mot de passe minimum 6 caractères | 8 caractères (UI + Edge Function) | `UsersAdmin.jsx`, `manage-users/index.ts` |
+| 🟢 Faible | 6 vulnérabilités `npm audit` (vite, dompurify, source-map-js…) | `npm audit fix` → 0 | `package-lock.json` |
+
+**Vérifications** : lint OK, 41/41 tests, build OK, `npm audit` = 0. `schema.sql` exécuté sur PostgreSQL 16 avec bouchons Supabase : anon refusé sur toutes les RPC, auteur forcé à l'utilisateur connecté, mode de paiement enregistré, sortie de stock et refus « Stock insuffisant », refus de remise excessive, petite vente annulée conservée, auto-rétrogradation et suppression du dernier admin refusées, paiements conservés après suppression d'une facture annulée.
+
+**Non modifié (décision métier)** : `caissier` et `employe` ont les mêmes droits ; prix de vente libre (y compris sous le coût) ; liste Stock limitée aux 200 derniers mouvements.
+
+---
+
 ## 1. Synthèse
 
 L'application est fonctionnellement riche et l'interface est soignée. Mais l'état actuel présente **une faille de sécurité bloquante** (n'importe qui peut se créer un compte administrateur), **un script SQL qui ne s'installe pas sur une base vierge**, et **plusieurs RPC qui corrompent le stock** dans les scénarios de livraison échelonnée. Plusieurs points « corrigés » depuis l'audit précédent ne le sont pas réellement (`onError` sur `useQuery` est ignoré par React Query v5 ; le trigger de rôle a été modifié dans le sens inverse de la spécification).

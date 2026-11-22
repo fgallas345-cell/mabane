@@ -187,7 +187,7 @@ export default function UsersAdmin() {
           </div>
           <div>
             <label className="label">Mot de passe</label>
-            <input type="password" required minLength={6} className="input" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Min. 6 caractères" />
+            <input type="password" required minLength={8} className="input" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Min. 8 caractères" />
           </div>
           <div>
             <label className="label">Rôle</label>
