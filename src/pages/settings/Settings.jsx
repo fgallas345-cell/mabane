@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Moon, Sun, Store, Phone, MapPin, User, Pencil, Save, X, KeyRound } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
+import { Moon, Sun, Store, Phone, MapPin, User, Pencil, Save, X, KeyRound, Settings as SettingsIcon, SlidersHorizontal, Palette } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { ROLE_LABELS } from '../../lib/constants'
 import { useShopSettings, useUpdateShopSettings, DEFAULT_SHOP_SETTINGS } from '../../hooks/useShopSettings'
+import SignatureCard from './SignatureCard'
 
 // Chaque utilisateur change lui-même son mot de passe (ex. mot de passe provisoire reçu de l'admin)
 function PasswordCard() {
@@ -30,8 +32,8 @@ function PasswordCard() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="card p-5 space-y-4">
-      <h3 className="font-semibold flex items-center gap-2"><KeyRound size={18} /> Changer mon mot de passe</h3>
+    <form onSubmit={handleSubmit} className="panel p-5 space-y-4">
+      <h3 className="flex items-center gap-2.5 text-lg font-bold text-brand-900 dark:text-gray-50"><span className="h-8 w-8 rounded-full bg-[#1d4fb8] text-white flex items-center justify-center"><KeyRound size={16} /></span> Changer mon mot de passe</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="label" htmlFor="new-password">Nouveau mot de passe</label>
@@ -84,6 +86,9 @@ export default function Settings() {
         phone1: form.phone1 || null,
         phone2: form.phone2 || null,
         phone3: form.phone3 || null,
+        phone4: form.phone4 || null,
+        ninea: form.ninea?.trim() || null,
+        opening_hours: form.opening_hours?.trim() || null,
         low_stock_default_threshold: Number(form.low_stock_default_threshold) || 5,
       })
       setEditingShop(false)
@@ -94,17 +99,16 @@ export default function Settings() {
     }
   }
 
-  const phones = [shop.phone1, shop.phone2, shop.phone3].filter(Boolean)
+  const phones = [shop.phone1, shop.phone2, shop.phone3, shop.phone4].filter(Boolean)
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div>
-        <h1 className="page-title">Paramètres</h1>
-        <p className="page-subtitle">Votre profil et les préférences de l'application</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader icon={SettingsIcon} badge={SlidersHorizontal} title="Paramètres" subtitle="Votre profil, la sécurité et les informations de la boutique" />
 
-      <div className="card p-5 space-y-4">
-        <h3 className="font-semibold flex items-center gap-2"><User size={18} /> Mon profil</h3>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+        <div className="space-y-6">
+      <div className="panel p-5 space-y-4">
+        <h3 className="flex items-center gap-2.5 text-lg font-bold text-brand-900 dark:text-gray-50"><span className="h-8 w-8 rounded-full bg-[#1d4fb8] text-white flex items-center justify-center"><User size={16} /></span> Mon profil</h3>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
             <p className="text-gray-400">Nom</p>
@@ -123,12 +127,12 @@ export default function Settings() {
 
       <PasswordCard />
 
-      <div className="card p-5 space-y-4">
-        <h3 className="font-semibold">Apparence</h3>
+      <div className="panel p-5 space-y-4">
+        <h3 className="flex items-center gap-2.5 text-lg font-bold text-brand-900 dark:text-gray-50"><span className="h-8 w-8 rounded-full bg-[#1d4fb8] text-white flex items-center justify-center"><Palette size={16} /></span> Apparence</h3>
         <div className="flex gap-3">
           <button
             className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-colors ${
-              theme === 'light' ? 'border-brand-600 bg-brand-50 dark:bg-brand-500/10' : 'border-gray-200 dark:border-gray-700'
+              theme === 'light' ? 'border-[#1d4fb8] bg-blue-50 dark:bg-blue-500/10' : 'border-gray-200 dark:border-white/10'
             }`}
             onClick={() => setTheme('light')}
           >
@@ -137,7 +141,7 @@ export default function Settings() {
           </button>
           <button
             className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-colors ${
-              theme === 'dark' ? 'border-brand-600 bg-brand-50 dark:bg-brand-500/10' : 'border-gray-200 dark:border-gray-700'
+              theme === 'dark' ? 'border-[#1d4fb8] bg-blue-50 dark:bg-blue-500/10' : 'border-gray-200 dark:border-white/10'
             }`}
             onClick={() => setTheme('dark')}
           >
@@ -147,9 +151,11 @@ export default function Settings() {
         </div>
       </div>
 
-      <div className="card p-5 space-y-3">
+        </div>
+        <div className="space-y-6">
+      <div className="panel p-5 space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold flex items-center gap-2"><Store size={18} /> Informations de la quincaillerie</h3>
+          <h3 className="flex items-center gap-2.5 text-lg font-bold text-brand-900 dark:text-gray-50"><span className="h-8 w-8 rounded-full bg-[#1d4fb8] text-white flex items-center justify-center"><Store size={16} /></span> Informations de la quincaillerie</h3>
           {isAdmin && !editingShop && (
             <button className="btn-secondary !py-1.5 !px-3" onClick={openEdit}>
               <Pencil size={14} /> Modifier
@@ -158,7 +164,7 @@ export default function Settings() {
         </div>
 
         {saved && (
-          <div className="text-sm text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 rounded-lg px-3 py-2">
+          <div className="text-sm text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl px-3 py-2">
             Informations mises à jour avec succès.
           </div>
         )}
@@ -172,13 +178,15 @@ export default function Settings() {
             {phones.map((p) => (
               <p key={p} className="flex items-center gap-1.5"><Phone size={14} /> {p}</p>
             ))}
+            {shop.ninea && <p>NINEA : {shop.ninea}</p>}
+            {shop.opening_hours && <p>Horaires : {shop.opening_hours}</p>}
             {!isAdmin && (
               <p className="text-xs text-gray-400 pt-1">Seul un administrateur peut modifier ces informations.</p>
             )}
           </div>
         ) : (
           <form onSubmit={handleSave} className="space-y-4">
-            {error && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">{error}</div>}
+            {error && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-xl px-3 py-2">{error}</div>}
             <div>
               <label className="label">Nom de la boutique</label>
               <input required className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -201,7 +209,7 @@ export default function Settings() {
                 onChange={(e) => setForm({ ...form, activities: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="label">Téléphone 1</label>
                 <input className="input" value={form.phone1 || ''} onChange={(e) => setForm({ ...form, phone1: e.target.value })} />
@@ -214,6 +222,20 @@ export default function Settings() {
                 <label className="label">Téléphone 3</label>
                 <input className="input" value={form.phone3 || ''} onChange={(e) => setForm({ ...form, phone3: e.target.value })} />
               </div>
+              <div>
+                <label className="label">Téléphone 4</label>
+                <input className="input" value={form.phone4 || ''} onChange={(e) => setForm({ ...form, phone4: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="label" htmlFor="shop-ninea">NINEA <span className="text-gray-400 font-normal">(imprimé sur les factures)</span></label>
+                <input id="shop-ninea" className="input" value={form.ninea || ''} onChange={(e) => setForm({ ...form, ninea: e.target.value })} placeholder="Ex. 007261423" />
+              </div>
+              <div>
+                <label className="label" htmlFor="shop-hours">Horaires d'ouverture</label>
+                <input id="shop-hours" className="input" value={form.opening_hours || ''} onChange={(e) => setForm({ ...form, opening_hours: e.target.value })} placeholder="Ex. 8h à 20h, du lundi au samedi" />
+              </div>
             </div>
             <div>
               <label className="label">Seuil d'alerte stock par défaut (nouveaux produits)</label>
@@ -225,7 +247,7 @@ export default function Settings() {
                 onChange={(e) => setForm({ ...form, low_stock_default_threshold: e.target.value })}
               />
             </div>
-            <div className="flex justify-end gap-2 pt-1">
+            <div className="flex justify-end gap-2.5 pt-4 mt-1 border-t border-gray-100 dark:border-white/[0.06]">
               <button type="button" className="btn-secondary" onClick={() => setEditingShop(false)}>
                 <X size={15} /> Annuler
               </button>
@@ -235,6 +257,10 @@ export default function Settings() {
             </div>
           </form>
         )}
+      </div>
+
+      {isAdmin && <SignatureCard />}
+        </div>
       </div>
     </div>
   )

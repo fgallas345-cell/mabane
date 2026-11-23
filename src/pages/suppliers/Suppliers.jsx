@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
-import { Plus, Pencil, Trash2, Search, Phone, Truck, Mail, MapPin, User, Package, Wallet, StickyNote, History, CreditCard } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import PageHeader, { PanelTitle, InfoChip } from '../../components/PageHeader'
+import StatCard from '../../components/StatCard'
+import { Plus, Pencil, Trash2, Search, Phone, Truck, Mail, MapPin, User, Package, Wallet, StickyNote, History, CreditCard, Building2, Handshake, ShoppingBasket } from 'lucide-react'
 import { useSuppliers } from '../../hooks/useEntities'
 import { useProducts } from '../../hooks/useProducts'
 import { usePurchases, useAddPurchasePayment } from '../../hooks/usePurchases'
@@ -9,6 +11,7 @@ import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Pagination from '../../components/Pagination'
 import { currency } from '../../lib/constants'
+import { formatQty } from '../../utils/quantity'
 
 function formatDate(dateStr) {
   return new Date(dateStr).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -60,6 +63,25 @@ export default function Suppliers() {
   const [paymentAmount, setPaymentAmount] = useState('')
   const [paymentError, setPaymentError] = useState('')
   const pageSize = 9
+
+  const overview = useMemo(() => {
+    const start = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+    const valid = purchases.filter((pu) => pu.status !== 'annulee')
+    const month = valid.filter((pu) => new Date(pu.created_at) >= start)
+    const debtBySupplier = new Map()
+    valid.forEach((pu) => {
+      const due = Number(pu.total) - Number(pu.amount_paid)
+      if (due > 0 && pu.supplier_id) debtBySupplier.set(pu.supplier_id, (debtBySupplier.get(pu.supplier_id) || 0) + due)
+    })
+    return {
+      withProducts: suppliers.filter((s) => (s.supplier_products || []).length > 0).length,
+      linkedProducts: new Set(suppliers.flatMap((s) => (s.supplier_products || []).map((sp) => sp.product_id))).size,
+      monthTotal: month.reduce((sum, pu) => sum + Number(pu.total || 0), 0),
+      monthSuppliers: new Set(month.map((pu) => pu.supplier_id || pu.supplier_name)).size,
+      debt: valid.reduce((sum, pu) => sum + Math.max(0, Number(pu.total) - Number(pu.amount_paid)), 0),
+      debtors: debtBySupplier.size,
+    }
+  }, [suppliers, purchases])
 
   const supplierStats = (supplierId) => {
     const list = purchases.filter((p) => p.supplier_id === supplierId)
@@ -227,21 +249,24 @@ export default function Suppliers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="page-title">Fournisseurs</h1>
-          <p className="page-subtitle">Gérez vos fournisseurs, contacts, conditions de paiement et produits fournis.</p>
-        </div>
-        <button className="btn-primary" onClick={openCreate}>
-          <Plus size={16} /> Nouveau fournisseur
+      <PageHeader icon={Truck} badge={Handshake} title="Fournisseurs" subtitle="Gérez vos fournisseurs, contacts, conditions de paiement et produits fournis">
+        <button className="btn-cta" onClick={openCreate}>
+          <Plus size={18} strokeWidth={2.5} /> Nouveau fournisseur
         </button>
+      </PageHeader>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard featured icon={Building2} label="Fournisseurs" value={suppliers.length} sub={`${overview.withProducts} avec produits associés`} />
+        <StatCard icon={ShoppingBasket} color="brand" label="Achats ce mois" value={currency(overview.monthTotal)} sub={`${overview.monthSuppliers} fournisseur${overview.monthSuppliers > 1 ? 's' : ''} sollicité${overview.monthSuppliers > 1 ? 's' : ''}`} />
+        <StatCard icon={Package} color="violet" label="Produits référencés" value={overview.linkedProducts} sub="liés à un fournisseur" />
+        <StatCard icon={Wallet} color="red" label="Dette fournisseurs" value={currency(overview.debt)} sub={`${overview.debtors} fournisseur${overview.debtors > 1 ? 's' : ''} à régler`} />
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <div className="relative flex-1">
+          <Search size={18} className="search-icon" />
           <input
-            className="input pl-9"
+            className="search-field"
             placeholder="Rechercher par nom, contact, email, adresse ou produit..."
             value={search}
             onChange={(e) => {
@@ -250,43 +275,41 @@ export default function Suppliers() {
             }}
           />
         </div>
-        {!isLoading && (
-          <p className="text-xs text-gray-400 sm:ml-auto">
-            {filtered.length} fournisseur{filtered.length > 1 ? 's' : ''}
-            {search && ` correspondant à "${search}"`}
-          </p>
-        )}
       </div>
 
+      <section className="panel overflow-hidden">
+        <PanelTitle icon={Truck} title="Liste des fournisseurs">
+          {!isLoading && <InfoChip>{filtered.length === suppliers.length ? `${suppliers.length} fournisseur${suppliers.length > 1 ? 's' : ''} au total` : `${filtered.length} sur ${suppliers.length}`}</InfoChip>}
+        </PanelTitle>
       {/* ---- État de chargement ---- */}
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 px-5 pb-5">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="border border-gray-200 dark:border-gray-700/60 rounded-xl p-4 space-y-3 animate-pulse">
-              <div className="h-9 w-9 rounded-lg bg-gray-100 dark:bg-gray-800" />
-              <div className="h-3 w-2/3 rounded bg-gray-100 dark:bg-gray-800" />
-              <div className="h-2.5 w-1/2 rounded bg-gray-100 dark:bg-gray-800" />
-              <div className="h-2.5 w-full rounded bg-gray-100 dark:bg-gray-800" />
-              <div className="h-8 w-full rounded-lg bg-gray-100 dark:bg-gray-800 mt-2" />
+            <div key={i} className="border border-gray-200 dark:border-white/[0.08] rounded-xl p-4 space-y-3 animate-pulse">
+              <div className="h-9 w-9 rounded-xl bg-gray-100 dark:bg-white/[0.06]" />
+              <div className="h-3 w-2/3 rounded bg-gray-100 dark:bg-white/[0.06]" />
+              <div className="h-2.5 w-1/2 rounded bg-gray-100 dark:bg-white/[0.06]" />
+              <div className="h-2.5 w-full rounded bg-gray-100 dark:bg-white/[0.06]" />
+              <div className="h-8 w-full rounded-xl bg-gray-100 dark:bg-white/[0.06] mt-2" />
             </div>
           ))}
         </div>
       ) : suppliers.length === 0 ? (
-        <div className="card p-12 flex flex-col items-center text-center gap-3">
-          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400">
+        <div className="p-12 border-t border-gray-100 dark:border-white/[0.06] flex flex-col items-center text-center gap-3">
+          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400">
             <Truck size={20} />
           </div>
           <div>
             <p className="font-medium">Aucun fournisseur enregistré</p>
             <p className="text-sm text-gray-400 mt-0.5">Ajoutez vos fournisseurs pour centraliser leurs contacts et conditions.</p>
           </div>
-          <button className="btn-primary mt-1" onClick={openCreate}>
+          <button className="btn-cta mt-1" onClick={openCreate}>
             <Plus size={16} /> Nouveau fournisseur
           </button>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="card p-12 flex flex-col items-center text-center gap-2">
-          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400">
+        <div className="p-12 border-t border-gray-100 dark:border-white/[0.06] flex flex-col items-center text-center gap-2">
+          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400">
             <Search size={20} />
           </div>
           <p className="font-medium">Aucun fournisseur ne correspond à "{search}"</p>
@@ -294,17 +317,17 @@ export default function Suppliers() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 px-5 pb-5">
             {paginated.map((s) => {
               const palette = ICON_PALETTE[hashString(s.name) % ICON_PALETTE.length]
               const { list, totalAchats, dette } = supplierStats(s.id)
               return (
                 <div
                   key={s.id}
-                  className={`group border border-gray-200 dark:border-gray-700/60 rounded-xl p-4 flex flex-col gap-3 transition-all hover:shadow-sm hover:border-gray-300 dark:hover:border-gray-600 ring-1 ring-transparent ${palette.ring}`}
+                  className={`group border border-gray-200/80 dark:border-white/[0.08] rounded-2xl p-4 flex flex-col gap-3 bg-white dark:bg-white/[0.02] transition-all hover:shadow-lift hover:-translate-y-0.5 hover:border-blue-200 dark:hover:border-blue-500/40 ring-1 ring-transparent ${palette.ring}`}
                 >
                   <div className="flex items-start gap-2.5">
-                    <div className={`p-2 rounded-lg shrink-0 ${palette.bg} ${palette.text}`}>
+                    <div className={`p-2 rounded-xl shrink-0 ${palette.bg} ${palette.text}`}>
                       <Truck size={16} />
                     </div>
                     <div className="min-w-0">
@@ -325,7 +348,7 @@ export default function Suppliers() {
                     </div>
                   )}
 
-                  <div className="border-t border-gray-100 dark:border-gray-800 pt-2.5 space-y-2">
+                  <div className="border-t border-gray-100 dark:border-white/[0.06] pt-2.5 space-y-2">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 flex items-center gap-1 mb-0.5">
                         <Package size={11} /> Produits fournis
@@ -340,7 +363,7 @@ export default function Suppliers() {
                     {s.payment_terms && (
                       <div className="flex items-center gap-1.5">
                         <Wallet size={12} className="text-gray-400" />
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-white/[0.06] text-gray-600 dark:text-gray-300">
                           {s.payment_terms}
                         </span>
                       </div>
@@ -357,7 +380,7 @@ export default function Suppliers() {
                   </div>
 
                   {list.length > 0 && (
-                    <div className="border-t border-gray-100 dark:border-gray-800 pt-2.5 flex items-center justify-between text-xs">
+                    <div className="border-t border-gray-100 dark:border-white/[0.06] pt-2.5 flex items-center justify-between text-xs">
                       <div>
                         <p className="text-gray-400">Total acheté</p>
                         <p className="font-semibold text-gray-700 dark:text-gray-200">{currency(totalAchats)}</p>
@@ -389,14 +412,15 @@ export default function Suppliers() {
             })}
           </div>
 
-          <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+          <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} totalItems={filtered.length} pageSize={pageSize} itemLabel="fournisseurs" />
         </>
       )}
+      </section>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Modifier le fournisseur' : 'Nouveau fournisseur'}>
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} icon={Truck} title={editing ? 'Modifier le fournisseur' : 'Nouveau fournisseur'}>
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">{error}</div>
+            <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-xl px-3 py-2">{error}</div>
           )}
 
           <div>
@@ -426,9 +450,9 @@ export default function Suppliers() {
             {products.length === 0 ? (
               <p className="text-sm text-gray-500">Ajoutez d'abord des produits dans le catalogue pour pouvoir les associer aux fournisseurs.</p>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto rounded-xl border border-gray-200 dark:border-gray-700 p-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto rounded-xl border border-gray-200 dark:border-white/10 p-2">
                 {products.map((product) => (
-                  <label key={product.id} className="flex items-center gap-2 rounded-lg p-2 transition hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer">
+                  <label key={product.id} className="flex items-center gap-2 rounded-xl p-2 transition hover:bg-gray-50 dark:hover:bg-white/[0.06] cursor-pointer">
                     <input
                       type="checkbox"
                       checked={selectedProductIds.includes(product.id)}
@@ -439,7 +463,7 @@ export default function Suppliers() {
                             : [...prev, product.id]
                         )
                       }}
-                      className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-800"
+                      className="h-4 w-4 rounded border-gray-300 text-[#1d4fb8] focus:ring-brand-500 dark:border-gray-600 dark:bg-white/[0.06]"
                     />
                     <span className="text-sm truncate">{product.name}</span>
                   </label>
@@ -455,7 +479,7 @@ export default function Suppliers() {
             <label className="label">Notes</label>
             <textarea className="input" rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-end gap-2.5 pt-4 mt-1 border-t border-gray-100 dark:border-white/[0.06]">
             <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>Annuler</button>
             <button type="submit" className="btn-primary">{editing ? 'Enregistrer' : 'Créer'}</button>
           </div>
@@ -474,14 +498,14 @@ export default function Suppliers() {
       <Modal
         open={!!historySupplier}
         onClose={() => setHistorySupplier(null)}
-        title={`Historique — ${historySupplier?.name || ''}`}
+        icon={History} title={`Historique — ${historySupplier?.name || ''}`}
         maxWidth="max-w-lg"
       >
         {historySupplier && (() => {
           const { list, totalAchats, dette } = supplierStats(historySupplier.id)
           return (
             <div className="space-y-4">
-              <div className="flex items-center justify-between text-sm bg-gray-50 dark:bg-gray-800/60 rounded-lg p-3">
+              <div className="flex items-center justify-between text-sm bg-gray-50 dark:bg-white/[0.04] rounded-xl p-3">
                 <div>
                   <p className="text-gray-400 text-xs">Total acheté</p>
                   <p className="font-semibold">{currency(totalAchats)}</p>
@@ -497,25 +521,25 @@ export default function Suppliers() {
                 {list.map((p) => {
                   const due = Number(p.total) - Number(p.amount_paid)
                   return (
-                    <div key={p.id} className="border border-gray-200 dark:border-gray-700/60 rounded-lg p-3">
+                    <div key={p.id} className="border border-gray-200 dark:border-white/[0.08] rounded-xl p-3">
                       <div className="flex items-center justify-between">
-                        <span className="font-mono text-xs text-gray-500 whitespace-nowrap">{p.purchase_number}</span>
+                        <span className="text-xs text-gray-500 whitespace-nowrap">{p.purchase_number}</span>
                         <span className="text-xs text-gray-400">{formatDate(p.created_at)}</span>
                       </div>
                       <div className="mt-1.5 space-y-0.5">
                         {(p.purchase_items || []).map((it) => (
                           <p key={it.id} className="text-sm text-gray-600 dark:text-gray-300">
-                            {it.product_name} × {it.quantity} <span className="text-gray-400">({currency(it.unit_cost)}/u)</span>
+                            {it.product_name} × {formatQty(it.quantity)} <span className="text-gray-400">({currency(it.unit_cost)}/u)</span>
                           </p>
                         ))}
                       </div>
-                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 dark:border-white/[0.06]">
                         <span className="text-sm font-semibold">{currency(p.total)}</span>
                         {p.status === 'annulee' ? (
                           <span className="text-xs font-medium text-gray-400">Annulé</span>
                         ) : due > 0 ? (
                           <button
-                            className="text-xs font-medium text-brand-600 hover:underline flex items-center gap-1"
+                            className="text-xs font-medium text-[#1d4fb8] hover:underline flex items-center gap-1"
                             onClick={() => { setPayingPurchase(p); setPaymentAmount(''); setPaymentError('') }}
                           >
                             <CreditCard size={12} /> Payer {currency(due)}
@@ -534,10 +558,10 @@ export default function Suppliers() {
       </Modal>
 
       {/* ---- Modal: paiement d'une dette fournisseur ---- */}
-      <Modal open={!!payingPurchase} onClose={() => setPayingPurchase(null)} title="Enregistrer un paiement">
+      <Modal open={!!payingPurchase} onClose={() => setPayingPurchase(null)} icon={CreditCard} title="Enregistrer un paiement">
         {payingPurchase && (
           <form onSubmit={handleAddPayment} className="space-y-4">
-            {paymentError && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">{paymentError}</div>}
+            {paymentError && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-xl px-3 py-2">{paymentError}</div>}
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Achat <strong className="whitespace-nowrap">{payingPurchase.purchase_number}</strong> — solde dû :{' '}
               <span className="text-red-500 font-semibold">{currency(Number(payingPurchase.total) - Number(payingPurchase.amount_paid))}</span>
@@ -556,13 +580,13 @@ export default function Suppliers() {
               />
               <button
                 type="button"
-                className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 mt-1.5"
+                className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1] mt-1.5"
                 onClick={() => setPaymentAmount(String(Number(payingPurchase.total) - Number(payingPurchase.amount_paid)))}
               >
                 Solder la totalité
               </button>
             </div>
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2.5 pt-4 mt-1 border-t border-gray-100 dark:border-white/[0.06]">
               <button type="button" className="btn-secondary" onClick={() => setPayingPurchase(null)}>Annuler</button>
               <button type="submit" className="btn-primary" disabled={addPayment.isPending}>
                 {addPayment.isPending ? 'Enregistrement...' : 'Confirmer le paiement'}

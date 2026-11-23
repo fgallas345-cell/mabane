@@ -3,6 +3,7 @@ import { amountInWords, numberToFrench } from '../utils/pdfCommon'
 import { generateInvoicePDF } from '../utils/invoicePdf'
 import { generateDeliveryPDF } from '../utils/deliveryPdf'
 import { generatePaymentReceiptPDF } from '../utils/paymentReceiptPdf'
+import { pinError } from '../utils/signature'
 
 describe('numberToFrench', () => {
   it.each([
@@ -49,6 +50,26 @@ describe('génération des PDF', () => {
     })
     expect(doc.getNumberOfPages()).toBe(1)
     expect(doc.internal.pageSize.getHeight()).toBeGreaterThan(200)
+  })
+
+  it('la facture signée est plus haute et la signature disparaît si le montant change', async () => {
+    // PNG 1x1 transparent
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+    const sale = { invoice_number: 'FAC-2026-0002', created_at: '2026-10-19T10:00:00Z', sale_items: items.slice(0, 2), total: 3100, amount_paid: 0, status: 'credit', quote_status: 'confirmed' }
+    const signature = { signature_image: png, signer_name: 'Gérant', signed_at: '2026-10-20T09:30:00Z', signed_amount: 3100 }
+    const plain = await generateInvoicePDF(sale)
+    const signed = await generateInvoicePDF(sale, { signature })
+    const outdated = await generateInvoicePDF(sale, { signature: { ...signature, signed_amount: 9999 } })
+    const h = (d) => d.internal.pageSize.getHeight()
+    expect(h(signed)).toBeGreaterThan(h(plain))
+    expect(h(outdated)).toBe(h(plain))
+  })
+
+  it('règles du code PIN', () => {
+    expect(pinError('4821')).toBe('')
+    expect(pinError('123')).not.toBe('')
+    expect(pinError('0000')).not.toBe('')
+    expect(pinError('1234')).not.toBe('')
   })
 
   it('bon de livraison et reçu se génèrent', async () => {

@@ -1,4 +1,5 @@
 import { setFontSafe } from './pdfFonts'
+import { formatQty } from './quantity'
 import {
   BLUE,
   LETTERHEAD_H,
@@ -13,11 +14,12 @@ import {
   tableHeight,
   drawTable,
 } from './pdfCommon'
+import { drawSignatureInBox, loadSignatureSafe, isSignatureCurrent } from './signature'
 
 const MARGIN = 5
 const PAGE_W = 120
 const MIN_ROWS = 5
-const SIGN_H = 20
+const SIGN_H = 22
 
 /**
  * Génère le PDF du bon de livraison (sans prix : il atteste seulement de ce qui a été remis).
@@ -26,12 +28,14 @@ const SIGN_H = 20
  *   sale: { invoice_number, clients: { name, phone } },
  *   delivery_items: [{ quantity_delivered, ordered, remaining, sale_items: { product_name, quantity } }]
  * }
+ * @param {object} [options.signature] - signature active du bon (case « Pour la boutique »)
  */
-export async function generateDeliveryPDF(delivery) {
+export async function generateDeliveryPDF(delivery, { signature = null } = {}) {
   const innerX = MARGIN
   const innerY = MARGIN
   const innerW = PAGE_W - MARGIN * 2
   const sale = delivery.sale || {}
+  const showSignature = sale.status !== 'annulee' && isSignatureCurrent(signature, null)
 
   const qteW = 20
   const orderedW = 22
@@ -49,9 +53,9 @@ export async function generateDeliveryPDF(delivery) {
     return {
       label: item.sale_items?.product_name || 'Article',
       cells: {
-        delivered: String(item.quantity_delivered ?? ''),
-        ordered: ordered != null ? String(ordered) : '',
-        remaining: item.remaining != null ? String(item.remaining) : '',
+        delivered: formatQty(item.quantity_delivered),
+        ordered: ordered != null ? formatQty(ordered) : '',
+        remaining: item.remaining != null ? formatQty(item.remaining) : '',
       },
     }
   })
@@ -117,21 +121,24 @@ export async function generateDeliveryPDF(delivery) {
   doc.setDrawColor(...BLUE)
   doc.setLineWidth(0.3)
   ;[
-    { x: innerX + 2, label: 'Le livreur' },
+    { x: innerX + 2, label: showSignature ? 'Pour la boutique' : 'Le livreur', signed: showSignature },
     { x: innerX + innerW / 2 + 2, label: 'Le client (reçu en bon état)' },
   ].forEach((box) => {
+    doc.setDrawColor(...BLUE)
+    doc.setLineWidth(0.3)
     doc.rect(box.x, y, boxW, SIGN_H, 'D')
     setFontSafe(doc, 'bold')
     doc.setFontSize(7)
     doc.setTextColor(...BLUE)
     doc.text(box.label, box.x + 2, y + 4)
+    if (box.signed) drawSignatureInBox(doc, signature, box.x, y, boxW, SIGN_H)
   })
 
   return doc
 }
 
 export async function downloadDeliveryPDF(delivery) {
-  const doc = await generateDeliveryPDF(delivery)
+  const doc = await generateDeliveryPDF(delivery, { signature: await loadSignatureSafe('delivery', delivery.id) })
   if (doc && typeof doc.save === 'function') {
     doc.save(`${delivery.delivery_number}.pdf`)
   } else {
@@ -140,7 +147,7 @@ export async function downloadDeliveryPDF(delivery) {
 }
 
 export async function getDeliveryPDFBlob(delivery) {
-  const doc = await generateDeliveryPDF(delivery)
+  const doc = await generateDeliveryPDF(delivery, { signature: await loadSignatureSafe('delivery', delivery.id) })
   if (doc && typeof doc.output === 'function') return doc.output('blob')
   throw new Error('Could not produce blob from PDF document')
 }

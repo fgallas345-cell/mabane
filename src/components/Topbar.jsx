@@ -1,16 +1,22 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Menu, Search, Bell, LogOut, Settings as SettingsIcon, AlertTriangle } from 'lucide-react'
+import { Menu, Search, Bell, LogOut, Settings as SettingsIcon, AlertTriangle, CalendarDays, ChevronDown } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import ThemeToggle from './ThemeToggle'
 import { useLowStock } from '../hooks/useDashboard'
 import { useProducts } from '../hooks/useProducts'
 import { useClients } from '../hooks/useEntities'
 import { useClickOutside } from '../hooks/useClickOutside'
-import { ROLE_LABELS } from '../lib/constants'
+import { ROLE_LABELS, displayName } from '../lib/constants'
 
 const iconBtn =
-  'relative p-2 rounded-lg text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500'
+  'relative p-2.5 rounded-xl text-brand-900 dark:text-gray-200 hover:bg-white dark:hover:bg-white/[0.06] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500'
+
+// « lundi 23 novembre 2026 » → « Lundi 23 Novembre 2026 »
+const todayLabel = () =>
+  new Date()
+    .toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    .replace(/(^|\s)\p{L}/gu, (m) => m.toUpperCase())
 
 export default function Topbar({ onMenuClick }) {
   const { profile, signOut } = useAuth()
@@ -20,6 +26,7 @@ export default function Topbar({ onMenuClick }) {
   const [showNotifs, setShowNotifs] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const searchRef = useRef(null)
+  const searchInputRef = useRef(null)
   const notifRef = useRef(null)
   const userRef = useRef(null)
 
@@ -29,6 +36,18 @@ export default function Topbar({ onMenuClick }) {
   useClickOutside(searchRef, closeResults, showResults)
   useClickOutside(notifRef, closeNotifs, showNotifs)
   useClickOutside(userRef, closeUser, showUserMenu)
+
+  // Ctrl + K (ou Cmd + K) : place le curseur dans la recherche globale
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
 
   const { data: lowStockData } = useLowStock()
   const { data: products = [] } = useProducts()
@@ -46,20 +65,24 @@ export default function Topbar({ onMenuClick }) {
     setSearch('')
   }
 
-  const resultBtn = 'w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800'
+  const resultBtn = 'w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-white/[0.06]'
 
   return (
-    <header className="h-16 bg-white dark:bg-darkcard border-b border-gray-200 dark:border-gray-700/60 flex items-center justify-between px-4 lg:px-6 gap-3 sticky top-0 z-20">
+    <header className="h-[84px] bg-[#f3f6fb]/85 backdrop-blur dark:bg-darkbg/85 flex items-center justify-between px-4 lg:px-8 gap-3 sticky top-0 z-20">
       <div className="flex items-center gap-2 flex-1 min-w-0">
         <button type="button" aria-label="Ouvrir le menu" className={`lg:hidden ${iconBtn}`} onClick={onMenuClick}>
           <Menu size={22} />
         </button>
 
-        <div className="relative flex-1 max-w-md" ref={searchRef}>
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <div className="relative flex-1 max-w-xl" ref={searchRef}>
+          <Search size={19} className="absolute left-5 top-1/2 -translate-y-1/2 text-brand-900 dark:text-gray-300" />
+          <kbd className="hidden md:block absolute right-4 top-1/2 -translate-y-1/2 rounded-md bg-gray-100 dark:bg-white/10 px-2 py-0.5 text-[11px] font-medium text-gray-500 dark:text-gray-400 pointer-events-none">
+            Ctrl + K
+          </kbd>
           <input
-            className="input pl-9"
-            placeholder="Rechercher un produit, un client..."
+            ref={searchInputRef}
+            className="w-full rounded-full bg-white dark:bg-darkcard border border-gray-200/70 dark:border-white/[0.06] shadow-card pl-12 pr-4 md:pr-24 py-3 text-sm outline-none placeholder:text-gray-500 focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500 transition-colors"
+            placeholder="Rechercher un produit, un client…"
             aria-label="Recherche globale"
             value={search}
             onChange={(e) => {
@@ -69,7 +92,7 @@ export default function Topbar({ onMenuClick }) {
             onFocus={() => setShowResults(true)}
           />
           {showResults && term && (
-            <div className="absolute mt-1 w-full card p-2 max-h-80 overflow-y-auto z-50 animate-fade-in">
+            <div className="absolute mt-2 w-full card p-2 max-h-80 overflow-y-auto z-50 animate-fade-in">
               {matchedProducts.length === 0 && matchedClients.length === 0 && (
                 <p className="px-2 py-2 text-sm text-gray-400">Aucun résultat pour « {search} »</p>
               )}
@@ -98,7 +121,10 @@ export default function Topbar({ onMenuClick }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5">
+        <p className="hidden xl:flex items-center gap-2 pr-4 mr-1 border-r border-gray-300/70 dark:border-white/10 text-sm font-medium text-brand-900 dark:text-gray-200">
+          <CalendarDays size={18} /> {todayLabel()}
+        </p>
         <ThemeToggle />
 
         <div className="relative" ref={notifRef}>
@@ -108,9 +134,9 @@ export default function Topbar({ onMenuClick }) {
             className={iconBtn}
             onClick={() => setShowNotifs((s) => !s)}
           >
-            <Bell size={18} />
+            <Bell size={21} />
             {lowStock.length > 0 && (
-              <span className="absolute top-0.5 right-0.5 bg-red-500 text-white text-[10px] font-semibold rounded-full min-w-4 h-4 px-1 flex items-center justify-center">
+              <span className="absolute top-1 right-1 bg-red-500 ring-2 ring-[#f3f6fb] dark:ring-darkbg text-white text-[10px] font-semibold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">
                 {lowStock.length}
               </span>
             )}
@@ -130,7 +156,7 @@ export default function Topbar({ onMenuClick }) {
                         navigate('/stock')
                         setShowNotifs(false)
                       }}
-                      className="w-full flex items-start gap-2 text-left text-sm p-2 rounded-lg bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-500/20"
+                      className="w-full flex items-start gap-2 text-left text-sm p-2 rounded-xl bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-500/20"
                     >
                       <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                       <span>
@@ -148,22 +174,21 @@ export default function Topbar({ onMenuClick }) {
           <button
             type="button"
             aria-label="Menu utilisateur"
-            className="flex items-center gap-2 pl-1.5 pr-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            className="flex items-center gap-2.5 pl-1.5 pr-2.5 py-1.5 rounded-full hover:bg-white dark:hover:bg-white/[0.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             onClick={() => setShowUserMenu((s) => !s)}
+            title={ROLE_LABELS[profile?.role] || ''}
           >
-            <div className="h-8 w-8 rounded-full bg-brand-600 text-white flex items-center justify-center text-sm font-semibold">
-              {profile?.full_name?.[0]?.toUpperCase() || 'U'}
+            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-accent-400 to-accent-600 text-white flex items-center justify-center text-base font-bold shadow-sm">
+              {displayName(profile?.full_name, 'U')[0].toUpperCase()}
             </div>
-            <div className="hidden sm:block text-left">
-              <p className="text-sm font-medium leading-tight">{profile?.full_name || 'Utilisateur'}</p>
-              <p className="text-xs text-gray-400 leading-tight">{ROLE_LABELS[profile?.role] || ''}</p>
-            </div>
+            <p className="hidden sm:block text-sm font-semibold text-brand-900 dark:text-gray-100">{displayName(profile?.full_name)}</p>
+            <ChevronDown size={16} className="hidden sm:block text-brand-900 dark:text-gray-300" />
           </button>
           {showUserMenu && (
             <div className="absolute right-0 mt-2 w-48 card p-1.5 z-50 animate-fade-in">
               <button
                 type="button"
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-xl hover:bg-gray-100 dark:hover:bg-white/[0.06]"
                 onClick={() => {
                   navigate('/parametres')
                   setShowUserMenu(false)
@@ -173,7 +198,7 @@ export default function Topbar({ onMenuClick }) {
               </button>
               <button
                 type="button"
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-xl text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
                 onClick={signOut}
               >
                 <LogOut size={16} /> Déconnexion

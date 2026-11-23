@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom'
 import { MoreVertical } from 'lucide-react'
 
 const TONES = {
-  gray: 'text-gray-700 dark:text-gray-200',
+  gray: 'text-brand-900 dark:text-gray-200',
   emerald: 'text-emerald-700 dark:text-emerald-400',
-  brand: 'text-brand-700 dark:text-brand-400',
+  brand: 'text-[#1d4fb8] dark:text-blue-300',
   red: 'text-red-600 dark:text-red-400',
 }
 
@@ -69,10 +69,10 @@ export default function RowActions({ items, label = 'Plus d’actions' }) {
           e.stopPropagation()
           setOpen((o) => !o)
         }}
-        className={`p-2 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
+        className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 ${
           open
-            ? 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'
-            : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200'
+            ? 'bg-[#13306f] text-white'
+            : 'bg-gray-100 text-brand-900 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-200 dark:hover:bg-white/[0.1]'
         }`}
       >
         <MoreVertical size={16} />
@@ -83,7 +83,7 @@ export default function RowActions({ items, label = 'Plus d’actions' }) {
             ref={menuRef}
             role="menu"
             style={{ position: 'fixed', top: pos.top, left: pos.left, width: MENU_WIDTH }}
-            className="z-50 card p-1.5 shadow-lg animate-fade-in"
+            className="z-50 card !rounded-2xl p-1.5 shadow-lift animate-fade-in"
             onClick={(e) => e.stopPropagation()}
           >
             {list.map((item) => (
@@ -96,7 +96,7 @@ export default function RowActions({ items, label = 'Plus d’actions' }) {
                   close()
                   item.onClick?.()
                 }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg text-left transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-40 disabled:pointer-events-none ${
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium rounded-xl text-left transition-colors hover:bg-gray-100 dark:hover:bg-white/[0.06] disabled:opacity-40 disabled:pointer-events-none ${
                   TONES[item.tone] || TONES.gray
                 }`}
               >

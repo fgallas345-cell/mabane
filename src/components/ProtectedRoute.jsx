@@ -6,8 +6,8 @@ export default function ProtectedRoute({ children, adminOnly = false }) {
 
   if (loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-darkbg">
-        <div className="animate-spin rounded-full h-10 w-10 border-4 border-brand-500 border-t-transparent" />
+      <div className="h-screen flex items-center justify-center bg-[#f3f6fb] dark:bg-darkbg">
+        <div className="animate-spin rounded-full h-10 w-10 border-4 border-accent-500 border-t-transparent" />
       </div>
     )
   }

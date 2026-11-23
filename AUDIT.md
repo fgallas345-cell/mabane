@@ -115,6 +115,20 @@
 
 ---
 
+## 0 quinquies. Refonte du 22 novembre 2026
+
+> ⚠️ **Ré-exécuter `supabase/schema.sql`** (idempotent ; testé sur base neuve et en mise à jour d'une base existante avec données).
+
+- **Design** : charte tirée du logo — marine `#071F34` (structure, boutons principaux) et orange `#F39E26` (actions clés : vendre, encaisser ; menu actif). Barre latérale marine avec bouton « Vendre maintenant », page de connexion en deux panneaux, tableau de bord refait (raccourcis, encaissé du jour, dettes clients, 7 derniers jours, bilan du mois, stock faible, meilleures ventes), cartes, boutons, champs et tableaux harmonisés, mode sombre vérifié. Contrôle visuel par captures (bureau, mobile, sombre).
+- **Quantités décimales** : `numeric(12,3)` pour le stock et toutes les quantités (ventes, petites ventes, achats, livraisons, mouvements) ; RPC adaptées ; saisie « 2,5 » avec pas de 0,5 pour m / kg / L ; affichage sans zéros inutiles ; PDF.
+- **Inventaire** : tables `inventories` / `inventory_items`, RPC `apply_inventory` (admin) ; page Comptage (brouillon conservé sur l'appareil, pré-remplissage, écarts et valeur en direct) et Historique (détail, export Excel).
+- **Rapports** : page `/rapports` (périodes prédéfinies ou dates), indicateurs, CA par jour/mois, classements, export Excel multi-onglets.
+- **Import Excel du catalogue** : modèle téléchargeable, colonnes reconnues malgré les variantes d'intitulé, aperçu ligne par ligne, catégories créées, stock des produits existants jamais modifié.
+- **Paiements** : Orange Money et Wave. **Paramètres** : NINEA, horaires, 4ᵉ téléphone (imprimés sur les factures).
+- Raccourcis `?nouveau=1` (Ventes, Clients, Stock), nom affiché sans email, bandeau de stock faible repliable, 12 tests unitaires ajoutés (56 au total).
+
+---
+
 ## 1. Synthèse
 
 L'application est fonctionnellement riche et l'interface est soignée. Mais l'état actuel présente **une faille de sécurité bloquante** (n'importe qui peut se créer un compte administrateur), **un script SQL qui ne s'installe pas sur une base vierge**, et **plusieurs RPC qui corrompent le stock** dans les scénarios de livraison échelonnée. Plusieurs points « corrigés » depuis l'audit précédent ne le sont pas réellement (`onError` sur `useQuery` est ignoré par React Query v5 ; le trigger de rôle a été modifié dans le sens inverse de la spécification).

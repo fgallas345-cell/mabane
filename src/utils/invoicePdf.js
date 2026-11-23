@@ -1,4 +1,5 @@
-import { currency } from '../lib/constants'
+import { currency, SHOP } from '../lib/constants'
+import { formatQty } from './quantity'
 import { setFontSafe } from './pdfFonts'
 import {
   BLUE,
@@ -18,6 +19,7 @@ import {
   tableHeight,
   drawTable,
 } from './pdfCommon'
+import { SIGNATURE_BLOCK_H, drawSignatureBlock, loadSignatureSafe, isSignatureCurrent } from './signature'
 
 const MARGIN = 5
 const PAGE_W = 120
@@ -28,8 +30,9 @@ const SUMMARY_ROW_H = 7
  * Génère le PDF de la facture (ou du devis) et retourne le doc jsPDF.
  * La hauteur de la page s'adapte au nombre d'articles : rien n'est jamais tronqué.
  * @param {object} sale - { invoice_number, created_at, clients, sale_items, subtotal, discount, total, amount_paid, status, quote_status, delivery_status }
+ * @param {object} [options.signature] - signature active (document_signatures) à apposer
  */
-export async function generateInvoicePDF(sale) {
+export async function generateInvoicePDF(sale, { signature = null } = {}) {
   const innerX = MARGIN
   const innerY = MARGIN
   const innerW = PAGE_W - MARGIN * 2
@@ -41,6 +44,8 @@ export async function generateInvoicePDF(sale) {
   const paid = isDraft ? 0 : Number(sale.amount_paid || 0)
   const due = Math.max(0, total - paid)
   const showDelivery = !isDraft && sale.delivery_status && sale.delivery_status !== 'livree'
+  // Signature apposée seulement si le document n'a ni été annulé ni modifié depuis
+  const showSignature = !isCancelled && isSignatureCurrent(signature, total)
 
   const qteW = 16
   const punitW = 25
@@ -56,7 +61,7 @@ export async function generateInvoicePDF(sale) {
   const rawRows = (sale.sale_items || []).map((item) => ({
     label: item.product_name || '',
     cells: {
-      qty: String(item.quantity ?? ''),
+      qty: formatQty(item.quantity),
       unit: currency(item.unit_price),
       total: currency(Number(item.quantity || 0) * Number(item.unit_price || 0)),
     },
@@ -85,6 +90,9 @@ export async function generateInvoicePDF(sale) {
   measure.setFontSize(7)
   const wordsLines = measure.splitTextToSize(safeText(words), innerW - 4)
 
+  // NINEA et horaires (Paramètres) en pied de facture
+  const legalLine = [SHOP.ninea && `NINEA : ${SHOP.ninea}`, SHOP.openingHours && `Ouvert ${SHOP.openingHours}`].filter(Boolean).join('  ·  ')
+
   const hasPhone = !!sale.clients?.phone
   const CLIENT_H = hasPhone ? 12 : 7
   const contentHeight =
@@ -96,7 +104,9 @@ export async function generateInvoicePDF(sale) {
     tableHeight(rows, MIN_ROWS) +
     summary.length * SUMMARY_ROW_H + 4 +
     wordsLines.length * 3.4 + 3 +
-    8 // merci
+    (showSignature ? SIGNATURE_BLOCK_H : 0) +
+    8 + // merci
+    (legalLine ? 5 : 0) // NINEA / horaires
 
   const doc = await newDoc([PAGE_W, MARGIN * 2 + contentHeight])
   drawFrame(doc, innerX, innerY, innerW, contentHeight)
@@ -172,11 +182,19 @@ export async function generateInvoicePDF(sale) {
   doc.text(wordsLines, innerX + 2, y + 1.5)
   y += wordsLines.length * 3.4 + 3
 
+  if (showSignature) y = drawSignatureBlock(doc, signature, innerX, y, innerW)
+
   // Merci
   setFontSafe(doc, 'bold')
   doc.setFontSize(7.5)
   doc.setTextColor(...BLUE)
   doc.text('Merci pour votre confiance !', innerX + innerW / 2, y + 3.5, { align: 'center' })
+  if (legalLine) {
+    setFontSafe(doc, 'normal')
+    doc.setFontSize(6.5)
+    doc.setTextColor(90, 90, 90)
+    doc.text(safeText(legalLine), innerX + innerW / 2, y + 8.5, { align: 'center', maxWidth: innerW - 4 })
+  }
 
   // Filigrane au centre du tableau, par-dessus (semi-transparent)
   const wmY = (tableTop + tableBottom) / 2 + 6
@@ -187,7 +205,7 @@ export async function generateInvoicePDF(sale) {
 }
 
 export async function downloadInvoicePDF(sale) {
-  const doc = await generateInvoicePDF(sale)
+  const doc = await generateInvoicePDF(sale, { signature: await loadSignatureSafe('invoice', sale.id) })
   if (doc && typeof doc.save === 'function') {
     doc.save(`${sale.invoice_number}.pdf`)
   } else {
@@ -196,7 +214,7 @@ export async function downloadInvoicePDF(sale) {
 }
 
 export async function getInvoicePDFBlob(sale) {
-  const doc = await generateInvoicePDF(sale)
+  const doc = await generateInvoicePDF(sale, { signature: await loadSignatureSafe('invoice', sale.id) })
   if (doc && typeof doc.output === 'function') return doc.output('blob')
   throw new Error('Could not produce blob from PDF document')
 }

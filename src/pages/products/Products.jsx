@@ -1,6 +1,8 @@
 import { useSearchParams } from 'react-router-dom'
-import { useEffect, useState } from 'react'
-import { Plus, Pencil, Trash2, Search, Package, ImagePlus, FileSpreadsheet, AlertTriangle, TrendingUp, Truck, Eye } from 'lucide-react'
+import PageHeader, { PanelTitle, InfoChip } from '../../components/PageHeader'
+import StatCard from '../../components/StatCard'
+import { useEffect, useMemo, useState } from 'react'
+import { Plus, Pencil, Trash2, Search, Package, ImagePlus, FileSpreadsheet, Upload, AlertTriangle, TrendingUp, Truck, Eye, Boxes, PackageX, Coins, Tags } from 'lucide-react'
 import { useProducts, uploadProductImage, deleteProductImage } from '../../hooks/useProducts'
 import { useCategories } from '../../hooks/useEntities'
 import { usePurchases } from '../../hooks/usePurchases'
@@ -13,6 +15,8 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import Pagination from '../../components/Pagination'
 import { currency } from '../../lib/constants'
 import { exportProductsToExcel } from '../../utils/exportExcel'
+import ProductImport from './ProductImport'
+import { formatQty } from '../../utils/quantity'
 
 // Regroupe, pour un produit donné, l'historique d'achats par fournisseur
 // (utile quand plusieurs fournisseurs livrent le même produit à des prix différents)
@@ -76,7 +80,7 @@ function CategoryBadge({ name }) {
 }
 
 function StockBadge({ stock, threshold, unit }) {
-  const low = stock <= threshold
+  const low = Number(stock) <= Number(threshold)
   return (
     <span
       className={`inline-flex items-center gap-1 badge ${
@@ -86,7 +90,7 @@ function StockBadge({ stock, threshold, unit }) {
       }`}
     >
       {low && <AlertTriangle size={11} />}
-      {stock} {unit}
+      {formatQty(stock, unit)}
     </span>
   )
 }
@@ -128,6 +132,7 @@ export default function Products() {
   }, [searchParams])
   const [uploading, setUploading] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
   const [page, setPage] = useState(1)
   const pageSize = 10
 
@@ -208,6 +213,12 @@ export default function Products() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
 
+  const catalog = useMemo(() => ({
+    stockValue: products.reduce((sum, pr) => sum + Math.max(0, Number(pr.stock || 0)) * Number(pr.purchase_price || 0), 0),
+    low: products.filter((pr) => Number(pr.stock) > 0 && Number(pr.stock) <= Number(pr.alert_threshold)).length,
+    out: products.filter((pr) => Number(pr.stock) <= 0).length,
+  }), [products])
+
   useEffect(() => {
     if (page > totalPages) setPage(totalPages)
   }, [page, totalPages])
@@ -216,21 +227,30 @@ export default function Products() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="page-title">Produits</h1>
-          <p className="page-subtitle">Gérez votre catalogue de produits</p>
-        </div>
-        <button className="btn-primary" onClick={openCreate}>
-          <Plus size={16} /> Nouveau produit
+      <PageHeader icon={Package} badge={Tags} title="Produits" subtitle="Gérez votre catalogue : prix, stock, photos et fournisseurs">
+        <button className="btn-soft" onClick={() => setImportOpen(true)}>
+          <Upload size={17} /> Importer
         </button>
+        <button className="btn-soft" onClick={() => exportProductsToExcel(filtered)}>
+          <FileSpreadsheet size={17} /> Exporter
+        </button>
+        <button className="btn-cta" onClick={openCreate}>
+          <Plus size={18} strokeWidth={2.5} /> Nouveau produit
+        </button>
+      </PageHeader>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard featured icon={Boxes} label="Produits au catalogue" value={products.length} sub={`${categories.length} catégorie${categories.length > 1 ? 's' : ''}`} />
+        <StatCard icon={Coins} color="accent" label="Valeur du stock" value={currency(catalog.stockValue)} sub="au prix d'achat" />
+        <StatCard icon={AlertTriangle} color="amber" label="Stock faible" value={catalog.low} sub="sous le seuil d'alerte" />
+        <StatCard icon={PackageX} color="red" label="En rupture" value={catalog.out} sub="stock à zéro" />
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Search size={18} className="search-icon" />
           <input
-            className="input pl-9"
+            className="search-field"
             placeholder="Rechercher un produit..."
             value={search}
             onChange={(e) => {
@@ -239,44 +259,35 @@ export default function Products() {
             }}
           />
         </div>
-        <select className="input sm:w-56" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+        <select className="filter-select sm:w-64" aria-label="Catégorie" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
           <option value="">Toutes les catégories</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
-        <button
-          className="text-sm text-brand-600 hover:underline flex items-center gap-1.5 shrink-0 sm:px-2"
-          onClick={() => exportProductsToExcel(filtered)}
-        >
-          <FileSpreadsheet size={14} /> Exporter
-        </button>
       </div>
 
-      {!isLoading && filtered.length > 0 && (
-        <p className="text-xs text-gray-400 -mt-2">
-          {filtered.length} produit{filtered.length > 1 ? 's' : ''}
-          {search && ` correspondant à "${search}"`}
-        </p>
-      )}
-
+      <section className="panel overflow-hidden">
+        <PanelTitle icon={Package} title="Catalogue des produits">
+          {!isLoading && <InfoChip>{filtered.length === products.length ? `${products.length} produit${products.length > 1 ? 's' : ''} au total` : `${filtered.length} sur ${products.length}`}</InfoChip>}
+        </PanelTitle>
       {/* ---- État de chargement ---- */}
       {isLoading ? (
-        <div className="card p-4 space-y-3">
+        <div className="p-4 space-y-3 border-t border-gray-100 dark:border-white/[0.06]">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3 p-2 animate-pulse">
-              <div className="h-10 w-10 rounded-lg bg-gray-100 dark:bg-gray-800" />
+              <div className="h-10 w-10 rounded-xl bg-gray-100 dark:bg-white/[0.06]" />
               <div className="flex-1 space-y-2">
-                <div className="h-3 w-1/3 rounded bg-gray-100 dark:bg-gray-800" />
-                <div className="h-2.5 w-1/5 rounded bg-gray-100 dark:bg-gray-800" />
+                <div className="h-3 w-1/3 rounded bg-gray-100 dark:bg-white/[0.06]" />
+                <div className="h-2.5 w-1/5 rounded bg-gray-100 dark:bg-white/[0.06]" />
               </div>
-              <div className="h-3 w-14 rounded bg-gray-100 dark:bg-gray-800" />
+              <div className="h-3 w-14 rounded bg-gray-100 dark:bg-white/[0.06]" />
             </div>
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="card p-12 flex flex-col items-center text-center gap-3">
-          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400">
+        <div className="p-12 border-t border-gray-100 dark:border-white/[0.06] flex flex-col items-center text-center gap-3">
+          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400">
             <Package size={20} />
           </div>
           <div>
@@ -286,7 +297,7 @@ export default function Products() {
             </p>
           </div>
           {!search && !categoryFilter && (
-            <button className="btn-primary mt-1" onClick={openCreate}>
+            <button className="btn-cta mt-1" onClick={openCreate}>
               <Plus size={16} /> Nouveau produit
             </button>
           )}
@@ -294,11 +305,11 @@ export default function Products() {
       ) : (
         <>
           {/* ---- Tableau (desktop / tablette) ---- */}
-          <div className="card hidden md:block overflow-hidden">
+          <div className="hidden md:block">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
-                  <tr className="border-b border-gray-200 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/40">
+                  <tr className="border-b border-gray-200 dark:border-white/[0.08] bg-gray-50/60 dark:bg-white/[0.03]">
                     <th className="table-th">Produit</th>
                     <th className="table-th">Catégorie</th>
                     <th className="table-th text-right">Prix achat</th>
@@ -307,19 +318,19 @@ export default function Products() {
                     <th className="table-th text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                <tbody className="divide-y divide-gray-100 dark:divide-white/[0.06]">
                   {paginated.map((p) => (
-                    <tr key={p.id} className="group hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
+                    <tr key={p.id} className="group hover:bg-gray-50 dark:hover:bg-white/[0.03] transition-colors">
                       <td className="table-td">
                         <div className="flex items-center gap-3">
                           {p.image_url ? (
-                            <img src={p.image_url} alt={p.name} className="h-10 w-10 rounded-lg object-cover shrink-0" />
+                            <img src={p.image_url} alt={p.name} className="h-10 w-10 rounded-xl object-cover shrink-0" />
                           ) : (
-                            <div className="h-10 w-10 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
+                            <div className="h-10 w-10 rounded-xl bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400 shrink-0">
                               <Package size={18} />
                             </div>
                           )}
-                          <span className="font-medium truncate max-w-[200px]">{p.name}</span>
+                          <span className="font-bold text-brand-900 dark:text-gray-100 truncate max-w-[200px]">{p.name}</span>
                         </div>
                       </td>
                       <td className="table-td">
@@ -352,19 +363,19 @@ export default function Products() {
           </div>
 
           {/* ---- Vue cartes (mobile) ---- */}
-          <div className="md:hidden space-y-2.5">
+          <div className="md:hidden divide-y divide-gray-100 dark:divide-white/[0.06] border-t border-gray-100 dark:border-white/[0.06]">
             {paginated.map((p) => (
-              <div key={p.id} className="card p-4">
+              <div key={p.id} className="p-4">
                 <div className="flex items-start gap-3">
                   {p.image_url ? (
-                    <img src={p.image_url} alt={p.name} className="h-12 w-12 rounded-lg object-cover shrink-0" />
+                    <img src={p.image_url} alt={p.name} className="h-12 w-12 rounded-xl object-cover shrink-0" />
                   ) : (
-                    <div className="h-12 w-12 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
+                    <div className="h-12 w-12 rounded-xl bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400 shrink-0">
                       <Package size={20} />
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium truncate">{p.name}</p>
+                    <p className="font-bold text-brand-900 dark:text-gray-100 truncate">{p.name}</p>
                     <div className="mt-1">
                       <CategoryBadge name={p.categories?.name} />
                     </div>
@@ -375,7 +386,7 @@ export default function Products() {
                     <ActionButton icon={Trash2} title="Supprimer" onClick={() => setConfirmDelete(p)} tone="red" />
                   </div>
                 </div>
-                <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+                <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 dark:border-white/[0.06]">
                   <StockBadge stock={p.stock} threshold={p.alert_threshold} unit={p.unit} />
                   <div className="text-right">
                     <p className="tabular-nums font-semibold">{currency(p.sale_price)}</p>
@@ -389,14 +400,17 @@ export default function Products() {
             ))}
           </div>
 
-          <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+          <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} totalItems={filtered.length} pageSize={pageSize} itemLabel="produits" />
         </>
       )}
+      </section>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Modifier le produit' : 'Nouveau produit'} maxWidth="max-w-xl">
+      <ProductImport open={importOpen} onClose={() => setImportOpen(false)} products={products} categories={categories} />
+
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} icon={Package} title={editing ? 'Modifier le produit' : 'Nouveau produit'} maxWidth="max-w-xl">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="flex items-center gap-4">
-            <label className="h-16 w-16 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center cursor-pointer overflow-hidden shrink-0">
+            <label className="h-16 w-16 rounded-xl bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center cursor-pointer overflow-hidden shrink-0">
               {form.image_url ? (
                 <img src={form.image_url} alt="" className="h-full w-full object-cover" />
               ) : (
@@ -445,7 +459,7 @@ export default function Products() {
             const margin = Number(form.sale_price) - Number(form.purchase_price || 0)
             const loss = margin < 0
             return (
-              <p className={`text-sm rounded-lg px-3 py-2 -mt-1 tabular-nums ${loss ? 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'}`}>
+              <p className={`text-sm rounded-xl px-3 py-2 -mt-1 tabular-nums ${loss ? 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'}`}>
                 {loss ? 'Vendu à perte : ' : 'Marge : '}
                 <strong>{currency(margin)}</strong> par {form.unit || 'unité'}
                 {Number(form.purchase_price) > 0 && ` (${margin >= 0 ? '+' : ''}${Math.round((margin / Number(form.purchase_price)) * 100)} %)`}
@@ -458,6 +472,7 @@ export default function Products() {
               <label className="label">{editing ? 'Stock actuel' : 'Stock initial'}</label>
               <input
                 type="number"
+                step="any"
                 min="0"
                 required
                 className="input disabled:opacity-60"
@@ -472,7 +487,7 @@ export default function Products() {
             </div>
             <div>
               <label className="label">Seuil d'alerte</label>
-              <input type="number" min="0" required className="input" value={form.alert_threshold} onChange={(e) => setForm({ ...form, alert_threshold: e.target.value })} />
+              <input type="number" min="0" step="any" required className="input" value={form.alert_threshold} onChange={(e) => setForm({ ...form, alert_threshold: e.target.value })} />
             </div>
           </div>
 
@@ -480,15 +495,15 @@ export default function Products() {
             const history = getProductSupplierHistory(purchases, editing.id)
             if (history.length === 0) return null
             return (
-              <div className="border-t border-gray-200 dark:border-gray-700/60 pt-4">
+              <div className="border-t border-gray-200 dark:border-white/[0.08] pt-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 flex items-center gap-1.5 mb-2">
                   <Truck size={12} /> Fournisseurs ayant livré ce produit
                 </p>
                 <div className="space-y-1.5 max-h-40 overflow-y-auto">
                   {history.map((h, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm bg-gray-50 dark:bg-gray-800/60 rounded-lg px-3 py-2">
+                    <div key={i} className="flex items-center justify-between text-sm bg-gray-50 dark:bg-white/[0.04] rounded-xl px-3 py-2">
                       <div className="min-w-0">
-                        <p className="font-medium truncate">{h.supplier_name}</p>
+                        <p className="font-bold text-brand-900 dark:text-gray-100 truncate">{h.supplier_name}</p>
                         <p className="text-xs text-gray-400">Dernier achat le {new Date(h.last_date).toLocaleDateString('fr-FR')} · {h.total_quantity} {editing.unit || 'unité'}(s) au total</p>
                       </div>
                       <span className="font-semibold shrink-0 ml-2">{currency(h.last_price)}</span>
@@ -504,7 +519,7 @@ export default function Products() {
             )
           })()}
 
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-end gap-2.5 pt-4 mt-1 border-t border-gray-100 dark:border-white/[0.06]">
             <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>Annuler</button>
             <button type="submit" className="btn-primary" disabled={createItem.isPending || updateItem.isPending || uploading}>
               {editing ? 'Enregistrer' : 'Créer'}
@@ -513,15 +528,15 @@ export default function Products() {
         </form>
       </Modal>
 
-      <Modal open={!!detailProduct} onClose={() => setDetailProduct(null)} title="Détail du produit" maxWidth="max-w-lg">
+      <Modal open={!!detailProduct} onClose={() => setDetailProduct(null)} icon={Package} title="Détail du produit" maxWidth="max-w-lg">
         {detailProduct && (
           <div className="space-y-4">
             <DetailHeader
               avatar={
                 detailProduct.image_url ? (
-                  <img src={detailProduct.image_url} alt={detailProduct.name} className="h-14 w-14 rounded-lg object-cover shrink-0" />
+                  <img src={detailProduct.image_url} alt={detailProduct.name} className="h-14 w-14 rounded-xl object-cover shrink-0" />
                 ) : (
-                  <div className="h-14 w-14 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
+                  <div className="h-14 w-14 rounded-xl bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400 shrink-0">
                     <Package size={22} />
                   </div>
                 )

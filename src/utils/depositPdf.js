@@ -15,6 +15,7 @@ import {
   tableHeight,
   drawTable,
 } from './pdfCommon'
+import { SIGNATURE_BLOCK_H, drawSignatureBlock, drawSignatureInBox, loadSignatureSafe, isSignatureCurrent } from './signature'
 
 const formatDateTime = (value) => {
   if (!value) return ''
@@ -40,8 +41,9 @@ const R_PAGE_W = 110
 /**
  * @param {object} entry - ligne client_deposits : { number, type, amount, balance_after, method, notes, created_at, client_name }
  * @param {object} [client] - { name, phone }
+ * @param {object} [options.signature] - signature active du reçu (case « Pour la boutique »)
  */
-export async function generateDepositReceiptPDF(entry, client = {}) {
+export async function generateDepositReceiptPDF(entry, client = {}, { signature = null } = {}) {
   const innerX = R_MARGIN
   const innerW = R_PAGE_W - R_MARGIN * 2
   const amount = Math.abs(Number(entry.amount || 0))
@@ -51,6 +53,7 @@ export async function generateDepositReceiptPDF(entry, client = {}) {
   const amountLabel = entry.type === 'depot' ? 'MONTANT DÉPOSÉ' : entry.type === 'retrait' ? 'MONTANT RETIRÉ' : 'MONTANT'
   const words = `${isCredit ? 'Reçu' : 'Remis'} la somme de : ${amountInWords(amount)}.`
   const clientName = client.name || entry.client_name || 'Client'
+  const showSignature = !entry.reversed_at && isSignatureCurrent(signature, entry.amount)
 
   const measure = await newDoc([R_PAGE_W, 200])
   setFontSafe(measure, 'normal')
@@ -65,7 +68,7 @@ export async function generateDepositReceiptPDF(entry, client = {}) {
   const AMOUNT_H = 14 + wordsLines.length * 3.2 + 2
   const BALANCE_H = 9
   const noteH = noteLines.length ? Math.max(8, noteLines.length * 3.2 + 6) : 0
-  const SIGN_H = 18
+  const SIGN_H = 20
   const contentHeight = 1 + BANNER_H + CONTACT_H + INFO_H + 1 + AMOUNT_H + 1 + BALANCE_H + 1 + (noteH ? noteH + 1 : 0) + SIGN_H + 3
   const doc = await newDoc([R_PAGE_W, R_MARGIN * 2 + contentHeight])
 
@@ -160,7 +163,7 @@ export async function generateDepositReceiptPDF(entry, client = {}) {
   const boxW = innerW / 2 - 2
   ;[
     { x: innerX + 1, label: 'Signature du client' },
-    { x: innerX + innerW / 2 + 1, label: 'Pour la boutique' },
+    { x: innerX + innerW / 2 + 1, label: 'Pour la boutique', signed: showSignature },
   ].forEach((box) => {
     doc.setDrawColor(158, 177, 208)
     doc.setLineWidth(0.3)
@@ -169,18 +172,19 @@ export async function generateDepositReceiptPDF(entry, client = {}) {
     doc.setFontSize(6.8)
     doc.setTextColor(24, 92, 170)
     doc.text(box.label, box.x + 2, y + 4)
+    if (box.signed) drawSignatureInBox(doc, signature, box.x, y, boxW, SIGN_H)
   })
 
   return doc
 }
 
 export async function downloadDepositReceiptPDF(entry, client) {
-  const doc = await generateDepositReceiptPDF(entry, client)
+  const doc = await generateDepositReceiptPDF(entry, client, { signature: await loadSignatureSafe('deposit_receipt', entry.id) })
   doc.save(`${entry.number || 'depot'}.pdf`)
 }
 
 export async function getDepositReceiptPDFBlob(entry, client) {
-  const doc = await generateDepositReceiptPDF(entry, client)
+  const doc = await generateDepositReceiptPDF(entry, client, { signature: await loadSignatureSafe('deposit_receipt', entry.id) })
   return doc.output('blob')
 }
 
@@ -194,8 +198,9 @@ const S_PAGE_W = 148
 /**
  * @param {object} client - { name, phone }
  * @param {Array} entries - lignes client_deposits triées du plus ancien au plus récent
+ * @param {object} [options.signature] - signature active du relevé (valable tant que le solde n'a pas changé)
  */
-export async function generateDepositStatementPDF(client, entries = []) {
+export async function generateDepositStatementPDF(client, entries = [], { signature = null } = {}) {
   const innerX = S_MARGIN
   const innerY = S_MARGIN
   const innerW = S_PAGE_W - S_MARGIN * 2
@@ -225,7 +230,8 @@ export async function generateDepositStatementPDF(client, entries = []) {
 
   const CLIENT_H = client.phone ? 12 : 7
   const TOTAL_H = 11
-  const contentHeight = LETTERHEAD_H + 9 + 12 + CLIENT_H + 3 + tableHeight(rows, 5) + 3 + TOTAL_H + 4
+  const showSignature = isSignatureCurrent(signature, balance)
+  const contentHeight = LETTERHEAD_H + 9 + 12 + CLIENT_H + 3 + tableHeight(rows, 5) + 3 + TOTAL_H + 4 + (showSignature ? SIGNATURE_BLOCK_H + 2 : 0)
 
   const doc = await newDoc([S_PAGE_W, S_MARGIN * 2 + contentHeight])
   drawFrame(doc, innerX, innerY, innerW, contentHeight)
@@ -262,11 +268,13 @@ export async function generateDepositStatementPDF(client, entries = []) {
   doc.text('SOLDE DISPONIBLE', innerX + innerW / 2 + 3, y + 7)
   doc.text(currency(balance), innerX + innerW - 3, y + 7, { align: 'right' })
 
+  if (showSignature) drawSignatureBlock(doc, signature, innerX, y + TOTAL_H + 4, innerW)
+
   return doc
 }
 
 export async function downloadDepositStatementPDF(client, entries) {
-  const doc = await generateDepositStatementPDF(client, entries)
+  const doc = await generateDepositStatementPDF(client, entries, { signature: await loadSignatureSafe('deposit_statement', client.id) })
   const slug = String(client.name || 'client').normalize('NFD').replace(/[^\w]+/g, '-').replace(/^-|-$/g, '')
   doc.save(`releve-depot-${slug || 'client'}.pdf`)
 }

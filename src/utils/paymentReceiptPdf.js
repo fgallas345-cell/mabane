@@ -1,6 +1,7 @@
 import { SHOP, currency, PAYMENT_METHOD_LABELS } from '../lib/constants'
 import { setFontSafe } from './pdfFonts'
 import { newDoc, safeText, amountInWords } from './pdfCommon'
+import { SIGNATURE_BLOCK_H, drawSignatureBlock, loadSignatureSafe, isSignatureCurrent } from './signature'
 
 const MARGIN = 6
 const PAGE_W = 110
@@ -8,6 +9,7 @@ const PAGE_W = 110
 /**
  * Reçu de paiement (ticket A6 étroit).
  * @param {object} data - { receiptNumber, invoiceNumber, clientName, amount, method, reference, notes, remaining, total, createdAt }
+ * @param {object} [options.signature] - signature active du reçu
  */
 export async function generatePaymentReceiptPDF({
   receiptNumber,
@@ -20,12 +22,13 @@ export async function generatePaymentReceiptPDF({
   remaining,
   total,
   createdAt,
-}) {
+}, { signature = null } = {}) {
   const innerX = MARGIN
   const innerW = PAGE_W - MARGIN * 2
   const settled = Number(remaining || 0) <= 0
   const methodLabel = PAYMENT_METHOD_LABELS[method] || method || '—'
   const words = `Reçu la somme de : ${amountInWords(amount)}.`
+  const showSignature = isSignatureCurrent(signature, amount)
 
   // ---- Mesure (hauteur variable : nom long, note, montant en lettres) ----
   const measure = await newDoc([PAGE_W, 200])
@@ -47,7 +50,7 @@ export async function generatePaymentReceiptPDF({
   const noteH = noteLines.length ? Math.max(8, noteLines.length * 3.2 + 6) : 0
   const FOOTER_H = 11
 
-  const contentHeight = 1 + BANNER_H + CONTACT_H + QUICK_H + 1 + clientBlockH + 1 + AMOUNT_H + 1 + SUMMARY_H + 1 + (noteH ? noteH + 1 : 0) + FOOTER_H
+  const contentHeight = 1 + BANNER_H + CONTACT_H + QUICK_H + 1 + clientBlockH + 1 + AMOUNT_H + 1 + SUMMARY_H + 1 + (noteH ? noteH + 1 : 0) + (showSignature ? SIGNATURE_BLOCK_H : 0) + FOOTER_H
   const pageH = MARGIN * 2 + contentHeight
 
   const doc = await newDoc([PAGE_W, pageH])
@@ -190,6 +193,8 @@ export async function generatePaymentReceiptPDF({
     y += noteH + 1
   }
 
+  if (showSignature) y = drawSignatureBlock(doc, signature, innerX, y + 1, innerW, 'Pour la boutique') - 1
+
   // Pied
   setFontSafe(doc, 'normal')
   doc.setTextColor(100, 115, 130)
@@ -200,7 +205,7 @@ export async function generatePaymentReceiptPDF({
 }
 
 export async function downloadPaymentReceiptPDF(data) {
-  const doc = await generatePaymentReceiptPDF(data)
+  const doc = await generatePaymentReceiptPDF(data, { signature: await loadSignatureSafe('payment_receipt', data.receiptNumber) })
   if (doc && typeof doc.save === 'function') {
     doc.save(`${data.receiptNumber || 'recu'}.pdf`)
   } else {
@@ -209,7 +214,7 @@ export async function downloadPaymentReceiptPDF(data) {
 }
 
 export async function getPaymentReceiptPDFBlob(data) {
-  const doc = await generatePaymentReceiptPDF(data)
+  const doc = await generatePaymentReceiptPDF(data, { signature: await loadSignatureSafe('payment_receipt', data.receiptNumber) })
   if (doc && typeof doc.output === 'function') return doc.output('blob')
   throw new Error('Could not produce blob from PDF document')
 }

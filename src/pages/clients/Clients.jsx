@@ -1,6 +1,8 @@
 import { useSearchParams } from 'react-router-dom'
+import PageHeader, { PanelTitle, InfoChip } from '../../components/PageHeader'
+import StatCard from '../../components/StatCard'
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Pencil, Trash2, Search, Phone, History, Users, MapPin, Receipt, CreditCard, Wallet } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Phone, History, Users, MapPin, Receipt, CreditCard, Wallet, UserPlus, UserCheck, Contact } from 'lucide-react'
 import { useClients } from '../../hooks/useEntities'
 import { useSales, useAddSalePayment } from '../../hooks/useSales'
 import Modal from '../../components/Modal'
@@ -47,7 +49,7 @@ function ClientAvatar({ name }) {
 function LoyaltyBadge({ count }) {
   if (count < 5) return null
   return (
-    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-400">
+    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-100 text-[#1d4fb8] dark:bg-blue-500/15 dark:text-blue-300">
       Fidèle
     </span>
   )
@@ -62,12 +64,19 @@ export default function Clients() {
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(emptyForm)
   const [confirmDelete, setConfirmDelete] = useState(null)
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState(searchParams.get('q') || '')
   useEffect(() => {
     const q = searchParams.get('q')
     if (q !== null) setSearch(q)
-  }, [searchParams])
+    // Raccourci du tableau de bord : /clients?nouveau=1
+    if (searchParams.get('nouveau') === '1') {
+      setEditing(null)
+      setForm(emptyForm)
+      setModalOpen(true)
+      setSearchParams({}, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
   const [page, setPage] = useState(1)
   const [payingSale, setPayingSale] = useState(null)
   const [paymentAmount, setPaymentAmount] = useState('')
@@ -154,33 +163,41 @@ export default function Clients() {
     .filter(isCountedSale)
     .reduce((sum, s) => sum + (Number(s.total) - Number(s.amount_paid)), 0)
   const totalDette = Object.values(clientStats).reduce((sum, st) => sum + st.dette, 0)
+  const overview = useMemo(() => {
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const since30 = now.getTime() - 30 * 86400000
+    const active = new Set(
+      sales.filter((s) => s.client_id && isCountedSale(s) && new Date(s.created_at).getTime() >= since30).map((s) => s.client_id)
+    ).size
+    return {
+      newThisMonth: clients.filter((c) => c.created_at && new Date(c.created_at) >= monthStart).length,
+      active,
+      debtors: Object.values(clientStats).filter((st) => st.dette > 0).length,
+      revenue: Object.values(clientStats).reduce((sum, st) => sum + st.total, 0),
+    }
+  }, [clients, sales, clientStats])
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="page-title">Clients</h1>
-          <p className="page-subtitle">Gérez votre base de clients</p>
-        </div>
-        <button className="btn-primary" onClick={openCreate}>
-          <Plus size={16} /> Nouveau client
+      <PageHeader icon={Users} badge={UserPlus} title="Clients" subtitle="Gérez votre base de clients, leurs achats et leurs dettes">
+        <button className="btn-cta" onClick={openCreate}>
+          <Plus size={18} strokeWidth={2.5} /> Nouveau client
         </button>
+      </PageHeader>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard featured icon={Users} label="Clients enregistrés" value={clients.length} sub={`+${overview.newThisMonth} ce mois-ci`} />
+        <StatCard icon={UserCheck} color="emerald" label="Clients actifs (30 j)" value={overview.active} sub="avec au moins une facture" />
+        <StatCard icon={Wallet} color="red" label="Dette des clients" value={currency(totalDette)} sub={`${overview.debtors} client${overview.debtors > 1 ? 's' : ''} concerné${overview.debtors > 1 ? 's' : ''}`} />
+        <StatCard icon={Receipt} color="accent" label="Total des achats" value={currency(overview.revenue)} sub="factures confirmées" />
       </div>
 
-      {totalDette > 0 && (
-        <div className="card p-4 bg-red-50/60 dark:bg-red-500/10 border-red-200 dark:border-red-500/30 flex items-center gap-2.5">
-          <Wallet size={18} className="text-red-600 dark:text-red-400 shrink-0" />
-          <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-            Dette totale de vos clients (avances / crédits) : {currency(totalDette)}
-          </p>
-        </div>
-      )}
-
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <div className="relative flex-1">
+          <Search size={18} className="search-icon" />
           <input
-            className="input pl-9"
+            className="search-field"
             placeholder="Rechercher par nom ou téléphone..."
             value={search}
             onChange={(e) => {
@@ -189,31 +206,29 @@ export default function Clients() {
             }}
           />
         </div>
-        {!isLoading && (
-          <p className="text-xs text-gray-400 sm:ml-auto">
-            {filtered.length} client{filtered.length > 1 ? 's' : ''}
-            {search && ` correspondant à "${search}"`}
-          </p>
-        )}
       </div>
 
+      <section className="panel overflow-hidden">
+        <PanelTitle icon={Contact} title="Liste des clients">
+          {!isLoading && <InfoChip>{filtered.length === clients.length ? `${clients.length} client${clients.length > 1 ? 's' : ''} au total` : `${filtered.length} sur ${clients.length}`}</InfoChip>}
+        </PanelTitle>
       {/* ---- État de chargement ---- */}
       {isLoading ? (
-        <div className="card p-4 space-y-3">
+        <div className="p-4 space-y-3 border-t border-gray-100 dark:border-white/[0.06]">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3 p-2 animate-pulse">
-              <div className="h-9 w-9 rounded-full bg-gray-100 dark:bg-gray-800" />
+              <div className="h-9 w-9 rounded-full bg-gray-100 dark:bg-white/[0.06]" />
               <div className="flex-1 space-y-2">
-                <div className="h-3 w-1/4 rounded bg-gray-100 dark:bg-gray-800" />
-                <div className="h-2.5 w-1/5 rounded bg-gray-100 dark:bg-gray-800" />
+                <div className="h-3 w-1/4 rounded bg-gray-100 dark:bg-white/[0.06]" />
+                <div className="h-2.5 w-1/5 rounded bg-gray-100 dark:bg-white/[0.06]" />
               </div>
-              <div className="h-3 w-16 rounded bg-gray-100 dark:bg-gray-800" />
+              <div className="h-3 w-16 rounded bg-gray-100 dark:bg-white/[0.06]" />
             </div>
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="card p-12 flex flex-col items-center text-center gap-3">
-          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400">
+        <div className="p-12 border-t border-gray-100 dark:border-white/[0.06] flex flex-col items-center text-center gap-3">
+          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400">
             <Users size={20} />
           </div>
           <div>
@@ -223,7 +238,7 @@ export default function Clients() {
             </p>
           </div>
           {!search && (
-            <button className="btn-primary mt-1" onClick={openCreate}>
+            <button className="btn-cta mt-1" onClick={openCreate}>
               <Plus size={16} /> Nouveau client
             </button>
           )}
@@ -231,11 +246,11 @@ export default function Clients() {
       ) : (
         <>
           {/* ---- Tableau (desktop / tablette) ---- */}
-          <div className="card hidden md:block overflow-hidden">
+          <div className="hidden md:block">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
-                  <tr className="border-b border-gray-200 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/40">
+                  <tr className="border-b border-gray-200 dark:border-white/[0.08] bg-gray-50/60 dark:bg-white/[0.03]">
                     <th className="table-th">Client</th>
                     <th className="table-th">Téléphone</th>
                     <th className="table-th">Adresse</th>
@@ -244,17 +259,17 @@ export default function Clients() {
                     <th className="table-th text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                <tbody className="divide-y divide-gray-100 dark:divide-white/[0.06]">
                   {paginated.map((c) => {
                     const stats = clientStats[c.id] || { total: 0, count: 0, dette: 0 }
                     return (
-                      <tr key={c.id} className="group hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
+                      <tr key={c.id} className="group hover:bg-gray-50 dark:hover:bg-white/[0.03] transition-colors">
                         <td className="table-td">
                           <div className="flex items-center gap-2.5">
                             <ClientAvatar name={c.name} />
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
-                                <p className="text-sm font-medium truncate max-w-[160px]">{c.name}</p>
+                                <p className="text-sm font-bold text-brand-900 dark:text-gray-100 truncate max-w-[160px]">{c.name}</p>
                                 <LoyaltyBadge count={stats.count} />
                               </div>
                               <p className="text-xs text-gray-400">{stats.count} achat{stats.count !== 1 ? 's' : ''}</p>
@@ -264,7 +279,7 @@ export default function Clients() {
                         <td className="table-td">
                           <a
                             href={`tel:${c.phone}`}
-                            className="inline-flex items-center gap-1.5 text-gray-600 dark:text-gray-300 hover:text-brand-600 dark:hover:text-brand-400"
+                            className="inline-flex items-center gap-1.5 text-gray-600 dark:text-gray-300 hover:text-[#1d4fb8] dark:hover:text-blue-300"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Phone size={13} /> {c.phone}
@@ -301,17 +316,17 @@ export default function Clients() {
           </div>
 
           {/* ---- Vue cartes (mobile) ---- */}
-          <div className="md:hidden space-y-2.5">
+          <div className="md:hidden divide-y divide-gray-100 dark:divide-white/[0.06] border-t border-gray-100 dark:border-white/[0.06]">
             {paginated.map((c) => {
               const stats = clientStats[c.id] || { total: 0, count: 0, dette: 0 }
               return (
-                <div key={c.id} className="card p-4">
+                <div key={c.id} className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <ClientAvatar name={c.name} />
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <p className="text-sm font-medium truncate">{c.name}</p>
+                          <p className="text-sm font-bold text-brand-900 dark:text-gray-100 truncate">{c.name}</p>
                           <LoyaltyBadge count={stats.count} />
                         </div>
                         <a href={`tel:${c.phone}`} className="text-xs text-gray-400 inline-flex items-center gap-1">
@@ -324,7 +339,7 @@ export default function Clients() {
                       {stats.dette > 0 && <p className="text-[10px] font-semibold text-red-500 mt-0.5">Dette : {currency(stats.dette)}</p>}
                     </div>
                   </div>
-                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 dark:border-white/[0.06]">
                     <span className="text-xs text-gray-400">
                       {c.address || 'Adresse non renseignée'}
                     </span>
@@ -339,11 +354,12 @@ export default function Clients() {
             })}
           </div>
 
-          <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+          <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} totalItems={filtered.length} pageSize={pageSize} itemLabel="clients" />
         </>
       )}
+      </section>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Modifier le client' : 'Nouveau client'}>
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} icon={Users} title={editing ? 'Modifier le client' : 'Nouveau client'}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="label">Nom</label>
@@ -357,24 +373,24 @@ export default function Clients() {
             <label className="label">Adresse</label>
             <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-end gap-2.5 pt-4 mt-1 border-t border-gray-100 dark:border-white/[0.06]">
             <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>Annuler</button>
             <button type="submit" className="btn-primary">{editing ? 'Enregistrer' : 'Créer'}</button>
           </div>
         </form>
       </Modal>
 
-      <Modal open={!!historyClient} onClose={() => setHistoryClient(null)} title={`Historique — ${historyClient?.name}`} maxWidth="max-w-lg">
+      <Modal open={!!historyClient} onClose={() => setHistoryClient(null)} icon={History} title={`Historique — ${historyClient?.name}`} maxWidth="max-w-lg">
         {clientSales.length === 0 ? (
           <div className="flex flex-col items-center text-center gap-2 py-6">
-            <div className="h-10 w-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400">
+            <div className="h-10 w-10 rounded-full bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400">
               <Receipt size={18} />
             </div>
             <p className="text-sm text-gray-400">Aucun achat enregistré pour ce client.</p>
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="flex items-center justify-between text-sm bg-gray-50 dark:bg-gray-800/60 rounded-lg px-3 py-2">
+            <div className="flex items-center justify-between text-sm bg-gray-50 dark:bg-white/[0.04] rounded-xl px-3 py-2">
               <div>
                 <p className="text-gray-400 text-xs">Total acheté</p>
                 <p className="font-semibold">{currency(historyTotal)}</p>
@@ -388,9 +404,9 @@ export default function Clients() {
               {clientSales.map((s) => {
                 const due = Number(s.total) - Number(s.amount_paid)
                 return (
-                  <div key={s.id} className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/60">
+                  <div key={s.id} className="p-3 rounded-xl bg-gray-50 dark:bg-white/[0.04]">
                     <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-semibold px-1.5 py-0.5 rounded bg-white dark:bg-gray-900/60 whitespace-nowrap">{s.invoice_number}</span>
+                      <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-white dark:bg-white/[0.04] whitespace-nowrap">{s.invoice_number}</span>
                       <p className="text-xs text-gray-400">{new Date(s.created_at).toLocaleDateString('fr-FR')}</p>
                     </div>
                     <div className="flex items-center justify-between mt-2">
@@ -401,7 +417,7 @@ export default function Clients() {
                         <span className="text-xs font-medium text-purple-600 dark:text-purple-400">Devis</span>
                       ) : due > 0 ? (
                         <button
-                          className="text-xs font-medium text-brand-600 hover:underline flex items-center gap-1"
+                          className="text-xs font-medium text-[#1d4fb8] hover:underline flex items-center gap-1"
                           onClick={() => { setPayingSale(s); setPaymentAmount(''); setPaymentError('') }}
                         >
                           <CreditCard size={12} /> Payer {currency(due)}
@@ -419,10 +435,10 @@ export default function Clients() {
       </Modal>
 
       {/* ---- Modal: paiement d'une dette client ---- */}
-      <Modal open={!!payingSale} onClose={() => setPayingSale(null)} title="Enregistrer un paiement">
+      <Modal open={!!payingSale} onClose={() => setPayingSale(null)} icon={CreditCard} title="Enregistrer un paiement">
         {payingSale && (
           <form onSubmit={handleAddPayment} className="space-y-4">
-            {paymentError && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">{paymentError}</div>}
+            {paymentError && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-xl px-3 py-2">{paymentError}</div>}
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Facture <strong className="whitespace-nowrap">{payingSale.invoice_number}</strong> — solde dû :{' '}
               <span className="text-red-500 font-semibold">{currency(Number(payingSale.total) - Number(payingSale.amount_paid))}</span>
@@ -441,13 +457,13 @@ export default function Clients() {
               />
               <button
                 type="button"
-                className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 mt-1.5"
+                className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1] mt-1.5"
                 onClick={() => setPaymentAmount(String(Number(payingSale.total) - Number(payingSale.amount_paid)))}
               >
                 Solder la totalité
               </button>
             </div>
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2.5 pt-4 mt-1 border-t border-gray-100 dark:border-white/[0.06]">
               <button type="button" className="btn-secondary" onClick={() => setPayingSale(null)}>Annuler</button>
               <button type="submit" className="btn-primary" disabled={addPayment.isPending}>
                 {addPayment.isPending ? 'Enregistrement...' : 'Confirmer le paiement'}

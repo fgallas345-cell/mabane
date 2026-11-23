@@ -1,17 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import {
-  PiggyBank,
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  ShoppingCart,
-  Search,
-  History,
-  Download,
-  MessageCircle,
-  Undo2,
-  FileText,
-  CheckCircle2,
-} from 'lucide-react'
+import PageHeader, { PanelTitle, InfoChip } from '../../components/PageHeader'
+import { PiggyBank, ArrowDownToLine, ArrowUpFromLine, ShoppingCart, Search, History, Download, MessageCircle, Undo2, FileText, CheckCircle2, Coins, Users } from 'lucide-react'
 import { useClients } from '../../hooks/useEntities'
 import {
   useDepositBalances,
@@ -25,6 +14,7 @@ import { useAuth } from '../../context/AuthContext'
 import Modal from '../../components/Modal'
 import StatCard from '../../components/StatCard'
 import ActionButton from '../../components/ActionButton'
+import DocumentSignatureSection from '../../components/DocumentSignatureSection'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Pagination from '../../components/Pagination'
 import SearchableSelect from '../../components/SearchableSelect'
@@ -191,23 +181,18 @@ export default function Deposits() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="page-title">Dépôts clients</h1>
-          <p className="page-subtitle">Argent confié par les clients : dépôts, retraits et achats payés avec leur dépôt</p>
-        </div>
-        <div className="flex gap-2">
-          <button className="btn-secondary" onClick={() => openOperation('retrait')}>
-            <ArrowUpFromLine size={16} /> Retrait
-          </button>
-          <button className="btn-primary" onClick={() => openOperation('depot')}>
-            <ArrowDownToLine size={16} /> Nouveau dépôt
-          </button>
-        </div>
-      </div>
+      <PageHeader icon={PiggyBank} badge={Coins} title="Dépôts clients" subtitle="Argent confié par les clients : dépôts, retraits et achats payés avec leur dépôt">
+        <button className="btn-soft" onClick={() => openOperation('retrait')}>
+          <ArrowUpFromLine size={17} /> Retrait
+        </button>
+        <button className="btn-cta" onClick={() => openOperation('depot')}>
+          <ArrowDownToLine size={18} strokeWidth={2.5} /> Nouveau dépôt
+        </button>
+      </PageHeader>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard
+          featured
           icon={PiggyBank}
           label="Argent des clients détenu"
           value={currency(stats.held)}
@@ -223,10 +208,10 @@ export default function Deposits() {
       </Callout>
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <div className="relative flex-1">
+          <Search size={18} className="search-icon" />
           <input
-            className="input pl-9"
+            className="search-field"
             placeholder="Rechercher un client par nom ou téléphone..."
             value={search}
             onChange={(e) => {
@@ -250,15 +235,19 @@ export default function Deposits() {
         />
       </div>
 
+      <section className="panel overflow-hidden">
+        <PanelTitle icon={Users} title="Comptes de dépôt des clients">
+          {!isLoading && <InfoChip>{rows.length} client{rows.length > 1 ? 's' : ''}</InfoChip>}
+        </PanelTitle>
       {isLoading ? (
-        <div className="card p-4 space-y-3">
+        <div className="p-4 space-y-3 border-t border-gray-100 dark:border-white/[0.06]">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-10 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+            <div key={i} className="h-10 rounded bg-gray-100 dark:bg-white/[0.06] animate-pulse" />
           ))}
         </div>
       ) : rows.length === 0 ? (
-        <div className="card p-12 flex flex-col items-center text-center gap-3">
-          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400">
+        <div className="p-12 border-t border-gray-100 dark:border-white/[0.06] flex flex-col items-center text-center gap-3">
+          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400">
             <PiggyBank size={20} />
           </div>
           <div>
@@ -268,7 +257,7 @@ export default function Deposits() {
             </p>
           </div>
           {!search && (
-            <button className="btn-primary mt-1" onClick={() => openOperation('depot')}>
+            <button className="btn-cta mt-1" onClick={() => openOperation('depot')}>
               <ArrowDownToLine size={16} /> Nouveau dépôt
             </button>
           )}
@@ -276,11 +265,11 @@ export default function Deposits() {
       ) : (
         <>
           {/* Tableau (desktop / tablette) */}
-          <div className="card hidden md:block overflow-hidden">
+          <div className="hidden md:block">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
-                  <tr className="border-b border-gray-200 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/40">
+                  <tr className="border-b border-gray-200 dark:border-white/[0.08] bg-gray-50/60 dark:bg-white/[0.03]">
                     <th className="table-th">Client</th>
                     <th className="table-th">Téléphone</th>
                     <th className="table-th">Dernière opération</th>
@@ -288,12 +277,12 @@ export default function Deposits() {
                     <th className="table-th text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                <tbody className="divide-y divide-gray-100 dark:divide-white/[0.06]">
                   {paginated.map((c) => {
                     const b = balances.get(c.id)
                     const balance = b?.balance || 0
                     return (
-                      <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
+                      <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-white/[0.03] transition-colors">
                         <td className="table-td">
                           <p className="text-sm font-medium">{c.name}</p>
                           <p className="text-xs text-gray-400">{b ? `${b.operations} opération${b.operations > 1 ? 's' : ''}` : 'Aucune opération'}</p>
@@ -301,7 +290,7 @@ export default function Deposits() {
                         <td className="table-td text-sm text-gray-500 dark:text-gray-400 tabular-nums">{c.phone || '—'}</td>
                         <td className="table-td text-sm text-gray-500 dark:text-gray-400">{formatDate(b?.lastOperationAt)}</td>
                         <td className="table-td text-right">
-                          <span className={`tabular-nums font-semibold ${balance > 0 ? 'text-brand-700 dark:text-brand-400' : 'text-gray-400'}`}>
+                          <span className={`tabular-nums font-semibold ${balance > 0 ? 'text-[#1d4fb8] dark:text-blue-300' : 'text-gray-400'}`}>
                             {currency(balance)}
                           </span>
                         </td>
@@ -321,18 +310,18 @@ export default function Deposits() {
           </div>
 
           {/* Cartes (mobile) */}
-          <div className="md:hidden space-y-3">
+          <div className="md:hidden divide-y divide-gray-100 dark:divide-white/[0.06] border-t border-gray-100 dark:border-white/[0.06]">
             {paginated.map((c) => {
               const b = balances.get(c.id)
               const balance = b?.balance || 0
               return (
-                <div key={c.id} className="card p-4">
+                <div key={c.id} className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-medium truncate">{c.name}</p>
+                      <p className="font-bold text-brand-900 dark:text-gray-100 truncate">{c.name}</p>
                       <p className="text-xs text-gray-400">{c.phone || 'Sans téléphone'} · {formatDate(b?.lastOperationAt)}</p>
                     </div>
-                    <p className={`tabular-nums font-semibold shrink-0 ${balance > 0 ? 'text-brand-700 dark:text-brand-400' : 'text-gray-400'}`}>{currency(balance)}</p>
+                    <p className={`tabular-nums font-semibold shrink-0 ${balance > 0 ? 'text-[#1d4fb8] dark:text-blue-300' : 'text-gray-400'}`}>{currency(balance)}</p>
                   </div>
                   <div className="grid grid-cols-3 gap-2 mt-3">
                     <button className="btn-secondary text-xs px-2" onClick={() => openOperation('depot', c.id)}>
@@ -350,12 +339,13 @@ export default function Deposits() {
             })}
           </div>
 
-          <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+          <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} totalItems={rows.length} pageSize={pageSize} itemLabel="clients" />
         </>
       )}
+      </section>
 
       {/* ---- Dépôt / retrait ---- */}
-      <Modal open={operation.open} onClose={closeOperation} title={isWithdrawal ? 'Retrait d’argent' : 'Nouveau dépôt'}>
+      <Modal open={operation.open} onClose={closeOperation} icon={PiggyBank} title={isWithdrawal ? 'Retrait d’argent' : 'Nouveau dépôt'}>
         <form onSubmit={handleOperation} className="space-y-4">
           <Segmented
             label="Type d'opération"
@@ -402,12 +392,12 @@ export default function Deposits() {
             />
             <div className="flex flex-wrap gap-1.5 mt-1.5">
               {(isWithdrawal ? [5000, 10000, 25000] : [10000, 25000, 50000, 100000]).map((v) => (
-                <button key={v} type="button" className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" onClick={() => setOperation((o) => ({ ...o, amount: String(v) }))}>
+                <button key={v} type="button" className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1]" onClick={() => setOperation((o) => ({ ...o, amount: String(v) }))}>
                   {currency(v)}
                 </button>
               ))}
               {isWithdrawal && currentBalance > 0 && (
-                <button type="button" className="badge bg-brand-50 text-brand-700 hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300" onClick={() => setOperation((o) => ({ ...o, amount: String(currentBalance) }))}>
+                <button type="button" className="badge bg-blue-50 text-[#1d4fb8] hover:bg-blue-100 dark:bg-blue-500/15 dark:text-blue-300" onClick={() => setOperation((o) => ({ ...o, amount: String(currentBalance) }))}>
                   Tout ({currency(currentBalance)})
                 </button>
               )}
@@ -430,7 +420,7 @@ export default function Deposits() {
           </div>
 
           {operation.clientId && amountValue > 0 && (
-            <div className="rounded-lg bg-gray-50 dark:bg-gray-800/60 p-3 text-sm flex items-center justify-between">
+            <div className="rounded-xl bg-gray-50 dark:bg-white/[0.04] p-3 text-sm flex items-center justify-between">
               <span className="text-gray-500 dark:text-gray-400">Solde après l’opération</span>
               <span className={`tabular-nums font-semibold ${newBalance < 0 ? 'text-red-500' : ''}`}>
                 {currency(currentBalance)} → {currency(newBalance)}
@@ -450,7 +440,7 @@ export default function Deposits() {
       </Modal>
 
       {/* ---- Opération enregistrée ---- */}
-      <Modal open={!!done} onClose={() => setDone(null)} title="Opération enregistrée" maxWidth="max-w-sm">
+      <Modal open={!!done} onClose={() => setDone(null)} icon={CheckCircle2} title="Opération enregistrée" maxWidth="max-w-sm">
         {done && (
           <div className="space-y-4">
             <div className="flex flex-col items-center text-center gap-2">
@@ -465,6 +455,7 @@ export default function Deposits() {
             <DetailList>
               <DetailRow label="Nouveau solde du dépôt" strong>{currency(done.entry.balance_after)}</DetailRow>
             </DetailList>
+            <DocumentSignatureSection docType="deposit_receipt" docId={done.entry.id} amount={done.entry.amount} isAdmin={isAdmin} />
             <DetailActions>
               <button className="btn-secondary" onClick={() => setDone(null)}>Fermer</button>
               <button className="btn-secondary" disabled={!normalizePhone(done.client.phone)} onClick={() => sendDepositReceiptViaWhatsApp(done.entry, done.client)}>
@@ -479,29 +470,29 @@ export default function Deposits() {
       </Modal>
 
       {/* ---- Historique d'un client (le « carnet ») ---- */}
-      <Modal open={!!historyClient} onClose={() => setHistoryClient(null)} title="Historique du dépôt" maxWidth="max-w-2xl">
+      <Modal open={!!historyClient} onClose={() => setHistoryClient(null)} icon={History} title="Historique du dépôt" maxWidth="max-w-2xl">
         {historyClient && (
           <div className="space-y-4">
             <DetailHeader
               avatar={
-                <div className="h-10 w-10 rounded-full bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400 flex items-center justify-center">
+                <div className="h-10 w-10 rounded-full bg-blue-50 text-[#1d4fb8] dark:bg-blue-500/10 dark:text-blue-300 flex items-center justify-center">
                   <PiggyBank size={18} />
                 </div>
               }
               title={historyClient.name}
               subtitle={historyClient.phone || 'Sans téléphone'}
             >
-              <span className="text-lg font-semibold tabular-nums text-brand-700 dark:text-brand-400">{currency(historyBalance)}</span>
+              <span className="text-lg font-semibold tabular-nums text-[#1d4fb8] dark:text-blue-300">{currency(historyBalance)}</span>
             </DetailHeader>
 
             {loadingHistory ? (
-              <div className="h-24 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+              <div className="h-24 rounded bg-gray-100 dark:bg-white/[0.06] animate-pulse" />
             ) : (
-              <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg overflow-hidden">
+              <div className="border border-gray-200 dark:border-white/[0.08] rounded-xl overflow-hidden">
                 <div className="overflow-x-auto max-h-[50vh]">
                   <table className="w-full border-collapse text-sm">
-                    <thead className="sticky top-0 bg-gray-50 dark:bg-gray-800">
-                      <tr className="border-b border-gray-200 dark:border-gray-700/60">
+                    <thead className="sticky top-0 bg-gray-50 dark:bg-white/[0.06]">
+                      <tr className="border-b border-gray-200 dark:border-white/[0.08]">
                         <th className="table-th">Date</th>
                         <th className="table-th">Opération</th>
                         <th className="table-th text-right">Montant</th>
@@ -509,7 +500,7 @@ export default function Deposits() {
                         <th className="table-th text-right"><span className="sr-only">Actions</span></th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                    <tbody className="divide-y divide-gray-100 dark:divide-white/[0.06]">
                       {[...history].reverse().map((entry) => (
                         <tr key={entry.id} className={entry.reversed_at ? 'opacity-50' : ''}>
                           <td className="table-td whitespace-nowrap text-gray-500 dark:text-gray-400">{formatDateTime(entry.created_at)}</td>
@@ -525,7 +516,17 @@ export default function Deposits() {
                           <td className="table-td text-right whitespace-nowrap"><AmountCell amount={entry.amount} /></td>
                           <td className="table-td text-right whitespace-nowrap tabular-nums font-semibold">{currency(entry.balance_after)}</td>
                           <td className="table-td">
-                            <div className="flex justify-end gap-0.5">
+                            <div className="flex justify-end items-center gap-0.5">
+                              {['depot', 'retrait'].includes(entry.type) && (
+                                <DocumentSignatureSection
+                                  compact
+                                  docType="deposit_receipt"
+                                  docId={entry.id}
+                                  amount={entry.amount}
+                                  isAdmin={isAdmin}
+                                  cancelled={!!entry.reversed_at}
+                                />
+                              )}
                               {['depot', 'retrait'].includes(entry.type) && (
                                 <ActionButton icon={Download} title="Reçu PDF" onClick={() => downloadReceipt(entry, historyClient)} />
                               )}
@@ -540,6 +541,15 @@ export default function Deposits() {
                   </table>
                 </div>
               </div>
+            )}
+
+            {!loadingHistory && history.length > 0 && (
+              <DocumentSignatureSection
+                docType="deposit_statement"
+                docId={historyClient.id}
+                amount={Number(history[history.length - 1].balance_after || 0)}
+                isAdmin={isAdmin}
+              />
             )}
 
             <DetailActions>

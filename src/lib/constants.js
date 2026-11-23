@@ -5,6 +5,8 @@ export const SHOP = {
   location: 'DIOUROUP - SENEGAL',
   activities: ['Quincaillerie', 'Ciment, Fer, Béton', 'Matériel Électrique', 'Plomberie & Divers'],
   phones: ['+221 77 845 28 72', '+221 78 213 33 12', '+221 77 979 20 90'],
+  ninea: '',
+  openingHours: '',
 }
 
 // Met à jour l'objet SHOP en place (même référence partagée partout : invoicePdf.js,
@@ -23,8 +25,17 @@ export function syncShopSettings(settings) {
       ? settings.activities
       : settings.activities.split(',').map((s) => s.trim()).filter(Boolean)
   }
-  const phones = [settings.phone1, settings.phone2, settings.phone3].filter(Boolean)
+  const phones = [settings.phone1, settings.phone2, settings.phone3, settings.phone4].filter(Boolean)
   if (phones.length) SHOP.phones = phones
+  if (settings.ninea !== undefined) SHOP.ninea = settings.ninea || ''
+  if (settings.opening_hours !== undefined) SHOP.openingHours = settings.opening_hours || ''
+}
+
+/** Nom lisible d'un utilisateur : « fayemomo@gmail.com » → « fayemomo » quand aucun nom n'a été saisi */
+export function displayName(fullName, fallback = 'Utilisateur') {
+  const name = String(fullName || '').trim()
+  if (!name) return fallback
+  return name.includes('@') ? name.split('@')[0] : name
 }
 
 export const ROLES = {
@@ -41,6 +52,8 @@ export const ROLE_LABELS = {
 
 export const PAYMENT_METHOD_LABELS = {
   especes: 'Espèces',
+  orange_money: 'Orange Money',
+  wave: 'Wave',
   mobile_money: 'Mobile Money',
   virement: 'Virement',
   cheque: 'Chèque',
@@ -49,7 +62,7 @@ export const PAYMENT_METHOD_LABELS = {
 }
 
 // Modes de paiement « en argent » (tout sauf le dépôt client, qui n'est pas de l'argent reçu)
-export const CASH_PAYMENT_METHODS = ['especes', 'mobile_money', 'virement', 'cheque', 'carte']
+export const CASH_PAYMENT_METHODS = ['especes', 'orange_money', 'wave', 'virement', 'cheque', 'carte']
 
 export const DEPOSIT_TYPE_LABELS = {
   depot: 'Dépôt',

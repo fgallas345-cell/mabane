@@ -15,6 +15,11 @@ Stack : **React (Vite) + Tailwind CSS + React Query + Supabase (PostgreSQL/Auth/
 - 🚚 Gestion des fournisseurs
 - 🧾 Facturation (panier, calcul automatique, remise) avec génération PDF au design personnalisé Mabane
 - 🐷 Dépôts clients : argent confié par un client, retiré plus tard ou utilisé pour payer ses factures (reçus et relevé PDF)
+- 📏 Quantités décimales : câble au mètre, clous au kilo, peinture au litre (3 décimales)
+- 📋 Inventaire physique : comptage par rayon, écarts corrigés et tracés (mouvements « Inventaire »)
+- 📈 Rapports : CA, encaissé, marge, bénéfice par période ; top produits, catégories, clients, vendeurs, modes de paiement ; export Excel
+- 📥 Import Excel du catalogue (création et mise à jour des prix en masse)
+- 💳 Orange Money et Wave ; NINEA et horaires imprimés sur les factures
 - 📲 Envoi de facture par **WhatsApp** en un clic (lien `wa.me` pré-rempli — voir note ci-dessous pour l'envoi 100% automatique côté serveur)
 - 💸 Finances (recettes, dépenses, bénéfice)
 - 📊 Tableau de bord (ventes du jour, revenus du mois, ruptures de stock, top produits)

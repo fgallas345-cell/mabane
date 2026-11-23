@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Eye, Search, User, UserPlus, Trash2 } from 'lucide-react'
+import PageHeader, { PanelTitle, InfoChip } from '../../components/PageHeader'
+import StatCard from '../../components/StatCard'
+import { Eye, Search, User, UserPlus, Trash2, ShieldCheck, Users, Wallet, UserCog, KeyRound } from 'lucide-react'
 import { useSupabaseTable } from '../../hooks/useSupabaseTable'
 import { useCreateUser, useDeleteUser } from '../../hooks/useUsersAdmin'
 import { ROLE_LABELS } from '../../lib/constants'
@@ -85,20 +87,23 @@ export default function UsersAdmin() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="page-title">Utilisateurs</h1>
-          <p className="page-subtitle">Gérez les comptes et les rôles de l'équipe (admin, caissier, employé)</p>
-        </div>
-        <button className="btn-primary" onClick={() => { setForm(emptyForm); setCreateOpen(true) }}>
-          <UserPlus size={16} /> Nouveau compte
+      <PageHeader icon={ShieldCheck} badge={KeyRound} title="Utilisateurs" subtitle="Gérez les comptes et les rôles de l'équipe (admin, caissier, employé)">
+        <button className="btn-cta" onClick={() => { setForm(emptyForm); setCreateOpen(true) }}>
+          <UserPlus size={18} strokeWidth={2.5} /> Nouveau compte
         </button>
+      </PageHeader>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard featured icon={Users} label="Comptes" value={users.length} sub="membres de l'équipe" />
+        <StatCard icon={ShieldCheck} color="brand" label="Administrateurs" value={adminCount} sub="accès complet" />
+        <StatCard icon={Wallet} color="accent" label="Caissiers" value={users.filter((u) => u.role === 'caissier').length} sub="ventes et encaissements" />
+        <StatCard icon={UserCog} color="emerald" label="Employés" value={users.filter((u) => u.role === 'employe').length} sub="opérations courantes" />
       </div>
 
-      <div className="relative max-w-md">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+      <div className="relative">
+        <Search size={18} className="search-icon" />
         <input
-          className="input pl-9"
+          className="search-field"
           placeholder="Rechercher un utilisateur ou email..."
           value={search}
           onChange={(e) => {
@@ -108,12 +113,16 @@ export default function UsersAdmin() {
         />
       </div>
 
-      <div className="card overflow-x-auto">
+      <section className="panel overflow-hidden">
+        <PanelTitle icon={Users} title="Comptes de l'équipe">
+          {!isLoading && <InfoChip>{filteredUsers.length === users.length ? `${users.length} compte${users.length > 1 ? 's' : ''}` : `${filteredUsers.length} sur ${users.length}`}</InfoChip>}
+        </PanelTitle>
+        <div className="overflow-x-auto">
         {isLoading ? (
           <div className="p-8 text-center text-gray-400">Chargement...</div>
         ) : (
           <table className="w-full">
-            <thead className="border-b border-gray-200 dark:border-gray-700/60">
+            <thead>
               <tr>
                 <th className="table-th">Nom</th>
                 <th className="table-th">Email</th>
@@ -121,19 +130,24 @@ export default function UsersAdmin() {
                 <th className="table-th text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            <tbody className="divide-y divide-gray-100 dark:divide-white/[0.06]">
               {paginatedUsers.map((u) => {
                 const isSelf = u.id === currentUser?.id
                 return (
-                  <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40">
-                    <td className="table-td font-medium flex items-center gap-2">
-                      {u.full_name}
-                      {isSelf && <span className="badge bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-400">Vous</span>}
+                  <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-white/[0.03]">
+                    <td className="table-td">
+                      <div className="flex items-center gap-3">
+                        <span className="h-9 w-9 shrink-0 rounded-full bg-gradient-to-br from-[#3b82f6] to-[#1d4ed8] text-white flex items-center justify-center text-sm font-bold">
+                          {(u.full_name || u.email || '?').trim().charAt(0).toUpperCase()}
+                        </span>
+                        <span className="font-bold text-brand-900 dark:text-gray-100">{u.full_name}</span>
+                        {isSelf && <span className="badge bg-blue-100 text-[#1d4fb8] dark:bg-blue-500/20 dark:text-blue-300">Vous</span>}
+                      </div>
                     </td>
                     <td className="table-td">{u.email}</td>
                     <td className="table-td">
                       <select
-                        className="input !py-1.5 !w-40"
+                        className="filter-select !py-2 !w-44"
                         value={u.role}
                         disabled={savingId === u.id}
                         onChange={(e) => handleRoleChange(u, e.target.value)}
@@ -144,12 +158,12 @@ export default function UsersAdmin() {
                       </select>
                     </td>
                     <td className="table-td">
-                      <div className="flex justify-end gap-1">
+                      <div className="flex justify-end gap-1.5">
                         <button
                           type="button"
                           title="Voir le détail"
                           onClick={() => setDetailUser(u)}
-                          className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200 transition-colors"
+                          className="h-9 w-9 rounded-xl flex items-center justify-center bg-gray-100 text-brand-900 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-200 dark:hover:bg-white/[0.1] transition-colors"
                         >
                           <Eye size={15} />
                         </button>
@@ -158,7 +172,7 @@ export default function UsersAdmin() {
                             type="button"
                             title="Supprimer le compte"
                             onClick={() => setConfirmDelete(u)}
-                            className="p-2 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                            className="h-9 w-9 rounded-xl flex items-center justify-center bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20 transition-colors"
                           >
                             <Trash2 size={15} />
                           </button>
@@ -171,11 +185,11 @@ export default function UsersAdmin() {
             </tbody>
           </table>
         )}
-      </div>
+        </div>
+        <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} totalItems={filteredUsers.length} pageSize={pageSize} itemLabel="comptes" />
+      </section>
 
-      <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
-
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Nouveau compte">
+      <Modal open={createOpen} onClose={() => setCreateOpen(false)} icon={UserPlus} title="Nouveau compte">
         <form onSubmit={handleCreate} className="space-y-4">
           <div>
             <label className="label">Nom complet</label>
@@ -200,7 +214,7 @@ export default function UsersAdmin() {
           <p className="text-xs text-gray-400">
             Le compte est actif immédiatement (email confirmé). Communiquez le mot de passe à la personne concernée.
           </p>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-end gap-2.5 pt-4 mt-1 border-t border-gray-100 dark:border-white/[0.06]">
             <button type="button" className="btn-secondary" onClick={() => setCreateOpen(false)}>Annuler</button>
             <button type="submit" className="btn-primary" disabled={createUser.isPending}>
               {createUser.isPending ? 'Création...' : 'Créer le compte'}
@@ -217,12 +231,12 @@ export default function UsersAdmin() {
         message={`Supprimer le compte de "${confirmDelete?.full_name}" ? La personne ne pourra plus se connecter. Ses ventes et mouvements restent dans l'historique.`}
       />
 
-      <Modal open={!!detailUser} onClose={() => setDetailUser(null)} title="Détail utilisateur">
+      <Modal open={!!detailUser} onClose={() => setDetailUser(null)} icon={User} title="Détail utilisateur">
         {detailUser && (
           <div className="space-y-4">
             <DetailHeader
               avatar={
-                <div className="h-10 w-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
+                <div className="h-10 w-10 rounded-full bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400 shrink-0">
                   <User size={18} />
                 </div>
               }

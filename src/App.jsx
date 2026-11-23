@@ -16,6 +16,8 @@ const Purchases = lazy(() => import('./pages/purchases/Purchases'))
 const Sales = lazy(() => import('./pages/sales/Sales'))
 const SmallSales = lazy(() => import('./pages/sales/SmallSales'))
 const Deposits = lazy(() => import('./pages/deposits/Deposits'))
+const Inventory = lazy(() => import('./pages/inventory/Inventory'))
+const Reports = lazy(() => import('./pages/reports/Reports'))
 const Stock = lazy(() => import('./pages/stock/Stock'))
 const Finances = lazy(() => import('./pages/expenses/Finances'))
 const Settings = lazy(() => import('./pages/settings/Settings'))
@@ -51,6 +53,8 @@ export default function App() {
               <Route path="produits" element={<Products />} />
               <Route path="categories" element={<Categories />} />
               <Route path="stock" element={<Stock />} />
+              <Route path="inventaire" element={<Inventory />} />
+              <Route path="rapports" element={<Reports />} />
               <Route path="clients" element={<Clients />} />
               <Route path="depots" element={<Deposits />} />
               <Route path="fournisseurs" element={<Suppliers />} />

@@ -37,3 +37,6 @@ Thumbs.db
 
 # Sauvegardes des données (contiennent les données des clients)
 backup/
+
+# Signature manuscrite du gérant (donnée sensible : jamais dans le dépôt)
+signature/

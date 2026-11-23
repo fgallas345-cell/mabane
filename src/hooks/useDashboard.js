@@ -50,7 +50,7 @@ export function useDashboard() {
         fetchAll(() =>
           supabase
             .from("products")
-            .select("id, name, stock, alert_threshold, sale_price")
+            .select("id, name, stock, alert_threshold, sale_price, image_url, unit")
             .order("id"),
         ),
         fetchAll(() =>
@@ -91,6 +91,62 @@ export function useDashboard() {
             .order("id"),
         ),
       ]);
+
+      // 7 derniers jours (peut déborder sur le mois précédent) + dettes clients en cours
+      const startOfWeek = new Date(startOfToday);
+      startOfWeek.setDate(startOfWeek.getDate() - 6);
+      const [paymentsWeek, smallSalesWeek, openSales] = await Promise.all([
+        fetchAll(() =>
+          supabase
+            .from("payments")
+            .select("id, amount, created_at")
+            .gte("created_at", since(startOfWeek))
+            .order("id"),
+        ),
+        fetchAll(() =>
+          supabase
+            .from("small_sales")
+            .select("id, total, created_at")
+            .gte("created_at", since(startOfWeek))
+            .is("cancelled_at", null)
+            .order("id"),
+        ),
+        fetchAll(() =>
+          supabase
+            .from("sales")
+            .select("id, client_id, total, amount_paid")
+            .in("status", ["credit", "partielle"])
+            .eq("quote_status", "confirmed")
+            .order("id"),
+        ),
+      ]);
+
+      const dayKey = (d) => new Date(d).toLocaleDateString("fr-CA"); // AAAA-MM-JJ local
+      const weekSeries = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(startOfWeek);
+        d.setDate(d.getDate() + i);
+        return {
+          key: dayKey(d),
+          label: d.toLocaleDateString("fr-FR", { weekday: "short", day: "numeric" }),
+          factures: 0,
+          caisse: 0,
+        };
+      });
+      const byKey = new Map(weekSeries.map((d) => [d.key, d]));
+      paymentsWeek.forEach((p) => {
+        const d = byKey.get(dayKey(p.created_at));
+        if (d) d.factures += Number(p.amount || 0);
+      });
+      smallSalesWeek.forEach((s) => {
+        const d = byKey.get(dayKey(s.created_at));
+        if (d) d.caisse += Number(s.total || 0);
+      });
+
+      const debtTotal = openSales.reduce(
+        (sum, s) => sum + Math.max(0, Number(s.total || 0) - Number(s.amount_paid || 0)),
+        0,
+      );
+      const debtClients = new Set(openSales.filter((s) => s.client_id).map((s) => s.client_id)).size;
 
       if (salesTodayCount.error) throw salesTodayCount.error;
       if (salesMonthCount.error) throw salesMonthCount.error;
@@ -191,6 +247,10 @@ export function useDashboard() {
         lowStock,
         topProducts,
         totalProducts: products.length,
+        weekSeries,
+        debtTotal,
+        debtClients,
+        debtInvoices: openSales.length,
       };
     },
     refetchInterval: 60000,
@@ -213,5 +273,59 @@ export function useLowStock() {
       return data.filter((p) => p.stock <= p.alert_threshold);
     },
     staleTime: 60 * 1000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Tendances des cartes du tableau de bord (encaissements, achats, clients) :
+// on charge 2 mois glissants de données brutes une seule fois, puis chaque
+// période (aujourd'hui, 7 jours, 30 jours, ce mois) est calculée côté client
+// et comparée à la période précédente de même durée — le changement de
+// période est donc instantané.
+// ---------------------------------------------------------------------------
+export function useDashboardTrends() {
+  return useQuery({
+    queryKey: ["dashboard", "trends"],
+    queryFn: async () => {
+      const now = new Date();
+      const since = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const minus60 = new Date(now);
+      minus60.setHours(0, 0, 0, 0);
+      minus60.setDate(minus60.getDate() - 60);
+      const from = (since < minus60 ? since : minus60).toISOString();
+
+      const [payments, smallSales, purchases, clients] = await Promise.all([
+        fetchAll(() =>
+          supabase.from("payments").select("id, amount, created_at").gte("created_at", from).order("id"),
+        ),
+        fetchAll(() =>
+          supabase
+            .from("small_sales")
+            .select("id, total, created_at")
+            .gte("created_at", from)
+            .is("cancelled_at", null)
+            .order("id"),
+        ),
+        fetchAll(() =>
+          supabase
+            .from("purchases")
+            .select("id, total, created_at")
+            .gte("created_at", from)
+            .neq("status", "annulee")
+            .order("id"),
+        ),
+        fetchAll(() => supabase.from("clients").select("id, created_at").order("id")),
+      ]);
+
+      return {
+        cash: [
+          ...payments.map((p) => ({ at: p.created_at, v: Number(p.amount || 0) })),
+          ...smallSales.map((s) => ({ at: s.created_at, v: Number(s.total || 0) })),
+        ],
+        purchases: purchases.map((p) => ({ at: p.created_at, v: Number(p.total || 0) })),
+        clients: clients.map((c) => ({ at: c.created_at, v: 1 })),
+      };
+    },
+    refetchInterval: 60000,
   });
 }

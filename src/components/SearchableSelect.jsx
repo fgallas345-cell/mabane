@@ -25,6 +25,18 @@ export default function SearchableSelect({
   const [activeIndex, setActiveIndex] = useState(0)
   const wrapperRef = useRef(null)
   const listRef = useRef(null)
+  const inputRef = useRef(null)
+  const skipOpenOnFocus = useRef(false)
+
+  // Focus automatique : curseur prêt dans le champ, mais la liste ne s'ouvre qu'au premier
+  // caractère tapé (elle ne masque pas l'écran). Pas de focus auto sur écran tactile (clavier).
+  useEffect(() => {
+    if (!autoFocus) return
+    const touch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
+    if (touch) return
+    skipOpenOnFocus.current = true
+    inputRef.current?.focus()
+  }, [autoFocus])
 
   const selectedOption = useMemo(() => options.find((option) => option.value === value), [options, value])
 
@@ -83,20 +95,22 @@ export default function SearchableSelect({
 
   return (
     <div className="relative" ref={wrapperRef}>
-      <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+      <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-900/70 dark:text-gray-400 pointer-events-none" />
       <input
         type="text"
-        className="input pl-9 pr-9"
+        className="input pl-10 pr-10"
         value={query}
         placeholder={placeholder}
-        autoFocus={autoFocus}
+        ref={inputRef}
         autoComplete="off"
         role="combobox"
         aria-expanded={open}
         onFocus={(e) => {
-          setOpen(true)
+          if (skipOpenOnFocus.current) skipOpenOnFocus.current = false
+          else setOpen(true)
           e.target.select()
         }}
+        onClick={() => setOpen(true)}
         onChange={(e) => {
           setQuery(e.target.value)
           setOpen(true)
@@ -131,8 +145,8 @@ export default function SearchableSelect({
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg">
-          <div className="max-h-64 overflow-y-auto py-1" ref={listRef} role="listbox">
+        <div className="absolute z-30 mt-1.5 w-full overflow-hidden rounded-2xl border border-gray-200/80 dark:border-white/10 bg-white dark:bg-darkcard shadow-lift animate-fade-in">
+          <div className="max-h-64 overflow-y-auto p-1.5" ref={listRef} role="listbox">
             {visibleOptions.length === 0 ? (
               <p className="px-3 py-2 text-sm text-gray-400">{emptyMessage}</p>
             ) : (
@@ -144,14 +158,14 @@ export default function SearchableSelect({
                   aria-selected={option.value === value}
                   data-active={index === activeIndex}
                   disabled={option.disabled}
-                  className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm disabled:cursor-not-allowed disabled:opacity-45 ${
-                    index === activeIndex ? 'bg-brand-50 dark:bg-brand-500/15' : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                  className={`flex w-full items-start gap-2 rounded-xl px-3 py-2.5 text-left text-sm disabled:cursor-not-allowed disabled:opacity-45 ${
+                    index === activeIndex ? 'bg-blue-50 dark:bg-blue-500/15' : 'hover:bg-gray-50 dark:hover:bg-white/[0.06]'
                   }`}
                   onMouseDown={(e) => e.preventDefault()}
                   onMouseEnter={() => !option.disabled && setActiveIndex(index)}
                   onClick={() => handleSelect(option)}
                 >
-                  <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-brand-600">
+                  <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-[#1d4fb8] dark:text-blue-300">
                     {option.value === value && <Check size={14} />}
                   </span>
                   <span className="min-w-0 flex-1">{option.content || getOptionLabel(option)}</span>

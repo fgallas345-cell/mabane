@@ -1,5 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Plus, Trash2, Edit, Truck, Search, PackagePlus, Wallet, RotateCcw, CreditCard, Eye } from 'lucide-react'
+import PageHeader, { PanelTitle, InfoChip } from '../../components/PageHeader'
+import StatCard from '../../components/StatCard'
+import { Plus, Trash2, Edit, Truck, Search, PackagePlus, Wallet, RotateCcw, CreditCard, Eye, ShoppingBasket, Receipt, Pencil } from 'lucide-react'
 import { useProducts } from '../../hooks/useProducts'
 import { useSuppliers } from '../../hooks/useEntities'
 import { usePurchases, useCreatePurchase, useAddPurchasePayment, useCancelPurchase, useUpdatePurchase, useUpdatePurchaseItems, useDeletePurchase } from '../../hooks/usePurchases'
@@ -12,6 +14,7 @@ import { DetailHeader, DetailList, DetailRow, Callout, DetailActions } from '../
 import RowActions from '../../components/RowActions'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { currency } from '../../lib/constants'
+import { formatQty } from '../../utils/quantity'
 import SearchableSelect from '../../components/SearchableSelect'
 import QtyStepper from '../../components/QtyStepper'
 
@@ -36,22 +39,22 @@ function StatusBadge({ status }) {
     payee: { label: 'Payé', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' },
     partielle: { label: 'Partiel', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' },
     credit: { label: 'À crédit', cls: 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400' },
-    annulee: { label: 'Annulé', cls: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400' },
+    annulee: { label: 'Annulé', cls: 'bg-gray-100 text-gray-500 dark:bg-white/[0.06] dark:text-gray-400' },
   }
   const s = map[status] || map.credit
   return <span className={`badge ${s.cls}`}>{s.label}</span>
 }
 
 // Ligne d'article d'un achat : quantité (− / +), coût unitaire, total, retrait
-function CostLine({ item, onQuantity, onCost, onRemove }) {
+function CostLine({ item, unit, onQuantity, onCost, onRemove }) {
   return (
     <div className="p-3">
       <div className="flex items-start justify-between gap-3">
-        <p className="text-sm font-medium truncate">{item.product_name}</p>
+        <p className="text-sm font-bold text-brand-900 dark:text-gray-100 truncate">{item.product_name}</p>
         <button
           type="button"
           aria-label={`Retirer ${item.product_name}`}
-          className="p-1.5 -mr-1.5 -mt-1 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg"
+          className="p-1.5 -mr-1.5 -mt-1 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl"
           onClick={onRemove}
         >
           <Trash2 size={15} />
@@ -61,7 +64,7 @@ function CostLine({ item, onQuantity, onCost, onRemove }) {
         <div className="flex items-end gap-3">
           <div>
             <p className="text-[11px] text-gray-400 mb-1">Quantité</p>
-            <QtyStepper value={item.quantity} onChange={onQuantity} />
+            <QtyStepper value={item.quantity} unit={unit} onChange={onQuantity} />
           </div>
           <div>
             <p className="text-[11px] text-gray-400 mb-1">Coût unitaire</p>
@@ -86,6 +89,8 @@ function CostLine({ item, onQuantity, onCost, onRemove }) {
 export default function Purchases() {
   const { user, isAdmin } = useAuth()
   const { data: products = [] } = useProducts()
+  // Unité d'un produit (m, kg, L... → quantité décimale autorisée)
+  const unitOf = (productId) => products.find((p) => p.id === productId)?.unit
   const { data: suppliers = [] } = useSuppliers()
   const { data: purchases = [], isLoading } = usePurchases()
   const toast = useToast()
@@ -362,6 +367,19 @@ export default function Purchases() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
 
+  const purchaseStats = useMemo(() => {
+    const start = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+    const valid = purchases.filter((pu) => pu.status !== 'annulee')
+    const month = valid.filter((pu) => new Date(pu.created_at) >= start)
+    return {
+      count: valid.length,
+      monthCount: month.length,
+      monthTotal: month.reduce((sum, pu) => sum + Number(pu.total || 0), 0),
+      suppliers: new Set(month.map((pu) => pu.supplier_id || pu.supplier_name)).size,
+      unpaid: valid.filter((pu) => Number(pu.total) - Number(pu.amount_paid) > 0).length,
+    }
+  }, [purchases])
+
   useEffect(() => {
     if (page > totalPages) setPage(totalPages)
   }, [page, totalPages])
@@ -374,73 +392,65 @@ export default function Purchases() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="page-title">Achats fournisseurs</h1>
-          <p className="page-subtitle">
-            Enregistrez vos approvisionnements : le stock est mis à jour automatiquement.
-          </p>
-        </div>
-        <button className="btn-primary" onClick={() => setNewPurchaseOpen(true)}>
-          <Plus size={16} /> Nouvel achat
+      <PageHeader icon={PackagePlus} badge={Truck} title="Achats fournisseurs" subtitle="Enregistrez vos approvisionnements : le stock est mis à jour automatiquement">
+        <button className="btn-cta" onClick={() => setNewPurchaseOpen(true)}>
+          <Plus size={18} strokeWidth={2.5} /> Nouvel achat
         </button>
+      </PageHeader>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard featured icon={ShoppingBasket} label="Achats ce mois" value={currency(purchaseStats.monthTotal)} sub={`${purchaseStats.monthCount} achat${purchaseStats.monthCount > 1 ? 's' : ''}`} />
+        <StatCard icon={Receipt} color="brand" label="Achats enregistrés" value={purchaseStats.count} sub="hors annulés" />
+        <StatCard icon={Truck} color="violet" label="Fournisseurs actifs" value={purchaseStats.suppliers} sub="ce mois-ci" />
+        <StatCard icon={Wallet} color="red" label="Dette fournisseurs" value={currency(totalDette)} sub={`${purchaseStats.unpaid} achat${purchaseStats.unpaid > 1 ? 's' : ''} à régler`} />
       </div>
 
-      {totalDette > 0 && (
-        <div className="card p-4 bg-red-50/60 dark:bg-red-500/10 border-red-200 dark:border-red-500/30 flex items-center gap-2.5">
-          <Wallet size={18} className="text-red-600 dark:text-red-400 shrink-0" />
-          <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-            Dette totale envers vos fournisseurs : {currency(totalDette)}
-          </p>
-        </div>
-      )}
-
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <div className="relative flex-1">
+          <Search size={18} className="search-icon" />
           <input
-            className="input pl-9"
+            className="search-field"
             placeholder="Rechercher un fournisseur, un produit, un N° d'achat..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
           />
         </div>
-        {!isLoading && (
-          <p className="text-xs text-gray-400 sm:ml-auto">
-            {filtered.length} achat{filtered.length > 1 ? 's' : ''}{search && ` correspondant à "${search}"`}
-          </p>
-        )}
       </div>
 
+      <section className="panel overflow-hidden">
+        <PanelTitle icon={PackagePlus} title="Liste des achats">
+          {totalDette > 0 && <InfoChip tone="red">Dette : {currency(totalDette)}</InfoChip>}
+          {!isLoading && <InfoChip>{filtered.length === purchases.length ? `${purchases.length} achat${purchases.length > 1 ? 's' : ''} au total` : `${filtered.length} sur ${purchases.length}`}</InfoChip>}
+        </PanelTitle>
       {isLoading ? (
-        <div className="card p-4 space-y-3">
+        <div className="p-4 space-y-3 border-t border-gray-100 dark:border-white/[0.06]">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3 p-2 animate-pulse">
-              <div className="h-8 w-8 rounded-full bg-gray-100 dark:bg-gray-800" />
+              <div className="h-8 w-8 rounded-full bg-gray-100 dark:bg-white/[0.06]" />
               <div className="flex-1 space-y-2">
-                <div className="h-3 w-1/4 rounded bg-gray-100 dark:bg-gray-800" />
-                <div className="h-2.5 w-1/3 rounded bg-gray-100 dark:bg-gray-800" />
+                <div className="h-3 w-1/4 rounded bg-gray-100 dark:bg-white/[0.06]" />
+                <div className="h-2.5 w-1/3 rounded bg-gray-100 dark:bg-white/[0.06]" />
               </div>
-              <div className="h-3 w-16 rounded bg-gray-100 dark:bg-gray-800" />
+              <div className="h-3 w-16 rounded bg-gray-100 dark:bg-white/[0.06]" />
             </div>
           ))}
         </div>
       ) : purchases.length === 0 ? (
-        <div className="card p-12 flex flex-col items-center text-center gap-3">
-          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400">
+        <div className="p-12 border-t border-gray-100 dark:border-white/[0.06] flex flex-col items-center text-center gap-3">
+          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400">
             <PackagePlus size={20} />
           </div>
           <div>
             <p className="font-medium">Aucun achat enregistré</p>
             <p className="text-sm text-gray-400 mt-0.5">Enregistrez votre premier approvisionnement fournisseur.</p>
           </div>
-          <button className="btn-primary mt-1" onClick={() => setNewPurchaseOpen(true)}>
+          <button className="btn-cta mt-1" onClick={() => setNewPurchaseOpen(true)}>
             <Plus size={16} /> Nouvel achat
           </button>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="card p-12 flex flex-col items-center text-center gap-2">
-          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400">
+        <div className="p-12 border-t border-gray-100 dark:border-white/[0.06] flex flex-col items-center text-center gap-2">
+          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400">
             <Search size={20} />
           </div>
           <p className="font-medium">Aucun achat ne correspond à "{search}"</p>
@@ -448,11 +458,11 @@ export default function Purchases() {
       ) : (
         <>
           {/* ---- Tableau (desktop) ---- */}
-          <div className="card hidden md:block overflow-hidden">
+          <div className="hidden md:block">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
-                  <tr className="border-b border-gray-200 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/40">
+                  <tr className="border-b border-gray-200 dark:border-white/[0.08] bg-gray-50/60 dark:bg-white/[0.03]">
                     <th className="table-th">N° achat</th>
                     <th className="table-th">Fournisseur</th>
                     <th className="table-th">Date</th>
@@ -462,20 +472,20 @@ export default function Purchases() {
                     <th className="table-th text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                <tbody className="divide-y divide-gray-100 dark:divide-white/[0.06]">
                   {paginated.map((p) => {
                     const due = Number(p.total) - Number(p.amount_paid)
                     return (
                       <tr
                         key={p.id}
-                        className="hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors cursor-pointer"
+                        className="hover:bg-gray-50 dark:hover:bg-white/[0.03] transition-colors cursor-pointer"
                         onClick={() => setDetailPurchase(p)}
                       >
-                        <td className="table-td font-mono text-xs whitespace-nowrap">{p.purchase_number}</td>
+                        <td className="table-td text-xs whitespace-nowrap">{p.purchase_number}</td>
                         <td className="table-td">
                           <div className="flex items-center gap-2">
                             <Truck size={14} className="text-gray-400 shrink-0" />
-                            <span className="font-medium truncate max-w-[160px]">{p.supplier_name || p.suppliers?.name || '—'}</span>
+                            <span className="font-bold text-brand-900 dark:text-gray-100 truncate max-w-[160px]">{p.supplier_name || p.suppliers?.name || '—'}</span>
                           </div>
                         </td>
                         <td className="table-td text-gray-500 dark:text-gray-400 whitespace-nowrap">{formatRelativeDate(p.created_at)}</td>
@@ -516,19 +526,19 @@ export default function Purchases() {
           </div>
 
           {/* ---- Vue cartes (mobile) ---- */}
-          <div className="md:hidden space-y-2.5">
+          <div className="md:hidden divide-y divide-gray-100 dark:divide-white/[0.06] border-t border-gray-100 dark:border-white/[0.06]">
             {paginated.map((p) => {
               const due = Number(p.total) - Number(p.amount_paid)
               return (
-                <div key={p.id} className="card p-4" onClick={() => setDetailPurchase(p)}>
+                <div key={p.id} className="p-4" onClick={() => setDetailPurchase(p)}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="h-9 w-9 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
+                      <div className="h-9 w-9 rounded-full bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400 shrink-0">
                         <Truck size={15} />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{p.supplier_name || p.suppliers?.name || '—'}</p>
-                        <span className="inline-block mt-0.5 font-mono text-[11px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 whitespace-nowrap">
+                        <p className="text-sm font-bold text-brand-900 dark:text-gray-100 truncate">{p.supplier_name || p.suppliers?.name || '—'}</p>
+                        <span className="inline-block mt-0.5 text-[11px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.06] text-gray-500 whitespace-nowrap">
                           {p.purchase_number}
                         </span>
                       </div>
@@ -538,7 +548,7 @@ export default function Purchases() {
                       {due > 0 && <p className="text-[10px] font-semibold text-red-500 mt-0.5">Dû : {currency(due)}</p>}
                     </div>
                   </div>
-                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 dark:border-white/[0.06]">
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-400">{formatRelativeDate(p.created_at)}</span>
                       <StatusBadge status={p.status} />
@@ -570,12 +580,13 @@ export default function Purchases() {
             })}
           </div>
 
-          <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+          <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} totalItems={filtered.length} pageSize={pageSize} itemLabel="achats" />
         </>
       )}
+      </section>
 
       {/* ---- Modal: nouvel achat ---- */}
-      <Modal open={newPurchaseOpen} onClose={() => setNewPurchaseOpen(false)} title="Nouvel achat fournisseur" maxWidth="max-w-2xl">
+      <Modal open={newPurchaseOpen} onClose={() => setNewPurchaseOpen(false)} icon={PackagePlus} title="Nouvel achat fournisseur" maxWidth="max-w-2xl">
         <form onSubmit={handleCreatePurchase}>
           <div className="space-y-4">
             <div>
@@ -606,16 +617,17 @@ export default function Purchases() {
             </div>
 
             {cart.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 py-8 text-center">
+              <div className="rounded-xl border border-dashed border-gray-200 dark:border-white/10 py-8 text-center">
                 <PackagePlus size={22} className="mx-auto text-gray-300 dark:text-gray-600" />
                 <p className="text-sm text-gray-400 mt-2">Aucun produit ajouté.</p>
               </div>
             ) : (
-              <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
+              <div className="border border-gray-200 dark:border-white/[0.08] rounded-xl divide-y divide-gray-100 dark:divide-white/[0.06]">
                 {cart.map((item) => (
                   <CostLine
                     key={item.product_id}
                     item={item}
+                    unit={unitOf(item.product_id)}
                     onQuantity={(q) => updateCartField(item.product_id, 'quantity', q)}
                     onCost={(c) => updateCartField(item.product_id, 'unit_cost', c)}
                     onRemove={() => removeFromCart(item.product_id)}
@@ -629,8 +641,8 @@ export default function Purchases() {
                 <label className="label" htmlFor="purchase-paid">Payé maintenant (FCFA)</label>
                 <input id="purchase-paid" type="number" inputMode="numeric" min="0" max={subtotal} className="input" placeholder="0" value={amountPaid} onFocus={(e) => e.target.select()} onChange={(e) => setAmountPaid(e.target.value)} />
                 <div className="flex flex-wrap gap-1.5 mt-1.5">
-                  <button type="button" className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" onClick={() => setAmountPaid(String(subtotal))}>Tout payer</button>
-                  <button type="button" className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" onClick={() => setAmountPaid('0')}>À crédit</button>
+                  <button type="button" className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1]" onClick={() => setAmountPaid(String(subtotal))}>Tout payer</button>
+                  <button type="button" className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1]" onClick={() => setAmountPaid('0')}>À crédit</button>
                 </div>
               </div>
               <div>
@@ -640,7 +652,7 @@ export default function Purchases() {
             </div>
           </div>
 
-          <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-5 px-5 sm:px-6 py-3 bg-white dark:bg-darkcard border-t border-gray-200 dark:border-gray-700/60 rounded-b-xl">
+          <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-5 px-5 sm:px-6 py-3 bg-white dark:bg-darkcard border-t border-gray-200 dark:border-white/[0.08] rounded-b-xl">
             {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400 mb-2">{error}</p>}
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -662,7 +674,7 @@ export default function Purchases() {
       </Modal>
 
       {/* ---- Modal: modifier un achat ---- */}
-      <Modal open={!!editPurchase} onClose={() => setEditPurchase(null)} title={<>Modifier l'achat <span className="whitespace-nowrap font-mono">{editPurchase?.purchase_number}</span></>} maxWidth="max-w-2xl">
+      <Modal open={!!editPurchase} onClose={() => setEditPurchase(null)} icon={Pencil} title={<>Modifier l'achat <span className="whitespace-nowrap">{editPurchase?.purchase_number}</span></>} maxWidth="max-w-2xl">
         {editPurchase && (() => {
           const editTotal = editPurchaseItems.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unit_cost) || 0), 0)
           return (
@@ -691,7 +703,7 @@ export default function Purchases() {
                   />
                 </div>
 
-                <div className="border border-gray-200 dark:border-gray-700/60 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
+                <div className="border border-gray-200 dark:border-white/[0.08] rounded-xl divide-y divide-gray-100 dark:divide-white/[0.06]">
                   {editPurchaseItems.length === 0 ? (
                     <p className="text-sm text-gray-400 p-4 text-center">Aucun article : ajoutez-en au moins un.</p>
                   ) : (
@@ -699,6 +711,7 @@ export default function Purchases() {
                       <CostLine
                         key={item.id}
                         item={item}
+                        unit={unitOf(item.product_id)}
                         onQuantity={(q) => handleEditPurchaseItemQuantity(item.id, q)}
                         onCost={(c) => handleEditPurchaseItemCost(item.id, c)}
                         onRemove={() => handleRemoveEditPurchaseItem(item.id)}
@@ -715,7 +728,7 @@ export default function Purchases() {
                 <p className="text-sm text-gray-500 dark:text-gray-400">Déjà payé : <span className="font-medium tabular-nums">{currency(editPurchase.amount_paid)}</span></p>
               </div>
 
-              <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-5 px-5 sm:px-6 py-3 bg-white dark:bg-darkcard border-t border-gray-200 dark:border-gray-700/60 rounded-b-xl">
+              <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-5 px-5 sm:px-6 py-3 bg-white dark:bg-darkcard border-t border-gray-200 dark:border-white/[0.08] rounded-b-xl">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-xs text-gray-400">Nouveau total</p>
@@ -738,7 +751,7 @@ export default function Purchases() {
       <Modal
         open={!!detailPurchase}
         onClose={() => setDetailPurchase(null)}
-        title={<>Achat <span className="whitespace-nowrap font-mono">{detailPurchase?.purchase_number}</span></>}
+        icon={PackagePlus} title={<>Achat <span className="whitespace-nowrap">{detailPurchase?.purchase_number}</span></>}
         maxWidth="max-w-lg"
       >
         {detailPurchase && (() => {
@@ -748,7 +761,7 @@ export default function Purchases() {
             <div className="space-y-4">
               <DetailHeader
                 avatar={
-                  <div className="h-9 w-9 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
+                  <div className="h-9 w-9 rounded-full bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400 shrink-0">
                     <Truck size={16} />
                   </div>
                 }
@@ -765,7 +778,7 @@ export default function Purchases() {
                   <div key={item.id} className="flex items-start justify-between gap-4 px-3 py-2.5 text-sm">
                     <div className="min-w-0">
                       <p className="font-medium">{item.product_name}</p>
-                      <p className="text-xs text-gray-400 tabular-nums">{item.quantity} × {currency(item.unit_cost)}</p>
+                      <p className="text-xs text-gray-400 tabular-nums">{formatQty(item.quantity)} × {currency(item.unit_cost)}</p>
                     </div>
                     <span className="font-medium tabular-nums whitespace-nowrap">{currency(item.line_total)}</span>
                   </div>
@@ -796,10 +809,10 @@ export default function Purchases() {
       </Modal>
 
       {/* ---- Modal: paiement ---- */}
-      <Modal open={!!paymentOpen} onClose={() => setPaymentOpen(null)} title="Enregistrer un paiement">
+      <Modal open={!!paymentOpen} onClose={() => setPaymentOpen(null)} icon={CreditCard} title="Enregistrer un paiement">
         {paymentOpen && (
           <form onSubmit={handleAddPayment} className="space-y-4">
-            {paymentError && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">{paymentError}</div>}
+            {paymentError && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-xl px-3 py-2">{paymentError}</div>}
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Fournisseur <strong>{paymentOpen.supplier_name || paymentOpen.suppliers?.name}</strong> — solde dû :{' '}
               <span className="text-red-500 font-semibold">{currency(Number(paymentOpen.total) - Number(paymentOpen.amount_paid))}</span>
@@ -818,13 +831,13 @@ export default function Purchases() {
               />
               <button
                 type="button"
-                className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 mt-1.5"
+                className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1] mt-1.5"
                 onClick={() => setPaymentAmount(String(Number(paymentOpen.total) - Number(paymentOpen.amount_paid)))}
               >
                 Solder la totalité
               </button>
             </div>
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2.5 pt-4 mt-1 border-t border-gray-100 dark:border-white/[0.06]">
               <button type="button" className="btn-secondary" onClick={() => setPaymentOpen(null)}>Annuler</button>
               <button type="submit" className="btn-primary" disabled={addPayment.isPending}>
                 {addPayment.isPending ? 'Enregistrement...' : 'Confirmer le paiement'}

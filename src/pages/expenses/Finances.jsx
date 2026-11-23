@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Plus, TrendingUp, TrendingDown, Wallet, FileSpreadsheet, Search, Receipt, Trash2, Pencil, Eye } from 'lucide-react'
+import PageHeader, { PanelTitle, InfoChip } from '../../components/PageHeader'
+import { Plus, TrendingUp, TrendingDown, Wallet, FileSpreadsheet, Search, Receipt, Trash2, Pencil, Eye, Landmark, Coins, Percent } from 'lucide-react'
 import { useExpenses } from '../../hooks/useEntities'
 import { useSales } from '../../hooks/useSales'
 import { useSmallSales } from '../../hooks/useSmallSales'
@@ -135,32 +136,27 @@ export default function Finances() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="page-title">Finances</h1>
-          <p className="page-subtitle">Recettes, dépenses et bénéfices</p>
-        </div>
-        <div className="flex gap-2">
-          <button className="btn-secondary" onClick={() => exportSalesToExcel(activeSales)}>
-            <FileSpreadsheet size={16} /> Export ventes
-          </button>
-          <button className="btn-primary" onClick={openCreate}>
-            <Plus size={16} /> Nouvelle dépense
-          </button>
-        </div>
-      </div>
+      <PageHeader icon={Landmark} badge={Coins} title="Finances & dépenses" subtitle="Recettes, dépenses et bénéfice réel de la boutique">
+        <button className="btn-soft" onClick={() => exportSalesToExcel(activeSales)}>
+          <FileSpreadsheet size={17} /> Export ventes
+        </button>
+        <button className="btn-cta" onClick={openCreate}>
+          <Plus size={18} strokeWidth={2.5} /> Nouvelle dépense
+        </button>
+      </PageHeader>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatCard icon={TrendingUp} label="Chiffre d'affaires (facturé)" value={currency(totalRevenue)} color="emerald" />
-        <StatCard icon={TrendingDown} label="Dépenses totales" value={currency(totalExpenses)} color="red" />
-        <StatCard icon={Wallet} label="Bénéfice réel" value={currency(profit)} color={profit >= 0 ? 'emerald' : 'red'} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard featured icon={TrendingUp} label="Chiffre d'affaires (facturé)" value={currency(totalRevenue)} sub="factures confirmées" />
+        <StatCard icon={Percent} color="brand" label="Marge brute" value={currency(grossMargin)} sub="ventes − coût d'achat" />
+        <StatCard icon={TrendingDown} color="red" label="Dépenses totales" value={currency(totalExpenses)} sub={`${expenses.length} dépense${expenses.length > 1 ? 's' : ''}`} />
+        <StatCard icon={Wallet} color={profit >= 0 ? 'emerald' : 'red'} label="Bénéfice réel" value={currency(profit)} sub="marge − dépenses" />
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <div className="relative flex-1">
+          <Search size={18} className="search-icon" />
           <input
-            className="input pl-9"
+            className="search-field"
             placeholder="Rechercher par libellé ou catégorie..."
             value={search}
             onChange={(e) => {
@@ -169,45 +165,48 @@ export default function Finances() {
             }}
           />
         </div>
-        {!isLoading && expenses.length > 0 && (
-          <p className="text-xs text-gray-400 sm:ml-auto">
-            {filteredExpenses.length} dépense{filteredExpenses.length > 1 ? 's' : ''}
-            {search && ` correspondant à "${search}"`}
-          </p>
-        )}
       </div>
 
+      <section className="panel overflow-hidden">
+        <PanelTitle icon={Receipt} title="Dépenses">
+          {!isLoading && expenses.length > 0 && <InfoChip tone="red">{filteredExpenses.length === expenses.length ? `${expenses.length} dépense${expenses.length > 1 ? 's' : ''}` : `${filteredExpenses.length} sur ${expenses.length}`}</InfoChip>}
+          {expenses.length > 0 && (
+            <button type="button" className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-white/[0.06] dark:hover:bg-white/[0.1] px-3.5 py-1.5 text-xs font-semibold text-brand-900 dark:text-gray-200" onClick={() => exportExpensesToExcel(expenses)}>
+              <FileSpreadsheet size={13} /> Exporter en Excel
+            </button>
+          )}
+        </PanelTitle>
       {/* ---- État de chargement ---- */}
       {isLoading ? (
-        <div className="card p-4 space-y-3">
-          <div className="h-4 w-24 rounded bg-gray-100 dark:bg-gray-800 mb-2" />
+        <div className="p-4 space-y-3 border-t border-gray-100 dark:border-white/[0.06]">
+          <div className="h-4 w-24 rounded bg-gray-100 dark:bg-white/[0.06] mb-2" />
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3 p-2 animate-pulse">
-              <div className="h-8 w-8 rounded-full bg-gray-100 dark:bg-gray-800" />
+              <div className="h-8 w-8 rounded-full bg-gray-100 dark:bg-white/[0.06]" />
               <div className="flex-1 space-y-2">
-                <div className="h-3 w-1/4 rounded bg-gray-100 dark:bg-gray-800" />
-                <div className="h-2.5 w-1/6 rounded bg-gray-100 dark:bg-gray-800" />
+                <div className="h-3 w-1/4 rounded bg-gray-100 dark:bg-white/[0.06]" />
+                <div className="h-2.5 w-1/6 rounded bg-gray-100 dark:bg-white/[0.06]" />
               </div>
-              <div className="h-3 w-14 rounded bg-gray-100 dark:bg-gray-800" />
+              <div className="h-3 w-14 rounded bg-gray-100 dark:bg-white/[0.06]" />
             </div>
           ))}
         </div>
       ) : expenses.length === 0 ? (
-        <div className="card p-12 flex flex-col items-center text-center gap-3">
-          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400">
+        <div className="p-12 border-t border-gray-100 dark:border-white/[0.06] flex flex-col items-center text-center gap-3">
+          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400">
             <Receipt size={20} />
           </div>
           <div>
             <p className="font-medium">Aucune dépense enregistrée</p>
             <p className="text-sm text-gray-400 mt-0.5">Ajoutez vos dépenses pour suivre votre bénéfice réel.</p>
           </div>
-          <button className="btn-primary mt-1" onClick={openCreate}>
+          <button className="btn-cta mt-1" onClick={openCreate}>
             <Plus size={16} /> Nouvelle dépense
           </button>
         </div>
       ) : filteredExpenses.length === 0 ? (
-        <div className="card p-12 flex flex-col items-center text-center gap-2">
-          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400">
+        <div className="p-12 border-t border-gray-100 dark:border-white/[0.06] flex flex-col items-center text-center gap-2">
+          <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-400">
             <Search size={20} />
           </div>
           <p className="font-medium">Aucune dépense ne correspond à "{search}"</p>
@@ -216,17 +215,11 @@ export default function Finances() {
       ) : (
         <>
           {/* ---- Tableau (desktop / tablette) ---- */}
-          <div className="card hidden md:block overflow-hidden">
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700/60 flex items-center justify-between">
-              <h3 className="font-semibold">Dépenses</h3>
-              <button className="text-sm text-brand-600 hover:underline flex items-center gap-1.5" onClick={() => exportExpensesToExcel(expenses)}>
-                <FileSpreadsheet size={13} /> Exporter en Excel
-              </button>
-            </div>
+          <div className="hidden md:block">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
-                  <tr className="border-b border-gray-200 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/40">
+                  <tr className="border-b border-gray-200 dark:border-white/[0.08] bg-gray-50/60 dark:bg-white/[0.03]">
                     <th className="table-th">Libellé</th>
                     <th className="table-th">Catégorie</th>
                     <th className="table-th text-right">Montant</th>
@@ -234,15 +227,15 @@ export default function Finances() {
                     <th className="table-th text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                <tbody className="divide-y divide-gray-100 dark:divide-white/[0.06]">
                   {paginatedExpenses.map((e) => (
-                    <tr key={e.id} className="group hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
+                    <tr key={e.id} className="group hover:bg-gray-50 dark:hover:bg-white/[0.03] transition-colors">
                       <td className="table-td">
                         <div className="flex items-center gap-2.5">
                           <div className="h-8 w-8 rounded-full bg-red-50 dark:bg-red-500/10 flex items-center justify-center text-red-500 shrink-0">
                             <TrendingDown size={14} />
                           </div>
-                          <span className="font-medium truncate max-w-[200px]">{e.label}</span>
+                          <span className="font-bold text-brand-900 dark:text-gray-100 truncate max-w-[200px]">{e.label}</span>
                         </div>
                       </td>
                       <td className="table-td">
@@ -269,28 +262,28 @@ export default function Finances() {
           </div>
 
           {/* ---- Vue cartes (mobile) ---- */}
-          <div className="md:hidden space-y-2.5">
+          <div className="md:hidden divide-y divide-gray-100 dark:divide-white/[0.06] border-t border-gray-100 dark:border-white/[0.06]">
             <div className="flex items-center justify-between px-1">
               <h3 className="font-semibold text-sm">Dépenses</h3>
-              <button className="text-xs text-brand-600 hover:underline flex items-center gap-1" onClick={() => exportExpensesToExcel(expenses)}>
+              <button className="text-xs text-[#1d4fb8] hover:underline flex items-center gap-1" onClick={() => exportExpensesToExcel(expenses)}>
                 <FileSpreadsheet size={12} /> Exporter
               </button>
             </div>
             {paginatedExpenses.map((e) => (
-              <div key={e.id} className="card p-4">
+              <div key={e.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div className="h-9 w-9 rounded-full bg-red-50 dark:bg-red-500/10 flex items-center justify-center text-red-500 shrink-0">
                       <TrendingDown size={15} />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{e.label}</p>
+                      <p className="text-sm font-bold text-brand-900 dark:text-gray-100 truncate">{e.label}</p>
                       <div className="mt-0.5"><CategoryBadge name={e.category} /></div>
                     </div>
                   </div>
                   <span className="text-red-600 dark:text-red-400 font-semibold tabular-nums shrink-0">-{currency(e.amount)}</span>
                 </div>
-                <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+                <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 dark:border-white/[0.06]">
                   <span className="text-xs text-gray-400">{formatRelativeDate(e.created_at)}</span>
                   <div className="flex gap-1">
                     <ActionButton icon={Eye} title="Voir le détail" onClick={() => setDetailExpense(e)} />
@@ -302,11 +295,12 @@ export default function Finances() {
             ))}
           </div>
 
-          <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+          <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} totalItems={filteredExpenses.length} pageSize={pageSize} itemLabel="dépenses" />
         </>
       )}
+      </section>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Modifier la dépense' : 'Nouvelle dépense'}>
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} icon={Receipt} title={editing ? 'Modifier la dépense' : 'Nouvelle dépense'}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="label">Libellé</label>
@@ -320,7 +314,7 @@ export default function Finances() {
             <label className="label">Catégorie</label>
             <input className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Fonctionnement, achat..." />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-end gap-2.5 pt-4 mt-1 border-t border-gray-100 dark:border-white/[0.06]">
             <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>Annuler</button>
             <button type="submit" className="btn-primary" disabled={createItem.isPending || updateItem.isPending}>
               {editing ? 'Enregistrer' : 'Créer'}
@@ -329,7 +323,7 @@ export default function Finances() {
         </form>
       </Modal>
 
-      <Modal open={!!detailExpense} onClose={() => setDetailExpense(null)} title="Détail de la dépense">
+      <Modal open={!!detailExpense} onClose={() => setDetailExpense(null)} icon={Receipt} title="Détail de la dépense">
         {detailExpense && (
           <div className="space-y-4">
             <DetailHeader

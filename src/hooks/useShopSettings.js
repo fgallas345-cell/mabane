@@ -13,6 +13,9 @@ export const DEFAULT_SHOP_SETTINGS = {
   phone1: SHOP.phones[0] || '',
   phone2: SHOP.phones[1] || '',
   phone3: SHOP.phones[2] || '',
+  phone4: SHOP.phones[3] || '',
+  ninea: '',
+  opening_hours: '',
   low_stock_default_threshold: 5,
 }
 

@@ -37,8 +37,8 @@ create table if not exists public.products (
   category_id uuid references public.categories(id) on delete set null,
   purchase_price numeric(12,2) not null default 0,
   sale_price numeric(12,2) not null default 0,
-  stock integer not null default 0,
-  alert_threshold integer not null default 5,
+  stock numeric(12,3) not null default 0,
+  alert_threshold numeric(12,3) not null default 5,
   image_url text,
   unit text default 'unité',
   created_at timestamptz default now(),
@@ -118,7 +118,7 @@ create table if not exists public.purchase_items (
   purchase_id uuid references public.purchases(id) on delete cascade,
   product_id uuid references public.products(id) on delete set null,
   product_name text not null, -- copie du nom au moment de l'achat
-  quantity integer not null,
+  quantity numeric(12,3) not null,
   unit_cost numeric(12,2) not null default 0, -- prix d'achat unitaire payé à CE fournisseur
   line_total numeric(12,2) not null
 );
@@ -156,7 +156,7 @@ update public.sales set payment_method = 'especes' where payment_method is null;
 alter table public.sales alter column payment_method set default 'especes';
 alter table public.sales alter column payment_method set not null;
 alter table public.sales drop constraint if exists sales_payment_method_check;
-alter table public.sales add constraint sales_payment_method_check check (payment_method in ('especes', 'mobile_money', 'virement', 'cheque', 'carte', 'depot'));
+alter table public.sales add constraint sales_payment_method_check check (payment_method in ('especes', 'orange_money', 'wave', 'mobile_money', 'virement', 'cheque', 'carte', 'depot'));
 alter table public.sales add column if not exists receipt_number text;
 alter table public.sales add column if not exists last_payment_at timestamptz;
 alter table public.sales add column if not exists updated_at timestamptz default now();
@@ -169,7 +169,7 @@ create table if not exists public.sale_items (
   sale_id uuid references public.sales(id) on delete cascade,
   product_id uuid references public.products(id) on delete set null,
   product_name text not null, -- copie du nom au moment de la vente
-  quantity integer not null,
+  quantity numeric(12,3) not null,
   purchase_price numeric(12,2) not null default 0, -- copie du prix d'achat au moment de la vente
   unit_price numeric(12,2) not null,
   line_total numeric(12,2) not null
@@ -222,7 +222,7 @@ create table if not exists public.delivery_items (
   delivery_id uuid references public.deliveries(id) on delete cascade,
   sale_item_id uuid references public.sale_items(id) on delete cascade,
   product_id uuid references public.products(id) on delete set null,
-  quantity_delivered integer not null check (quantity_delivered > 0)
+  quantity_delivered numeric(12,3) not null check (quantity_delivered > 0)
 );
 
 create index if not exists idx_delivery_items_delivery on public.delivery_items(delivery_id);
@@ -235,7 +235,7 @@ create table if not exists public.stock_movements (
   id uuid primary key default uuid_generate_v4(),
   product_id uuid references public.products(id) on delete cascade,
   type text not null check (type in ('entree', 'sortie')),
-  quantity integer not null,
+  quantity numeric(12,3) not null,
   reason text,
   user_id uuid references public.users(id) on delete set null,
   created_at timestamptz default now()
@@ -274,6 +274,9 @@ create table if not exists public.shop_settings (
 
 -- Migration idempotente pour les bases existantes : la colonne activities peut manquer
 alter table public.shop_settings add column if not exists activities text not null default 'Quincaillerie, matériaux de construction, électricité, plomberie';
+alter table public.shop_settings add column if not exists phone4 text;
+alter table public.shop_settings add column if not exists ninea text;          -- identifiant fiscal, imprimé sur les factures
+alter table public.shop_settings add column if not exists opening_hours text;  -- ex. « 8h à 20h, du lundi au samedi »
 
 insert into public.shop_settings (id, name, owner, address, activities, phone1, phone2, phone3)
 values (true, 'QUINCAILLERIE MABANE', 'MAMADOU FAYE Alias MOMO FAYE', 'DIOUROUP - SENEGAL', 'Quincaillerie, matériaux de construction, électricité, plomberie', '+221 77 845 28 72', '+221 78 213 33 12', '+221 77 979 20 90')
@@ -307,7 +310,7 @@ create table if not exists public.small_sale_items (
   small_sale_id uuid references public.small_sales(id) on delete cascade,
   product_id uuid references public.products(id) on delete set null,
   product_name text not null,
-  quantity integer not null,
+  quantity numeric(12,3) not null,
   purchase_price numeric(12,2) not null default 0,
   unit_price numeric(12,2) not null,
   line_total numeric(12,2) not null
@@ -315,6 +318,19 @@ create table if not exists public.small_sale_items (
 
 create index if not exists idx_small_sale_items_sale on public.small_sale_items(small_sale_id);
 create index if not exists idx_small_sale_items_product on public.small_sale_items(product_id);
+
+-- ============================================================================
+-- QUANTITÉS DÉCIMALES : câble au mètre, clous au kilo, peinture au litre...
+-- (3 décimales max). Migration des bases existantes : les entiers sont conservés tels quels.
+-- ============================================================================
+alter table public.products
+  alter column stock type numeric(12,3),
+  alter column alert_threshold type numeric(12,3);
+alter table public.sale_items alter column quantity type numeric(12,3);
+alter table public.purchase_items alter column quantity type numeric(12,3);
+alter table public.small_sale_items alter column quantity type numeric(12,3);
+alter table public.stock_movements alter column quantity type numeric(12,3);
+alter table public.delivery_items alter column quantity_delivered type numeric(12,3);
 
 -- ============================================================================
 -- FONCTION : exiger un utilisateur connecté (à appeler en tête de chaque RPC)
@@ -388,7 +404,7 @@ declare
   v_subtotal numeric := 0;
   v_line_total numeric;
   v_invoice_number text;
-  v_current_stock integer;
+  v_current_stock numeric;
   v_purchase_price numeric;
   v_total numeric;
   v_amount_paid numeric;
@@ -413,7 +429,7 @@ begin
   v_is_draft := p_quote_status = 'draft';
 
   p_payment_method := coalesce(nullif(p_payment_method, ''), 'especes');
-  if p_payment_method not in ('especes', 'mobile_money', 'virement', 'cheque', 'carte', 'depot') then
+  if p_payment_method not in ('especes', 'orange_money', 'wave', 'mobile_money', 'virement', 'cheque', 'carte', 'depot') then
     raise exception 'Mode de paiement invalide : %', p_payment_method;
   end if;
   if p_payment_method = 'depot' and p_client_id is null then
@@ -426,13 +442,13 @@ begin
 
   for v_item in select * from jsonb_array_elements(p_items)
   loop
-    if (v_item->>'quantity')::integer <= 0 then
+    if (v_item->>'quantity')::numeric <= 0 then
       raise exception 'La quantité doit être supérieure à zéro pour le produit %', v_item->>'product_name';
     end if;
     if (v_item->>'unit_price')::numeric < 0 then
       raise exception 'Le prix de vente ne peut pas être négatif pour le produit %', v_item->>'product_name';
     end if;
-    v_subtotal := v_subtotal + ((v_item->>'quantity')::integer * (v_item->>'unit_price')::numeric);
+    v_subtotal := v_subtotal + ((v_item->>'quantity')::numeric * (v_item->>'unit_price')::numeric);
   end loop;
 
   if coalesce(p_discount, 0) > v_subtotal then
@@ -509,7 +525,7 @@ begin
 
   for v_item in select * from jsonb_array_elements(p_items)
   loop
-    v_line_total := (v_item->>'quantity')::integer * (v_item->>'unit_price')::numeric;
+    v_line_total := (v_item->>'quantity')::numeric * (v_item->>'unit_price')::numeric;
 
     -- Toujours récupérer le prix d'achat catalogue depuis le produit
     -- (le frontend ne transmet pas toujours purchase_price → fallback sur le catalogue)
@@ -522,7 +538,7 @@ begin
       v_sale.id,
       (v_item->>'product_id')::uuid,
       v_item->>'product_name',
-      (v_item->>'quantity')::integer,
+      (v_item->>'quantity')::numeric,
       coalesce(v_purchase_price, 0), -- prix d'achat toujours lu depuis le catalogue (jamais depuis le client)
       (v_item->>'unit_price')::numeric,
       v_line_total
@@ -538,19 +554,19 @@ begin
         raise exception 'Produit introuvable : %', v_item->>'product_name';
       end if;
 
-      if v_current_stock < (v_item->>'quantity')::integer then
+      if v_current_stock < (v_item->>'quantity')::numeric then
         raise exception 'Stock insuffisant pour le produit %', v_item->>'product_name';
       end if;
 
       update public.products
-      set stock = stock - (v_item->>'quantity')::integer, updated_at = now()
+      set stock = stock - (v_item->>'quantity')::numeric, updated_at = now()
       where id = (v_item->>'product_id')::uuid;
 
       insert into public.stock_movements (product_id, type, quantity, reason, user_id)
       values (
         (v_item->>'product_id')::uuid,
         'sortie',
-        (v_item->>'quantity')::integer,
+        (v_item->>'quantity')::numeric,
         'Vente ' || v_invoice_number,
         p_user_id
       );
@@ -577,7 +593,7 @@ as $$
 declare
   v_sale public.sales;
   v_item record;
-  v_current_stock integer;
+  v_current_stock numeric;
   v_purchase_price numeric;
 begin
   p_user_id := public.require_auth(); -- l'auteur est TOUJOURS l'utilisateur connecté (l'identifiant envoyé par le client est ignoré)
@@ -614,7 +630,7 @@ begin
       end if;
 
       if v_current_stock < v_item.quantity then
-        raise exception 'Stock insuffisant pour le produit % (disponible: %)', v_item.product_name, v_current_stock;
+        raise exception 'Stock insuffisant pour le produit % (disponible: %)', v_item.product_name, trim_scale(v_current_stock);
       end if;
 
       update public.products
@@ -694,9 +710,12 @@ $$;
 -- ============================================================================
 -- FONCTION RPC : entrée de stock (achat fournisseur / réapprovisionnement)
 -- ============================================================================
+-- Ancienne signature (quantité entière) : supprimée pour éviter une surcharge ambiguë
+drop function if exists public.add_stock_entry(uuid, integer, text, uuid);
+
 create or replace function public.add_stock_entry(
   p_product_id uuid,
-  p_quantity integer,
+  p_quantity numeric,
   p_reason text,
   p_user_id uuid
 )
@@ -733,9 +752,11 @@ $$;
 -- ============================================================================
 -- FONCTION RPC : sortie de stock manuelle (casse, perte, usage interne, inventaire)
 -- ============================================================================
+drop function if exists public.add_stock_exit(uuid, integer, text);
+
 create or replace function public.add_stock_exit(
   p_product_id uuid,
-  p_quantity integer,
+  p_quantity numeric,
   p_reason text
 )
 returns void
@@ -745,7 +766,7 @@ set search_path = public
 as $$
 declare
   v_user_id uuid := public.require_auth();
-  v_current_stock integer;
+  v_current_stock numeric;
 begin
   if p_quantity is null or p_quantity <= 0 then
     raise exception 'La quantité de sortie doit être supérieure à zéro.';
@@ -761,7 +782,7 @@ begin
     raise exception 'Produit introuvable.';
   end if;
   if v_current_stock < p_quantity then
-    raise exception 'Stock insuffisant (disponible : %).', v_current_stock;
+    raise exception 'Stock insuffisant (disponible : %).', trim_scale(v_current_stock);
   end if;
 
   update public.products
@@ -791,9 +812,9 @@ declare
   v_delivery public.deliveries;
   v_item jsonb;
   v_sale_item record;
-  v_already_delivered integer;
-  v_remaining_to_deliver integer;
-  v_current_stock integer;
+  v_already_delivered numeric;
+  v_remaining_to_deliver numeric;
+  v_current_stock numeric;
   v_delivery_number text;
 begin
   perform public.require_auth();
@@ -826,7 +847,7 @@ begin
   returning * into v_delivery;
 
   for v_item in select * from jsonb_array_elements(p_items) loop
-    if (v_item->>'quantity_delivered')::integer <= 0 then
+    if (v_item->>'quantity_delivered')::numeric <= 0 then
       raise exception 'La quantité livrée doit être supérieure à zéro.';
     end if;
 
@@ -846,8 +867,8 @@ begin
     where d.sale_id = p_sale_id
       and di.sale_item_id = (v_item->>'sale_item_id')::uuid;
 
-    if v_already_delivered + (v_item->>'quantity_delivered')::integer > v_remaining_to_deliver then
-      raise exception 'Quantité livrée dépasse la quantité commandée pour l''article %', v_remaining_to_deliver;
+    if v_already_delivered + (v_item->>'quantity_delivered')::numeric > v_remaining_to_deliver then
+      raise exception 'Quantité livrée dépasse la quantité commandée pour l''article %', trim_scale(v_remaining_to_deliver);
     end if;
 
     select stock into v_current_stock
@@ -859,19 +880,19 @@ begin
       raise exception 'Produit introuvable.';
     end if;
 
-    if v_current_stock < (v_item->>'quantity_delivered')::integer then
-      raise exception 'Stock insuffisant pour la livraison (disponible: %).', v_current_stock;
+    if v_current_stock < (v_item->>'quantity_delivered')::numeric then
+      raise exception 'Stock insuffisant pour la livraison (disponible: %).', trim_scale(v_current_stock);
     end if;
 
     update public.products
-    set stock = stock - (v_item->>'quantity_delivered')::integer, updated_at = now()
+    set stock = stock - (v_item->>'quantity_delivered')::numeric, updated_at = now()
     where id = (select product_id from public.sale_items where id = (v_item->>'sale_item_id')::uuid);
 
     insert into public.stock_movements (product_id, type, quantity, reason, user_id)
     values (
       (select product_id from public.sale_items where id = (v_item->>'sale_item_id')::uuid),
       'sortie',
-      (v_item->>'quantity_delivered')::integer,
+      (v_item->>'quantity_delivered')::numeric,
       'Livraison ' || v_delivery_number,
       auth.uid()
     );
@@ -881,7 +902,7 @@ begin
       v_delivery.id,
       (v_item->>'sale_item_id')::uuid,
       (select product_id from public.sale_items where id = (v_item->>'sale_item_id')::uuid),
-      (v_item->>'quantity_delivered')::integer
+      (v_item->>'quantity_delivered')::numeric
     );
   end loop;
 
@@ -910,7 +931,7 @@ returns boolean
 language sql
 immutable
 as $$
-  select coalesce(p_reason, '') ~ '^(Vente |Achat |Livraison |Annulation |Confirmation devis |Petite vente|Rectification |Vente rectifiée |Achat rectifié )';
+  select coalesce(p_reason, '') ~ '^(Vente |Achat |Livraison |Annulation |Confirmation devis |Petite vente|Rectification |Vente rectifiée |Achat rectifié |Inventaire )';
 $$;
 
 drop function if exists public.update_stock_movement(uuid, uuid, text, integer, text, uuid);
@@ -919,7 +940,7 @@ drop function if exists public.update_stock_movement(uuid, uuid, integer, text, 
 create or replace function public.update_stock_movement(
   p_movement_id uuid,
   p_product_id uuid,
-  p_quantity integer,
+  p_quantity numeric,
   p_reason text,
   p_type text,
   p_user_id uuid
@@ -931,9 +952,9 @@ set search_path = public
 as $$
 declare
   v_old public.stock_movements;
-  v_old_delta integer;
-  v_new_delta integer;
-  v_current_stock integer;
+  v_old_delta numeric;
+  v_new_delta numeric;
+  v_current_stock numeric;
 begin
   if not public.is_admin() then
     raise exception 'Seul un administrateur peut corriger un mouvement de stock.';
@@ -1013,8 +1034,8 @@ set search_path = public
 as $$
 declare
   v_old public.stock_movements;
-  v_delta integer;
-  v_current_stock integer;
+  v_delta numeric;
+  v_current_stock numeric;
 begin
   if not public.is_admin() then
     raise exception 'Seul un administrateur peut corriger un mouvement de stock.';
@@ -1053,7 +1074,7 @@ delete from public.stock_movements
 end;
 $$;
 
-grant execute on function public.update_stock_movement(uuid, uuid, integer, text, text, uuid) to authenticated;
+grant execute on function public.update_stock_movement(uuid, uuid, numeric, text, text, uuid) to authenticated;
 grant execute on function public.delete_stock_movement(uuid) to authenticated;
 notify pgrst, 'reload schema';
 
@@ -1148,13 +1169,13 @@ begin
 
   for v_item in select * from jsonb_array_elements(p_items)
   loop
-    if (v_item->>'quantity')::integer <= 0 then
+    if (v_item->>'quantity')::numeric <= 0 then
       raise exception 'La quantité doit être supérieure à zéro pour le produit %', v_item->>'product_name';
     end if;
     if (v_item->>'unit_cost')::numeric < 0 then
       raise exception 'Le prix d''achat ne peut pas être négatif pour le produit %', v_item->>'product_name';
     end if;
-    v_subtotal := v_subtotal + ((v_item->>'quantity')::integer * (v_item->>'unit_cost')::numeric);
+    v_subtotal := v_subtotal + ((v_item->>'quantity')::numeric * (v_item->>'unit_cost')::numeric);
   end loop;
 
   if v_amount_paid < 0 then
@@ -1178,21 +1199,21 @@ begin
 
   for v_item in select * from jsonb_array_elements(p_items)
   loop
-    v_line_total := (v_item->>'quantity')::integer * (v_item->>'unit_cost')::numeric;
+    v_line_total := (v_item->>'quantity')::numeric * (v_item->>'unit_cost')::numeric;
 
     insert into public.purchase_items (purchase_id, product_id, product_name, quantity, unit_cost, line_total)
     values (
       v_purchase.id,
       (v_item->>'product_id')::uuid,
       v_item->>'product_name',
-      (v_item->>'quantity')::integer,
+      (v_item->>'quantity')::numeric,
       (v_item->>'unit_cost')::numeric,
       v_line_total
     );
 
     -- Incrémenter le stock et rafraîchir le prix d'achat catalogue avec le dernier coût payé
     update public.products
-    set stock = stock + (v_item->>'quantity')::integer,
+    set stock = stock + (v_item->>'quantity')::numeric,
         purchase_price = (v_item->>'unit_cost')::numeric,
         updated_at = now()
     where id = (v_item->>'product_id')::uuid;
@@ -1202,7 +1223,7 @@ begin
     values (
       (v_item->>'product_id')::uuid,
       'entree',
-      (v_item->>'quantity')::integer,
+      (v_item->>'quantity')::numeric,
       'Achat ' || v_purchase_number || ' — ' || v_supplier_name,
       p_user_id
     );
@@ -1278,7 +1299,7 @@ as $$
 declare
   v_purchase public.purchases;
   v_item record;
-  v_current_stock integer;
+  v_current_stock numeric;
 begin
   p_user_id := public.require_auth(); -- l'auteur est TOUJOURS l'utilisateur connecté (l'identifiant envoyé par le client est ignoré)
   if not exists (select 1 from public.users where id = auth.uid() and role = 'admin') then
@@ -1394,7 +1415,7 @@ begin
   end if;
 
   p_method := coalesce(nullif(p_method, ''), 'especes');
-  if p_method not in ('especes', 'mobile_money', 'virement', 'cheque', 'carte', 'depot') then
+  if p_method not in ('especes', 'orange_money', 'wave', 'mobile_money', 'virement', 'cheque', 'carte', 'depot') then
     raise exception 'Mode de paiement invalide : %', p_method;
   end if;
 
@@ -1452,9 +1473,9 @@ as $$
 declare
   v_sale public.sales;
   v_item record;
-  v_delivered integer;
-  v_undelivered integer;
-  v_current_stock integer;
+  v_delivered numeric;
+  v_undelivered numeric;
+  v_current_stock numeric;
   v_depot_paid numeric;
 begin
   p_user_id := public.require_auth(); -- l'auteur est TOUJOURS l'utilisateur connecté (l'identifiant envoyé par le client est ignoré)
@@ -1585,7 +1606,7 @@ declare
   v_item jsonb;
   v_subtotal numeric := 0;
   v_line_total numeric;
-  v_current_stock integer;
+  v_current_stock numeric;
   v_purchase_price numeric;
 begin
   p_user_id := public.require_auth(); -- l'auteur est TOUJOURS l'utilisateur connecté (l'identifiant envoyé par le client est ignoré)
@@ -1599,13 +1620,13 @@ begin
 
   for v_item in select * from jsonb_array_elements(p_items)
   loop
-    if (v_item->>'quantity')::integer <= 0 then
+    if (v_item->>'quantity')::numeric <= 0 then
       raise exception 'La quantité doit être supérieure à zéro pour le produit %', v_item->>'product_name';
     end if;
     if (v_item->>'unit_price')::numeric < 0 then
       raise exception 'Le prix de vente ne peut pas être négatif pour le produit %', v_item->>'product_name';
     end if;
-    v_subtotal := v_subtotal + ((v_item->>'quantity')::integer * (v_item->>'unit_price')::numeric);
+    v_subtotal := v_subtotal + ((v_item->>'quantity')::numeric * (v_item->>'unit_price')::numeric);
   end loop;
 
   if coalesce(p_discount, 0) > v_subtotal then
@@ -1624,7 +1645,7 @@ begin
 
   for v_item in select * from jsonb_array_elements(p_items)
   loop
-    v_line_total := (v_item->>'quantity')::integer * (v_item->>'unit_price')::numeric;
+    v_line_total := (v_item->>'quantity')::numeric * (v_item->>'unit_price')::numeric;
 
     select stock, purchase_price into v_current_stock, v_purchase_price
     from public.products
@@ -1635,7 +1656,7 @@ begin
       raise exception 'Produit introuvable : %', v_item->>'product_name';
     end if;
 
-    if v_current_stock < (v_item->>'quantity')::integer then
+    if v_current_stock < (v_item->>'quantity')::numeric then
       raise exception 'Stock insuffisant pour le produit %', v_item->>'product_name';
     end if;
 
@@ -1644,21 +1665,21 @@ begin
       v_sale.id,
       (v_item->>'product_id')::uuid,
       v_item->>'product_name',
-      (v_item->>'quantity')::integer,
+      (v_item->>'quantity')::numeric,
       coalesce(v_purchase_price, 0),
       (v_item->>'unit_price')::numeric,
       v_line_total
     );
 
     update public.products
-    set stock = stock - (v_item->>'quantity')::integer, updated_at = now()
+    set stock = stock - (v_item->>'quantity')::numeric, updated_at = now()
     where id = (v_item->>'product_id')::uuid;
 
     insert into public.stock_movements (product_id, type, quantity, reason, user_id)
     values (
       (v_item->>'product_id')::uuid,
       'sortie',
-      (v_item->>'quantity')::integer,
+      (v_item->>'quantity')::numeric,
       'Petite vente rapide',
       p_user_id
     );
@@ -1683,9 +1704,9 @@ declare
   v_sale public.small_sales;
   v_item jsonb;
   v_old_item record;
-  v_current_stock integer;
+  v_current_stock numeric;
   v_purchase_price numeric;
-  v_new_quantity integer;
+  v_new_quantity numeric;
   v_new_subtotal numeric := 0;
   v_line_total numeric;
 begin
@@ -1740,7 +1761,7 @@ begin
 
   for v_item in select * from jsonb_array_elements(p_items)
   loop
-    v_new_quantity := (v_item->>'quantity')::integer;
+    v_new_quantity := (v_item->>'quantity')::numeric;
 
     if v_new_quantity <= 0 then
       raise exception 'La quantité doit être supérieure à zéro pour le produit %', v_item->>'product_name';
@@ -1763,7 +1784,7 @@ begin
     end if;
 
     if v_current_stock < v_new_quantity then
-      raise exception 'Stock insuffisant pour le produit % (disponible: %)', v_item->>'product_name', v_current_stock;
+      raise exception 'Stock insuffisant pour le produit % (disponible: %)', v_item->>'product_name', trim_scale(v_current_stock);
     end if;
 
     update public.products
@@ -1893,13 +1914,13 @@ declare
   v_sale public.sales;
   v_item jsonb;
   v_old_item record;
-  v_new_quantity integer;
+  v_new_quantity numeric;
   v_purchase_price numeric;
   v_new_subtotal numeric := 0;
   v_new_discount numeric;
   v_new_total numeric;
   v_line_total numeric;
-  v_current_stock integer;
+  v_current_stock numeric;
   v_moves_stock boolean;
   v_has_deliveries boolean;
   v_actor uuid := auth.uid();
@@ -1972,7 +1993,7 @@ begin
   -- 2. Insérer les nouvelles lignes (et sortir le stock si la facture est livrée)
   for v_item in select * from jsonb_array_elements(p_items)
   loop
-    v_new_quantity := (v_item->>'quantity')::integer;
+    v_new_quantity := (v_item->>'quantity')::numeric;
 
     if v_new_quantity is null or v_new_quantity <= 0 then
       raise exception 'La quantité doit être supérieure à zéro pour le produit %', v_item->>'product_name';
@@ -1996,7 +2017,7 @@ begin
 
     if v_moves_stock then
       if v_current_stock < v_new_quantity then
-        raise exception 'Stock insuffisant pour le produit % (disponible: %)', v_item->>'product_name', v_current_stock;
+        raise exception 'Stock insuffisant pour le produit % (disponible: %)', v_item->>'product_name', trim_scale(v_current_stock);
       end if;
 
       update public.products
@@ -2099,10 +2120,10 @@ declare
   v_purchase public.purchases;
   v_item jsonb;
   v_row record;
-  v_new_quantity integer;
+  v_new_quantity numeric;
   v_new_subtotal numeric := 0;
   v_line_total numeric;
-  v_current_stock integer;
+  v_current_stock numeric;
   v_pid uuid;
 begin
   if not public.is_admin() then
@@ -2128,7 +2149,7 @@ begin
 
   for v_item in select * from jsonb_array_elements(p_items)
   loop
-    v_new_quantity := (v_item->>'quantity')::integer;
+    v_new_quantity := (v_item->>'quantity')::numeric;
     if v_new_quantity is null or v_new_quantity <= 0 then
       raise exception 'La quantité doit être supérieure à zéro pour le produit %', v_item->>'product_name';
     end if;
@@ -2150,7 +2171,7 @@ begin
       from public.purchase_items
       where purchase_id = p_purchase_id and product_id is not null
       union all
-      select (e->>'product_id')::uuid, (e->>'quantity')::integer, 0
+      select (e->>'product_id')::uuid, (e->>'quantity')::numeric, 0
       from jsonb_array_elements(p_items) e
     ) d
     group by pid
@@ -2163,7 +2184,7 @@ begin
     end if;
 
     if v_current_stock + v_row.delta < 0 then
-      raise exception 'Modification impossible : une partie de ce produit a déjà été vendue (stock actuel %, retrait demandé %).', v_current_stock, -v_row.delta;
+      raise exception 'Modification impossible : une partie de ce produit a déjà été vendue (stock actuel %, retrait demandé %).', trim_scale(v_current_stock), trim_scale(-v_row.delta);
     end if;
 
     update public.products
@@ -2185,7 +2206,7 @@ begin
 
   for v_item in select * from jsonb_array_elements(p_items)
   loop
-    v_new_quantity := (v_item->>'quantity')::integer;
+    v_new_quantity := (v_item->>'quantity')::numeric;
     v_line_total := v_new_quantity * (v_item->>'unit_cost')::numeric;
 
     insert into public.purchase_items (purchase_id, product_id, product_name, quantity, unit_cost, line_total)
@@ -2822,7 +2843,7 @@ begin
     raise exception 'Le montant du dépôt doit être supérieur à zéro.';
   end if;
   p_method := coalesce(nullif(p_method, ''), 'especes');
-  if p_method not in ('especes', 'mobile_money', 'virement', 'cheque', 'carte') then
+  if p_method not in ('especes', 'orange_money', 'wave', 'mobile_money', 'virement', 'cheque', 'carte') then
     raise exception 'Mode de paiement invalide : %', p_method;
   end if;
   return public.client_deposit_post(p_client_id, 'depot', p_amount, p_method, null, p_notes, null);
@@ -2847,7 +2868,7 @@ begin
     raise exception 'Le montant du retrait doit être supérieur à zéro.';
   end if;
   p_method := coalesce(nullif(p_method, ''), 'especes');
-  if p_method not in ('especes', 'mobile_money', 'virement', 'cheque', 'carte') then
+  if p_method not in ('especes', 'orange_money', 'wave', 'mobile_money', 'virement', 'cheque', 'carte') then
     raise exception 'Mode de paiement invalide : %', p_method;
   end if;
   return public.client_deposit_post(p_client_id, 'retrait', -p_amount, p_method, null, p_notes, null);
@@ -2898,6 +2919,136 @@ end;
 $$;
 
 -- ============================================================================
+-- INVENTAIRE PHYSIQUE
+-- On compte les rayons ; pour chaque produit compté, l'écart avec le stock théorique
+-- est corrigé par un mouvement « Inventaire INV-AAAA-NNNN » (traçable, non modifiable).
+-- Réservé à l'administrateur (c'est une correction du stock).
+-- ============================================================================
+create table if not exists public.inventories (
+  id uuid primary key default uuid_generate_v4(),
+  number text not null unique,                       -- INV-2026-0001
+  notes text,
+  items_count integer not null default 0,            -- produits comptés
+  gaps_count integer not null default 0,             -- produits avec un écart
+  value_difference numeric(14,2) not null default 0, -- valeur de l'écart au prix d'achat (+ surplus / − manque)
+  created_by uuid references public.users(id) on delete set null,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.inventory_items (
+  id uuid primary key default uuid_generate_v4(),
+  inventory_id uuid not null references public.inventories(id) on delete cascade,
+  product_id uuid references public.products(id) on delete set null,
+  product_name text not null,
+  unit text,
+  expected numeric(12,3) not null,                   -- stock théorique au moment du comptage
+  counted numeric(12,3) not null check (counted >= 0),
+  difference numeric(12,3) not null,                 -- compté − théorique
+  unit_cost numeric(12,2) not null default 0
+);
+
+create index if not exists idx_inventory_items_inventory on public.inventory_items(inventory_id);
+
+alter table public.inventories enable row level security;
+alter table public.inventory_items enable row level security;
+drop policy if exists "Authenticated read inventories" on public.inventories;
+create policy "Authenticated read inventories" on public.inventories for select using (auth.role() = 'authenticated');
+drop policy if exists "Authenticated read inventory_items" on public.inventory_items;
+create policy "Authenticated read inventory_items" on public.inventory_items for select using (auth.role() = 'authenticated');
+
+create or replace function public.next_inventory_number()
+returns text
+language plpgsql
+as $$
+declare
+  year_part text := to_char(now(), 'YYYY');
+  max_number integer;
+begin
+  perform pg_advisory_xact_lock(hashtext('mabane_inventory_' || year_part));
+  select max((regexp_replace(number, '^INV-' || year_part || '-', ''))::integer) into max_number
+  from public.inventories
+  where number like 'INV-' || year_part || '-%';
+  return 'INV-' || year_part || '-' || lpad(coalesce(max_number + 1, 1)::text, 4, '0');
+end;
+$$;
+
+-- p_counts = [{product_id, counted}, ...]
+create or replace function public.apply_inventory(
+  p_counts jsonb,
+  p_notes text default null
+)
+returns public.inventories
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user uuid := public.require_auth();
+  v_inventory public.inventories;
+  v_item jsonb;
+  v_product public.products;
+  v_counted numeric;
+  v_diff numeric;
+  v_items integer := 0;
+  v_gaps integer := 0;
+  v_value numeric := 0;
+begin
+  if not public.is_admin() then
+    raise exception 'Seul un administrateur peut valider un inventaire.';
+  end if;
+  if p_counts is null or jsonb_typeof(p_counts) <> 'array' or jsonb_array_length(p_counts) = 0 then
+    raise exception 'Comptez au moins un produit.';
+  end if;
+
+  insert into public.inventories (number, notes, created_by)
+  values (public.next_inventory_number(), nullif(trim(coalesce(p_notes, '')), ''), v_user)
+  returning * into v_inventory;
+
+  for v_item in select * from jsonb_array_elements(p_counts)
+  loop
+    v_counted := round((v_item->>'counted')::numeric, 3);
+    if v_counted is null or v_counted < 0 then
+      raise exception 'Quantité comptée invalide.';
+    end if;
+
+    select * into v_product from public.products where id = (v_item->>'product_id')::uuid for update;
+    if v_product.id is null then
+      raise exception 'Produit introuvable.';
+    end if;
+
+    v_diff := v_counted - v_product.stock;
+    v_items := v_items + 1;
+
+    insert into public.inventory_items (inventory_id, product_id, product_name, unit, expected, counted, difference, unit_cost)
+    values (v_inventory.id, v_product.id, v_product.name, v_product.unit, v_product.stock, v_counted, v_diff, v_product.purchase_price);
+
+    if v_diff <> 0 then
+      v_gaps := v_gaps + 1;
+      v_value := v_value + v_diff * v_product.purchase_price;
+
+      update public.products set stock = v_counted, updated_at = now() where id = v_product.id;
+
+      insert into public.stock_movements (product_id, type, quantity, reason, user_id)
+      values (
+        v_product.id,
+        case when v_diff > 0 then 'entree' else 'sortie' end,
+        abs(v_diff),
+        'Inventaire ' || v_inventory.number || case when v_diff > 0 then ' (surplus)' else ' (manquant)' end,
+        v_user
+      );
+    end if;
+  end loop;
+
+  update public.inventories
+  set items_count = v_items, gaps_count = v_gaps, value_difference = v_value
+  where id = v_inventory.id
+  returning * into v_inventory;
+
+  return v_inventory;
+end;
+$$;
+
+-- ============================================================================
 -- REALTIME (multi-utilisateurs en temps réel)
 -- ============================================================================
 -- Note: les tables sont ajoutées à la publication supabase_realtime pour l'écoute en temps réel
@@ -2929,9 +3080,9 @@ grant execute on function public.add_sale_payment(uuid, numeric, text, text, tex
 grant execute on function public.cancel_sale(uuid, uuid) to authenticated;
 grant execute on function public.add_purchase_payment(uuid, numeric) to authenticated;
 grant execute on function public.cancel_purchase(uuid, uuid) to authenticated;
-grant execute on function public.add_stock_entry(uuid, integer, text, uuid) to authenticated;
-grant execute on function public.add_stock_exit(uuid, integer, text) to authenticated;
-grant execute on function public.update_stock_movement(uuid, uuid, integer, text, text, uuid) to authenticated;
+grant execute on function public.add_stock_entry(uuid, numeric, text, uuid) to authenticated;
+grant execute on function public.add_stock_exit(uuid, numeric, text) to authenticated;
+grant execute on function public.update_stock_movement(uuid, uuid, numeric, text, text, uuid) to authenticated;
 grant execute on function public.delete_stock_movement(uuid) to authenticated;
 grant execute on function public.create_small_sale(jsonb, uuid, text, numeric) to authenticated;
 grant execute on function public.update_small_sale(uuid, jsonb, text, numeric) to authenticated;
@@ -2960,6 +3111,9 @@ grant select on public.shop_settings to anon;
 grant execute on function public.add_client_deposit(uuid, numeric, text, text) to authenticated;
 grant execute on function public.withdraw_client_deposit(uuid, numeric, text, text) to authenticated;
 grant execute on function public.reverse_client_deposit(uuid, text) to authenticated;
+grant execute on function public.apply_inventory(jsonb, text) to authenticated;
+revoke execute on function public.next_inventory_number() from public, anon, authenticated;
+revoke insert, update, delete, truncate on public.inventories, public.inventory_items from authenticated;
 revoke execute on function public.client_deposit_post(uuid, text, numeric, text, uuid, text, uuid) from public, anon, authenticated;
 revoke execute on function public.next_client_deposit_number(text) from public, anon, authenticated;
 revoke all on public.client_deposits from anon;
@@ -3008,3 +3162,343 @@ create policy "Authenticated delete product images" on storage.objects
 --    et sont promus par l'admin depuis la page Utilisateurs de l'application.
 --    Le rôle éventuellement passé dans raw_user_meta_data est toujours ignoré.
 -- ============================================================================
+
+-- ============================================================================
+-- SIGNATURE ÉLECTRONIQUE DES DOCUMENTS (signature manuscrite + code PIN)
+-- Migration autonome et idempotente : à exécuter une fois dans Supabase > SQL Editor.
+-- (Le même bloc figure à la fin de schema.sql pour les nouveaux déploiements.)
+--
+-- Principe :
+--  * chaque administrateur peut enregistrer SA signature (image PNG) protégée par
+--    un code PIN à 4 chiffres, stocké haché (bcrypt) ;
+--  * l'image et le hash ne sont JAMAIS lisibles directement (RLS sans policy) :
+--    seules les RPC ci-dessous y accèdent, après vérification du PIN ;
+--  * 5 PIN faux → signature bloquée 15 minutes ;
+--  * documents signables : facture / devis (invoice), bon de livraison (delivery),
+--    reçu de paiement (payment_receipt, identifié par son numéro), reçu de dépôt /
+--    retrait (deposit_receipt) et relevé de dépôt d'un client (deposit_statement) ;
+--  * chaque signature apposée est journalisée (qui, quand, quel document, quel
+--    montant) dans document_signatures. Retirer une signature la marque comme
+--    révoquée, elle n'est jamais effacée.
+-- ============================================================================
+
+create extension if not exists pgcrypto with schema extensions;
+
+-- ----------------------------------------------------------------------------
+-- Tables
+-- ----------------------------------------------------------------------------
+create table if not exists public.user_signatures (
+  user_id uuid primary key references public.users(id) on delete cascade,
+  image text not null check (image like 'data:image/png;base64,%' and length(image) <= 1500000),
+  pin_hash text not null,
+  failed_attempts integer not null default 0,
+  locked_until timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.user_signatures enable row level security;
+-- Aucune policy : ni lecture ni écriture directe, même pour un admin.
+revoke all on public.user_signatures from anon, authenticated;
+
+create table if not exists public.document_signatures (
+  id uuid primary key default uuid_generate_v4(),
+  doc_type text not null,
+  doc_id text not null,                  -- id du document (uuid) ou numéro du reçu de paiement
+  signed_by uuid references public.users(id) on delete set null,
+  signer_name text not null,
+  signature_image text not null,
+  signed_amount numeric(12,2),           -- montant au moment de la signature (détecte une modification ultérieure)
+  signed_at timestamptz not null default now(),
+  revoked_at timestamptz,
+  revoked_by uuid references public.users(id) on delete set null
+);
+
+-- Mise à niveau si la première version (factures seules, doc_id uuid) a déjà été exécutée
+alter table public.document_signatures alter column doc_id type text using doc_id::text;
+alter table public.document_signatures drop constraint if exists document_signatures_doc_type_check;
+alter table public.document_signatures add constraint document_signatures_doc_type_check
+  check (doc_type in ('invoice', 'delivery', 'payment_receipt', 'deposit_receipt', 'deposit_statement'));
+drop function if exists public.sign_document(text, uuid, text);
+drop function if exists public.revoke_document_signature(text, uuid);
+
+-- Une seule signature active par document
+create unique index if not exists uq_document_signatures_active
+  on public.document_signatures(doc_type, doc_id) where revoked_at is null;
+create index if not exists idx_document_signatures_doc on public.document_signatures(doc_type, doc_id);
+
+alter table public.document_signatures enable row level security;
+drop policy if exists "Authenticated can read document signatures" on public.document_signatures;
+create policy "Authenticated can read document signatures" on public.document_signatures
+  for select using (auth.role() = 'authenticated');
+-- Écriture uniquement via les RPC (security definer)
+revoke insert, update, delete on public.document_signatures from anon, authenticated;
+
+-- ----------------------------------------------------------------------------
+-- Helpers internes (non exposés au client)
+-- ----------------------------------------------------------------------------
+create or replace function public.signature_pin_is_valid(p_pin text)
+returns boolean
+language sql
+immutable
+as $$
+  select coalesce(p_pin, '') ~ '^[0-9]{4}$'
+     and p_pin !~ '^(.)\1{3}$'
+     and p_pin not in ('0123','1234','2345','3456','4567','5678','6789',
+                       '9876','8765','7654','6543','5432','4321','3210');
+$$;
+
+-- Vérifie le PIN de l'utilisateur connecté et gère le compteur d'échecs.
+-- Ne lève JAMAIS d'exception après avoir modifié le compteur (sinon le rollback l'annulerait).
+create or replace function public.check_signature_pin(p_user_id uuid, p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_sig public.user_signatures;
+  v_failed integer;
+begin
+  select * into v_sig from public.user_signatures where user_id = p_user_id for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'code', 'no_signature',
+      'message', 'Aucune signature enregistrée. Configurez-la dans Paramètres.');
+  end if;
+
+  if v_sig.locked_until is not null and v_sig.locked_until > now() then
+    return jsonb_build_object('ok', false, 'code', 'locked', 'locked_until', v_sig.locked_until,
+      'message', 'Trop d''essais incorrects. Signature bloquée jusqu''à ' ||
+                 to_char(v_sig.locked_until at time zone 'Africa/Dakar', 'HH24:MI') || '.');
+  end if;
+
+  if coalesce(p_pin, '') ~ '^[0-9]{4}$' and extensions.crypt(p_pin, v_sig.pin_hash) = v_sig.pin_hash then
+    update public.user_signatures set failed_attempts = 0, locked_until = null where user_id = p_user_id;
+    return jsonb_build_object('ok', true);
+  end if;
+
+  v_failed := v_sig.failed_attempts + 1;
+  if v_failed >= 5 then
+    update public.user_signatures
+      set failed_attempts = 0, locked_until = now() + interval '15 minutes'
+      where user_id = p_user_id;
+    return jsonb_build_object('ok', false, 'code', 'locked', 'locked_until', now() + interval '15 minutes',
+      'message', 'Code PIN incorrect. Trop d''essais : signature bloquée pendant 15 minutes.');
+  end if;
+
+  update public.user_signatures set failed_attempts = v_failed where user_id = p_user_id;
+  return jsonb_build_object('ok', false, 'code', 'wrong_pin', 'remaining', 5 - v_failed,
+    'message', 'Code PIN incorrect. ' || (5 - v_failed) || ' essai(s) restant(s).');
+end;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- RPC exposées
+-- ----------------------------------------------------------------------------
+
+-- État de MA signature (l'image n'est renvoyée qu'à son propriétaire)
+create or replace function public.get_my_signature()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := public.require_auth();
+  v_sig public.user_signatures;
+begin
+  select * into v_sig from public.user_signatures where user_id = v_uid;
+  if not found then
+    return jsonb_build_object('configured', false);
+  end if;
+  return jsonb_build_object(
+    'configured', true,
+    'image', v_sig.image,
+    'locked_until', case when v_sig.locked_until > now() then v_sig.locked_until end,
+    'updated_at', v_sig.updated_at
+  );
+end;
+$$;
+
+-- Crée ou modifie MA signature et/ou MON PIN.
+-- Première configuration : p_image et p_new_pin obligatoires.
+-- Modification : p_current_pin obligatoire ; p_image / p_new_pin à null = inchangé.
+create or replace function public.save_my_signature(p_image text, p_new_pin text, p_current_pin text default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_uid uuid := public.require_auth();
+  v_check jsonb;
+begin
+  if not public.is_admin() then
+    raise exception 'Seul un administrateur peut enregistrer une signature.';
+  end if;
+  if p_image is not null and (p_image not like 'data:image/png;base64,%' or length(p_image) > 1500000) then
+    raise exception 'Image de signature invalide (PNG de 1 Mo maximum).';
+  end if;
+  if p_new_pin is not null and not public.signature_pin_is_valid(p_new_pin) then
+    raise exception 'Le code PIN doit comporter 4 chiffres et ne pas être trop simple (ex. 0000, 1234).';
+  end if;
+
+  if exists (select 1 from public.user_signatures where user_id = v_uid) then
+    v_check := public.check_signature_pin(v_uid, p_current_pin);
+    if not (v_check->>'ok')::boolean then
+      return v_check;
+    end if;
+    update public.user_signatures set
+      image = coalesce(p_image, image),
+      pin_hash = case when p_new_pin is null then pin_hash else extensions.crypt(p_new_pin, extensions.gen_salt('bf', 10)) end,
+      updated_at = now()
+    where user_id = v_uid;
+  else
+    if p_image is null or p_new_pin is null then
+      raise exception 'Ajoutez l''image de la signature et choisissez un code PIN.';
+    end if;
+    insert into public.user_signatures (user_id, image, pin_hash)
+    values (v_uid, p_image, extensions.crypt(p_new_pin, extensions.gen_salt('bf', 10)));
+  end if;
+
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+-- PIN oublié : supprime MA signature (l'interface redemande le mot de passe avant).
+-- Il faut ensuite ré-importer l'image et choisir un nouveau PIN.
+create or replace function public.reset_my_signature()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := public.require_auth();
+begin
+  delete from public.user_signatures where user_id = v_uid;
+end;
+$$;
+
+-- Appose MA signature sur un document après vérification du PIN.
+-- Le montant enregistré est lu en base (jamais fourni par le client) : il permet de
+-- détecter une modification du document après signature.
+create or replace function public.sign_document(p_doc_type text, p_doc_id text, p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := public.require_auth();
+  v_found boolean;
+  v_amount numeric;
+  v_cancelled boolean := false;
+  v_check jsonb;
+  v_name text;
+  v_row public.document_signatures;
+begin
+  if not public.is_admin() then
+    raise exception 'Seul un administrateur peut signer un document.';
+  end if;
+  if coalesce(p_doc_id, '') = '' or length(p_doc_id) > 100 then
+    raise exception 'Document invalide.';
+  end if;
+
+  case p_doc_type
+    when 'invoice' then
+      select s.total, (s.status = 'annulee' or s.quote_status = 'cancelled')
+        into v_amount, v_cancelled
+        from public.sales s where s.id::text = p_doc_id;
+      v_found := found;
+    when 'delivery' then
+      select null::numeric, (s.status = 'annulee')
+        into v_amount, v_cancelled
+        from public.deliveries d join public.sales s on s.id = d.sale_id
+        where d.id::text = p_doc_id;
+      v_found := found;
+    when 'payment_receipt' then
+      -- Le numéro de reçu courant est porté par la facture (dernier paiement enregistré)
+      select (select p.amount from public.payments p where p.sale_id = s.id order by p.created_at desc limit 1),
+             (s.status = 'annulee')
+        into v_amount, v_cancelled
+        from public.sales s where s.receipt_number = p_doc_id;
+      v_found := found;
+    when 'deposit_receipt' then
+      select cd.amount, (cd.reversed_at is not null)
+        into v_amount, v_cancelled
+        from public.client_deposits cd
+        where cd.id::text = p_doc_id and cd.type in ('depot', 'retrait');
+      v_found := found;
+    when 'deposit_statement' then
+      select coalesce((select cd.balance_after from public.client_deposits cd
+                       where cd.client_id = c.id order by cd.created_at desc, cd.id desc limit 1), 0)
+        into v_amount
+        from public.clients c where c.id::text = p_doc_id;
+      v_found := found;
+    else
+      raise exception 'Type de document non pris en charge : %', p_doc_type;
+  end case;
+
+  if not v_found then
+    raise exception 'Document introuvable.';
+  end if;
+  if v_cancelled then
+    raise exception 'Impossible de signer un document annulé.';
+  end if;
+  if exists (select 1 from public.document_signatures
+             where doc_type = p_doc_type and doc_id = p_doc_id and revoked_at is null) then
+    raise exception 'Ce document est déjà signé.';
+  end if;
+
+  v_check := public.check_signature_pin(v_uid, p_pin);
+  if not (v_check->>'ok')::boolean then
+    return v_check;
+  end if;
+
+  select coalesce(nullif(trim(full_name), ''), email) into v_name from public.users where id = v_uid;
+
+  insert into public.document_signatures (doc_type, doc_id, signed_by, signer_name, signature_image, signed_amount)
+  select p_doc_type, p_doc_id, v_uid, v_name, s.image, v_amount
+  from public.user_signatures s where s.user_id = v_uid
+  returning * into v_row;
+
+  return jsonb_build_object('ok', true, 'signature', to_jsonb(v_row));
+end;
+$$;
+
+-- Retire (révoque) la signature active d'un document. Admin uniquement ; l'historique est conservé.
+create or replace function public.revoke_document_signature(p_doc_type text, p_doc_id text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := public.require_auth();
+begin
+  if not public.is_admin() then
+    raise exception 'Seul un administrateur peut retirer une signature.';
+  end if;
+  update public.document_signatures
+    set revoked_at = now(), revoked_by = v_uid
+    where doc_type = p_doc_type and doc_id = p_doc_id and revoked_at is null;
+end;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- Droits d'exécution
+-- ----------------------------------------------------------------------------
+revoke execute on function public.signature_pin_is_valid(text) from public, anon, authenticated;
+revoke execute on function public.check_signature_pin(uuid, text) from public, anon, authenticated;
+revoke execute on function public.get_my_signature() from public, anon;
+revoke execute on function public.save_my_signature(text, text, text) from public, anon;
+revoke execute on function public.reset_my_signature() from public, anon;
+revoke execute on function public.sign_document(text, text, text) from public, anon;
+revoke execute on function public.revoke_document_signature(text, text) from public, anon;
+
+grant execute on function public.get_my_signature() to authenticated;
+grant execute on function public.save_my_signature(text, text, text) to authenticated;
+grant execute on function public.reset_my_signature() to authenticated;
+grant execute on function public.sign_document(text, text, text) to authenticated;
+grant execute on function public.revoke_document_signature(text, text) to authenticated;
