@@ -24,37 +24,6 @@ import DocumentSignatureSection from '../../components/DocumentSignatureSection'
 import Segmented from '../../components/Segmented'
 import QtyStepper from '../../components/QtyStepper'
 
-function StatusBadge({ status }) {
-  const map = {
-    payee: { label: 'Payé', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' },
-    partielle: { label: 'Partiel', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' },
-    credit: { label: 'À crédit', cls: 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400' },
-    annulee: { label: 'Annulée', cls: 'bg-gray-100 text-gray-500 dark:bg-white/[0.06] dark:text-gray-400' },
-  }
-  const s = map[status] || map.payee
-  return <span className={`badge ${s.cls}`}>{s.label}</span>
-}
-
-function DeliveryStatusBadge({ deliveryStatus }) {
-  const map = {
-    en_attente: { label: 'En attente', cls: 'bg-gray-100 text-gray-600 dark:bg-white/[0.06] dark:text-gray-400' },
-    partielle: { label: 'Partiellement livrée', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' },
-    livree: { label: 'Livrée', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' },
-  }
-  const s = map[deliveryStatus] || map.en_attente
-  return <span className={`badge ${s.cls}`}>{s.label}</span>
-}
-
-function QuoteStatusBadge({ quoteStatus }) {
-  const map = {
-    draft: { label: 'Devis', cls: 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-400' },
-    confirmed: { label: 'Confirmé', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' },
-    cancelled: { label: 'Annulé', cls: 'bg-gray-100 text-gray-500 dark:bg-white/[0.06] dark:text-gray-400' },
-  }
-  const s = map[quoteStatus] || map.confirmed
-  return <span className={`badge ${s.cls}`}>{s.label}</span>
-}
-
 // --- Helpers d'affichage pour le tableau ---
 
 const AVATAR_PALETTE = [
@@ -1826,32 +1795,31 @@ export default function Sales() {
       <Modal
         open={!!detailSale}
         onClose={() => setDetailSale(null)}
-        icon={Receipt} title={<>{detailSale?.quote_status === 'draft' ? 'Devis' : 'Facture'} <span className="whitespace-nowrap">{detailSale?.invoice_number}</span></>}
-        maxWidth="max-w-lg"
+        icon={Receipt}
+        title={<>{detailSale?.quote_status === 'draft' ? 'Devis' : 'Facture'} <span className="whitespace-nowrap">{detailSale?.invoice_number}</span></>}
+        subtitle={detailSale ? `Créé le ${new Date(detailSale.created_at).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' })}` : ''}
+        maxWidth="max-w-4xl"
       >
         {detailSale && (() => {
           const isDraft = detailSale.quote_status === 'draft'
           const isCancelled = detailSale.status === 'annulee'
-          const due = Number(detailSale.total) - Number(detailSale.amount_paid)
+          const total = Number(detailSale.total || 0)
+          const paid = Number(detailSale.amount_paid || 0)
+          const due = total - paid
           const discount = Number(detailSale.discount || 0)
+          const paidPct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0
+          const items = detailSale.sale_items || []
           return (
             <div className="space-y-4">
-              <DetailHeader
-                avatar={<ClientAvatar name={detailSale.clients?.name} />}
-                title={detailSale.clients?.name || 'Client comptoir'}
-                subtitle={`${detailSale.clients?.phone ? `${detailSale.clients.phone} · ` : ''}${new Date(detailSale.created_at).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}`}
-              >
-                {isCancelled ? (
-                  <StatusBadge status="annulee" />
-                ) : isDraft ? (
-                  <QuoteStatusBadge quoteStatus="draft" />
-                ) : (
-                  <>
-                    <StatusBadge status={detailSale.status} />
-                    <DeliveryStatusBadge deliveryStatus={detailSale.delivery_status} />
-                  </>
-                )}
-              </DetailHeader>
+              {/* Client + statuts */}
+              <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-gray-50 dark:bg-white/[0.04] px-4 py-3">
+                <ClientAvatar name={detailSale.clients?.name} />
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold uppercase text-brand-900 dark:text-gray-50 truncate">{detailSale.clients?.name || 'Client comptoir'}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{detailSale.clients?.phone || 'Aucun numéro enregistré'}</p>
+                </div>
+                <SalePills sale={detailSale} />
+              </div>
 
               {isDraft && !isCancelled && (
                 <Callout tone="purple" title="Ceci est un devis (brouillon)">
@@ -1860,112 +1828,145 @@ export default function Sales() {
               )}
               {isCancelled && (
                 <Callout tone="red" title="Facture annulée">
-                  Les quantités sorties ont été remises en stock{Number(detailSale.amount_paid) > 0 ? ' et les encaissements remboursés.' : '.'}
+                  Les quantités sorties ont été remises en stock{paid > 0 ? ' et les encaissements remboursés.' : '.'}
                 </Callout>
               )}
 
-              <DetailList title="Articles">
-                {detailSale.sale_items?.map((item) => (
-                  <div key={item.id} className="flex items-start justify-between gap-4 px-3 py-2.5 text-sm">
-                    <div className="min-w-0">
-                      <p className="font-medium">{item.product_name}</p>
-                      <p className="text-xs text-gray-400 tabular-nums">{formatQty(item.quantity)} × {currency(item.unit_price)}</p>
-                    </div>
-                    <span className="font-medium tabular-nums whitespace-nowrap">{currency(item.line_total)}</span>
+              <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr] gap-4 items-start">
+                {/* ---- Articles ---- */}
+                <div className="rounded-2xl border border-gray-200/80 dark:border-white/[0.08] overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 bg-gray-50/80 dark:bg-white/[0.03] border-b border-gray-200/80 dark:border-white/[0.08]">
+                    <p className="text-xs font-bold uppercase tracking-wide text-brand-900 dark:text-gray-300">Articles</p>
+                    <span className="rounded-full bg-blue-50 dark:bg-blue-500/15 px-2.5 py-0.5 text-xs font-semibold text-[#1d4fb8] dark:text-blue-200">
+                      {items.length} article{items.length > 1 ? 's' : ''}
+                    </span>
                   </div>
-                ))}
-              </DetailList>
+                  <ul className="divide-y divide-gray-100 dark:divide-white/[0.06] max-h-[46vh] overflow-y-auto">
+                    {items.map((item) => (
+                      <li key={item.id} className="flex items-center gap-3 px-4 py-3">
+                        <span className="h-9 min-w-9 px-2 shrink-0 rounded-xl bg-blue-50 dark:bg-blue-500/15 text-[#1d4fb8] dark:text-blue-200 text-xs font-bold flex items-center justify-center tabular-nums">
+                          ×{formatQty(item.quantity)}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold uppercase text-brand-900 dark:text-gray-100 truncate" title={item.product_name}>{item.product_name}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">{currency(item.unit_price)} / unité</p>
+                        </div>
+                        <span className="text-sm font-bold tabular-nums whitespace-nowrap text-brand-900 dark:text-gray-100">{currency(item.line_total)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
 
-              <DetailList>
-                {discount > 0 && <DetailRow label="Sous-total">{currency(detailSale.subtotal)}</DetailRow>}
-                {discount > 0 && <DetailRow label="Remise">- {currency(discount)}</DetailRow>}
-                <DetailRow label="Total" strong>{currency(detailSale.total)}</DetailRow>
-                {!isDraft && <DetailRow label="Payé">{currency(detailSale.amount_paid)}</DetailRow>}
-                {!isDraft && !isCancelled && (
-                  <DetailRow label="Reste dû" strong tone={due > 0 ? 'red' : 'emerald'}>{currency(due)}</DetailRow>
-                )}
-              </DetailList>
+                {/* ---- Montants, signature, paiements ---- */}
+                <div className="space-y-4">
+                  <div className="rounded-2xl bg-gradient-to-br from-[#1a3f95] to-[#0d2550] text-white p-5 shadow-[0_14px_30px_-14px_rgba(19,48,111,0.7)]">
+                    {discount > 0 && (
+                      <div className="flex justify-between text-sm text-white/75 mb-1">
+                        <span>Sous-total · remise</span>
+                        <span className="tabular-nums">{currency(detailSale.subtotal)} − {currency(discount)}</span>
+                      </div>
+                    )}
+                    <p className="text-sm text-white/80">{isDraft ? 'Montant du devis' : 'Total de la facture'}</p>
+                    <p className="text-[30px] font-extrabold tabular-nums leading-tight">{currency(total)}</p>
+                    {!isDraft && !isCancelled && (
+                      <>
+                        <div className="mt-3 h-2 rounded-full bg-white/15 overflow-hidden" role="progressbar" aria-valuenow={paidPct} aria-valuemin={0} aria-valuemax={100} aria-label="Part payée">
+                          <div className={`h-full rounded-full ${due > 0 ? 'bg-accent-400' : 'bg-emerald-400'}`} style={{ width: `${paidPct}%` }} />
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-3">
+                          <div className="rounded-xl bg-white/10 px-3 py-2">
+                            <p className="text-xs text-white/70">Payé ({paidPct}%)</p>
+                            <p className="font-bold tabular-nums">{currency(paid)}</p>
+                          </div>
+                          <div className={`rounded-xl px-3 py-2 ${due > 0 ? 'bg-red-500/25' : 'bg-emerald-500/25'}`}>
+                            <p className="text-xs text-white/70">{due > 0 ? 'Reste dû' : 'Soldée'}</p>
+                            <p className="font-bold tabular-nums">{currency(Math.max(0, due))}</p>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
 
-              <DocumentSignatureSection
-                docType="invoice"
-                docId={detailSale.id}
-                docLabel={isDraft ? 'le devis' : 'la facture'}
-                amount={detailSale.total}
-                isAdmin={isAdmin}
-                cancelled={isCancelled}
-              />
+                  <DocumentSignatureSection
+                    docType="invoice"
+                    docId={detailSale.id}
+                    docLabel={isDraft ? 'le devis' : 'la facture'}
+                    amount={detailSale.total}
+                    isAdmin={isAdmin}
+                    cancelled={isCancelled}
+                  />
 
-              {detailPayments.length > 0 && (
-                <DetailList title="Paiements">
-                  {detailPayments.map((p) => {
-                    const refund = Number(p.amount) < 0
-                    return (
-                      <DetailRow
-                        key={p.id}
-                        tone={refund ? 'red' : undefined}
-                        label={
-                          <span>
-                            {refund ? 'Remboursement' : PAYMENT_METHOD_LABELS[p.method] || p.method}
-                            {p.reference && !refund && <span className="text-gray-400"> · Réf {p.reference}</span>}
-                            <span className="block text-xs text-gray-400">{new Date(p.created_at).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}</span>
-                            {p.notes && !refund && <span className="block text-xs text-gray-400">{p.notes}</span>}
-                          </span>
-                        }
-                      >
-                        {currency(p.amount)}
-                      </DetailRow>
-                    )
-                  })}
-                </DetailList>
-              )}
+                  {detailPayments.length > 0 && (
+                    <DetailList title={`Paiements (${detailPayments.length})`}>
+                      {detailPayments.map((p) => {
+                        const refund = Number(p.amount) < 0
+                        return (
+                          <DetailRow
+                            key={p.id}
+                            tone={refund ? 'red' : 'emerald'}
+                            label={
+                              <span>
+                                <span className="font-semibold text-brand-900 dark:text-gray-100">{refund ? 'Remboursement' : PAYMENT_METHOD_LABELS[p.method] || p.method}</span>
+                                {p.reference && !refund && <span className="text-gray-500"> · Réf {p.reference}</span>}
+                                <span className="block text-xs text-gray-500">{new Date(p.created_at).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                                {p.notes && !refund && <span className="block text-xs text-gray-500">{p.notes}</span>}
+                              </span>
+                            }
+                          >
+                            {currency(p.amount)}
+                          </DetailRow>
+                        )
+                      })}
+                    </DetailList>
+                  )}
+                </div>
+              </div>
 
               {!isDraft && !detailSale.clients?.phone && !isCancelled && (
                 <p className="text-xs text-amber-600 dark:text-amber-400">Ce client n'a pas de numéro WhatsApp enregistré.</p>
               )}
 
-              <DetailActions>
+              {/* ---- Actions (pied collant) ---- */}
+              <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 px-5 sm:px-6 py-4 bg-white/95 dark:bg-darkcard/95 backdrop-blur border-t border-gray-200 dark:border-white/[0.08] flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                <div className="flex flex-wrap gap-2">
+                  <button className="btn-secondary !rounded-2xl" onClick={() => downloadInvoicePDF(detailSale)}>
+                    <Download size={16} /> PDF
+                  </button>
+                  {!isDraft && (
+                    <button className="btn-secondary !rounded-2xl" disabled={!detailSale.clients?.phone} onClick={() => sendInvoiceViaWhatsApp(detailSale)}>
+                      <MessageCircle size={16} /> WhatsApp
+                    </button>
+                  )}
+                  {!isDraft && detailSale.delivery_status !== 'livree' && !isCancelled && (
+                    <button className="btn-secondary !rounded-2xl" onClick={() => setDeliverySale(detailSale)}>
+                      <Truck size={16} /> Livraisons
+                    </button>
+                  )}
+                  {isDraft && isAdmin && (
+                    <button className="btn-secondary !rounded-2xl" onClick={() => { setDetailSale(null); setConfirmCancel(detailSale) }}>
+                      Annuler le devis
+                    </button>
+                  )}
+                </div>
                 {isDraft ? (
-                  <>
-                    <button className="btn-secondary" onClick={() => downloadInvoicePDF(detailSale)}>
-                      <Download size={15} /> PDF
-                    </button>
-                    {isAdmin && (
-                      <button className="btn-secondary" onClick={() => { setDetailSale(null); setConfirmCancel(detailSale) }}>
-                        Annuler le devis
-                      </button>
-                    )}
-                    <button
-                      className="btn-success"
-                      onClick={() => confirmQuote.mutateAsync({ saleId: detailSale.id, userId: user?.id }).then(() => setDetailSale(null)).catch(() => {})}
-                      disabled={confirmQuote.isPending}
-                    >
-                      <FileText size={15} /> Confirmer le devis
-                    </button>
-                  </>
+                  <button
+                    className="btn-cta"
+                    onClick={() => confirmQuote.mutateAsync({ saleId: detailSale.id, userId: user?.id }).then(() => setDetailSale(null)).catch(() => {})}
+                    disabled={confirmQuote.isPending}
+                  >
+                    <Check size={18} strokeWidth={2.75} /> Confirmer le devis
+                  </button>
                 ) : (
-                  <>
-                    <button className="btn-secondary" onClick={() => downloadInvoicePDF(detailSale)}>
-                      <Download size={15} /> PDF
+                  !isCancelled && due > 0 && (
+                    <button
+                      className="btn-cta"
+                      onClick={() => { setPaymentOpen(detailSale); setPaymentAmount(''); setPaymentMethod('especes'); setPaymentError('') }}
+                    >
+                      <CreditCard size={18} /> Enregistrer un paiement
                     </button>
-                    <button className="btn-secondary" disabled={!detailSale.clients?.phone} onClick={() => sendInvoiceViaWhatsApp(detailSale)}>
-                      <MessageCircle size={15} /> WhatsApp
-                    </button>
-                    {detailSale.delivery_status !== 'livree' && !isCancelled && (
-                      <button className="btn-secondary" onClick={() => setDeliverySale(detailSale)}>
-                        <Truck size={15} /> Livraisons
-                      </button>
-                    )}
-                    {!isCancelled && due > 0 && (
-                      <button
-                        className="btn-success"
-                        onClick={() => { setPaymentOpen(detailSale); setPaymentAmount(''); setPaymentMethod('especes'); setPaymentError('') }}
-                      >
-                        <CreditCard size={15} /> Enregistrer un paiement
-                      </button>
-                    )}
-                  </>
+                  )
                 )}
-              </DetailActions>
+              </div>
             </div>
           )
         })()}

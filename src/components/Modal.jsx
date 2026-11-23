@@ -18,8 +18,11 @@ export default function Modal({ open, onClose, title, children, maxWidth = 'max-
     if (!open) return
     const previouslyFocused = document.activeElement
     const panel = panelRef.current
-    const firstField = panel?.querySelector(FOCUSABLE)
-    firstField?.focus()
+    // Focus initial sur le premier champ du contenu (jamais sur le bouton « Fermer »),
+    // sinon sur la fenêtre elle-même : pas d'anneau de focus parasite à l'ouverture
+    const firstField = [...(panel?.querySelectorAll(FOCUSABLE) || [])].find((el) => !el.hasAttribute('data-modal-close'))
+    if (firstField) firstField.focus()
+    else panel?.focus()
 
     const onKeyDown = (e) => {
       // Fenêtres empilées (ex. saisie du PIN au-dessus d'un détail) : seule celle du dessus réagit
@@ -60,7 +63,8 @@ export default function Modal({ open, onClose, title, children, maxWidth = 'max-
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`relative w-full ${maxWidth} card !rounded-none !rounded-t-3xl sm:!rounded-3xl p-5 sm:p-6 max-h-[92vh] sm:max-h-[90vh] overflow-y-auto animate-pop-in`}
+        tabIndex={-1}
+        className={`relative w-full ${maxWidth} card !rounded-none !rounded-t-3xl sm:!rounded-3xl p-5 sm:p-6 max-h-[92vh] sm:max-h-[90vh] overflow-y-auto animate-pop-in focus:outline-none`}
       >
         <div className={`flex ${Icon ? 'items-start' : 'items-center'} justify-between gap-3 mb-4`}>
           {Icon ? (
@@ -80,7 +84,8 @@ export default function Modal({ open, onClose, title, children, maxWidth = 'max-
             type="button"
             onClick={onClose}
             aria-label="Fermer"
-            className="p-1.5 rounded-xl text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] hover:text-gray-600 dark:hover:text-gray-200"
+            data-modal-close
+            className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-brand-900 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1] dark:hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
           >
             <X size={18} />
           </button>
