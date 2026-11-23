@@ -1,6 +1,8 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Plus, Trash2, Edit, Download, MessageCircle, Eye, Search, Receipt, FileText, RotateCcw, CreditCard, Truck, ShoppingCart, Printer, ChevronDown, ChevronLeft, ChevronRight, CalendarDays, SlidersHorizontal, ClipboardList, BadgeCheck, AlertTriangle, Clock, Ban, Users, Coins, ArrowUp, ArrowDown, FilePlus, Send, Star, PlusCircle, Package, Check, ArrowRight, Pencil } from 'lucide-react'
+import {
+  Plus, Trash2, Edit, Download, MessageCircle, Eye, Search, Receipt, FileText, RotateCcw, CreditCard, Truck, ShoppingCart, Printer, ChevronDown, ChevronLeft, ChevronRight, CalendarDays, SlidersHorizontal, ClipboardList, BadgeCheck, AlertTriangle, Clock, Ban, Users, Coins, ArrowUp, ArrowDown, FilePlus, Send, Star, PlusCircle, Package, Check, ArrowRight, Pencil, Banknote, Smartphone, Waves, PiggyBank, Landmark,
+} from 'lucide-react'
 import { useProducts } from '../../hooks/useProducts'
 import { useClients } from '../../hooks/useEntities'
 import { useSales, useCreateSale, useCancelSale, useAddSalePayment, useDeleteSale, useUpdateSaleItems, useDeliveries, useCreateDelivery, useConfirmQuote, useCancelQuote, useSalePayments } from '../../hooks/useSales'
@@ -8,7 +10,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useDepositBalances } from '../../hooks/useClientDeposits'
 import { useToast } from '../../context/ToastContext'
 import Modal from '../../components/Modal'
-import { DetailHeader, DetailList, DetailRow, Callout, DetailActions } from '../../components/Detail'
+import { DetailList, DetailRow, Callout } from '../../components/Detail'
 import RowActions from '../../components/RowActions'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { currency, PAYMENT_METHOD_LABELS, CASH_PAYMENT_METHODS, SHOP } from '../../lib/constants'
@@ -1938,7 +1940,7 @@ export default function Sales() {
                     </button>
                   )}
                   {!isDraft && detailSale.delivery_status !== 'livree' && !isCancelled && (
-                    <button className="btn-secondary !rounded-2xl" onClick={() => setDeliverySale(detailSale)}>
+                    <button className="btn-secondary !rounded-2xl" onClick={() => { const sale = detailSale; setDetailSale(null); setDeliverySale(sale) }}>
                       <Truck size={16} /> Livraisons
                     </button>
                   )}
@@ -1960,7 +1962,7 @@ export default function Sales() {
                   !isCancelled && due > 0 && (
                     <button
                       className="btn-cta"
-                      onClick={() => { setPaymentOpen(detailSale); setPaymentAmount(''); setPaymentMethod('especes'); setPaymentError('') }}
+                      onClick={() => { const sale = detailSale; setDetailSale(null); setPaymentOpen(sale); setPaymentAmount(''); setPaymentMethod('especes'); setPaymentError('') }}
                     >
                       <CreditCard size={18} /> Enregistrer un paiement
                     </button>
@@ -1973,71 +1975,131 @@ export default function Sales() {
       </Modal>
 
       {/* ---- Modal: paiement d'une facture (avance / crédit) ---- */}
-      <Modal open={!!paymentOpen} onClose={() => setPaymentOpen(null)} icon={CreditCard} title="Enregistrer un paiement">
+      <Modal
+        open={!!paymentOpen}
+        onClose={() => setPaymentOpen(null)}
+        icon={CreditCard}
+        title="Enregistrer un paiement"
+        subtitle={paymentOpen ? `Facture ${paymentOpen.invoice_number}` : ''}
+        maxWidth="max-w-xl"
+      >
         {paymentOpen && (() => {
-          const due = Number(paymentOpen.total) - Number(paymentOpen.amount_paid)
-          const afterPayment = Math.max(0, due - Number(paymentAmount || 0))
+          const total = Number(paymentOpen.total || 0)
+          const alreadyPaid = Number(paymentOpen.amount_paid || 0)
+          const due = total - alreadyPaid
+          const amount = Number(paymentAmount || 0)
+          const afterPayment = Math.max(0, due - amount)
+          const tooMuch = amount > due
+          const methods = [
+            { value: 'especes', label: 'Espèces', icon: Banknote, tone: 'text-emerald-600 dark:text-emerald-400' },
+            { value: 'orange_money', label: 'Orange Money', icon: Smartphone, tone: 'text-orange-500' },
+            { value: 'wave', label: 'Wave', icon: Waves, tone: 'text-sky-500' },
+            ...(depositOf(paymentOpen?.client_id) > 0 ? [{ value: 'depot', label: 'Dépôt client', icon: PiggyBank, tone: 'text-violet-500' }] : []),
+            { value: 'autre', label: 'Autre', icon: Landmark, tone: 'text-gray-500 dark:text-gray-300' },
+          ]
+          const currentMethod = ['especes', 'orange_money', 'wave', 'depot'].includes(paymentMethod) ? paymentMethod : 'autre'
           return (
-            <form onSubmit={handleAddPayment} className="space-y-4">
-              <DetailHeader
-                avatar={<ClientAvatar name={paymentOpen.clients?.name} />}
-                title={paymentOpen.clients?.name || 'Client comptoir'}
-                subtitle={<>Facture <span className="whitespace-nowrap">{paymentOpen.invoice_number}</span></>}
-              />
-              <DetailList>
-                <DetailRow label="Total de la facture">{currency(paymentOpen.total)}</DetailRow>
-                <DetailRow label="Déjà payé">{currency(paymentOpen.amount_paid)}</DetailRow>
-                <DetailRow label="Reste dû" strong tone="red">{currency(due)}</DetailRow>
-              </DetailList>
-
-              <div>
-                <label className="label" htmlFor="pay-amount">Montant reçu (FCFA)</label>
-                <input
-                  id="pay-amount"
-                  type="number"
-                  inputMode="numeric"
-                  min="1"
-                  max={due}
-                  required
-                  autoFocus
-                  className="input text-lg font-semibold"
-                  placeholder="0"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                />
-                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                  <button type="button" className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1]" onClick={() => setPaymentAmount(String(due))}>
-                    Solder : {currency(due)}
-                  </button>
-                  {due > 1 && (
-                    <button type="button" className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1]" onClick={() => setPaymentAmount(String(Math.round(due / 2)))}>
-                      Moitié
-                    </button>
-                  )}
-                  {paymentAmount !== '' && <span className="text-xs text-gray-400 ml-auto tabular-nums">Il restera {currency(afterPayment)}</span>}
+            <form onSubmit={handleAddPayment} className="space-y-5">
+              {/* Récapitulatif : client + montants */}
+              <div className="rounded-2xl bg-gradient-to-br from-[#1a3f95] to-[#0d2550] text-white p-4 shadow-[0_14px_30px_-14px_rgba(19,48,111,0.7)]">
+                <div className="flex items-center gap-3">
+                  <ClientAvatar name={paymentOpen.clients?.name} />
+                  <div className="min-w-0">
+                    <p className="font-bold uppercase truncate">{paymentOpen.clients?.name || 'Client comptoir'}</p>
+                    {paymentOpen.clients?.phone && <p className="text-xs text-white/70">{paymentOpen.clients.phone}</p>}
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-xl bg-white/10 px-2 py-2">
+                    <p className="text-[11px] text-white/70">Total</p>
+                    <p className="text-sm font-bold tabular-nums">{currency(total)}</p>
+                  </div>
+                  <div className="rounded-xl bg-white/10 px-2 py-2">
+                    <p className="text-[11px] text-white/70">Déjà payé</p>
+                    <p className="text-sm font-bold tabular-nums">{currency(alreadyPaid)}</p>
+                  </div>
+                  <div className="rounded-xl bg-red-500/30 px-2 py-2">
+                    <p className="text-[11px] text-white/80">Reste dû</p>
+                    <p className="text-sm font-extrabold tabular-nums">{currency(due)}</p>
+                  </div>
                 </div>
               </div>
 
+              {/* Montant */}
               <div>
-                <label className="label">Mode de paiement</label>
-                <Segmented
-                  label="Mode de paiement"
-                  value={['especes', 'orange_money', 'wave', 'depot'].includes(paymentMethod) ? paymentMethod : 'autre'}
-                  onChange={(v) => setPaymentMethod(v === 'autre' ? 'virement' : v)}
-                  options={[
-                    { value: 'especes', label: 'Espèces' },
-                    { value: 'orange_money', label: 'Orange Money' },
-                    { value: 'wave', label: 'Wave' },
-                    ...(depositOf(paymentOpen?.client_id) > 0 ? [{ value: 'depot', label: 'Dépôt client' }] : []),
-                    { value: 'autre', label: 'Autre' },
-                  ]}
-                />
+                <label className="label" htmlFor="pay-amount">Montant reçu</label>
+                <div className="relative">
+                  <input
+                    id="pay-amount"
+                    type="number"
+                    inputMode="numeric"
+                    min="1"
+                    max={due}
+                    required
+                    autoFocus
+                    className={`input !rounded-2xl !py-3.5 pr-20 text-2xl font-extrabold tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${tooMuch ? '!border-red-400 focus:!ring-red-500/30' : ''}`}
+                    placeholder="0"
+                    value={paymentAmount}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                  />
+                  <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">FCFA</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <button type="button" className="rounded-full border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-brand-900 dark:text-gray-200 hover:border-blue-300 hover:bg-blue-50 dark:hover:bg-white/[0.08]" onClick={() => setPaymentAmount(String(due))}>
+                    Tout solder · {currency(due)}
+                  </button>
+                  {due > 1 && (
+                    <button type="button" className="rounded-full border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-brand-900 dark:text-gray-200 hover:border-blue-300 hover:bg-blue-50 dark:hover:bg-white/[0.08]" onClick={() => setPaymentAmount(String(Math.round(due / 2)))}>
+                      Moitié · {currency(Math.round(due / 2))}
+                    </button>
+                  )}
+                  {paymentAmount !== '' && amount > 0 && (
+                    <span className={`ml-auto rounded-full px-3 py-1.5 text-xs font-semibold tabular-nums ${
+                      tooMuch
+                        ? 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400'
+                        : afterPayment === 0
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'
+                          : 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400'
+                    }`}>
+                      {tooMuch ? `Dépasse le reste dû de ${currency(amount - due)}` : afterPayment === 0 ? 'La facture sera soldée' : `Il restera ${currency(afterPayment)}`}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Mode de paiement */}
+              <div>
+                <p className="label">Mode de paiement</p>
+                <div role="radiogroup" aria-label="Mode de paiement" className="grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-2">
+                  {methods.map((m) => {
+                    const active = currentMethod === m.value
+                    const MethodIcon = m.icon
+                    return (
+                      <button
+                        key={m.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => setPaymentMethod(m.value === 'autre' ? 'virement' : m.value)}
+                        className={`flex flex-col items-center justify-center gap-1.5 rounded-2xl border px-2 py-3 text-xs font-semibold transition-all ${
+                          active
+                            ? 'border-[#13306f] bg-[#13306f] text-white shadow-sm dark:border-[#1d4fb8] dark:bg-[#1d4fb8]'
+                            : 'border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] text-brand-900 dark:text-gray-200 hover:border-blue-300 hover:bg-blue-50/50 dark:hover:bg-white/[0.06]'
+                        }`}
+                      >
+                        <MethodIcon size={20} className={active ? 'text-white' : m.tone} />
+                        <span className="text-center leading-tight">{m.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
                 {paymentMethod === 'depot' && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                     Payé avec l’argent déposé par le client — disponible : <strong className="tabular-nums">{currency(depositOf(paymentOpen?.client_id))}</strong>
                   </p>
                 )}
-                {!['especes', 'orange_money', 'wave', 'depot'].includes(paymentMethod) && (
+                {currentMethod === 'autre' && (
                   <select className="input mt-2" aria-label="Autre mode de paiement" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
                     <option value="virement">Virement</option>
                     <option value="cheque">Chèque</option>
@@ -2053,18 +2115,19 @@ export default function Sales() {
                 </div>
                 <div>
                   <label className="label" htmlFor="pay-notes">Note <span className="text-gray-400 font-normal">(optionnel)</span></label>
-                  <input id="pay-notes" className="input" value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} placeholder="Ex: acompte" />
+                  <input id="pay-notes" className="input" value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} placeholder="Ex. : acompte" />
                 </div>
               </div>
 
               {paymentError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{paymentError}</p>}
 
-              <DetailActions>
-                <button type="button" className="btn-secondary" onClick={() => setPaymentOpen(null)}>Annuler</button>
-                <button type="submit" className="btn-success" disabled={addPayment.isPending}>
-                  {addPayment.isPending ? 'Enregistrement...' : 'Confirmer le paiement'}
+              <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 px-5 sm:px-6 py-4 bg-white/95 dark:bg-darkcard/95 backdrop-blur border-t border-gray-200 dark:border-white/[0.08] flex gap-3">
+                <button type="button" className="btn-secondary !rounded-2xl !px-5" onClick={() => setPaymentOpen(null)}>Annuler</button>
+                <button type="submit" className="btn-cta flex-1" disabled={addPayment.isPending || tooMuch}>
+                  <Check size={18} strokeWidth={2.75} />
+                  {addPayment.isPending ? 'Enregistrement...' : amount > 0 && !tooMuch ? `Encaisser ${currency(amount)}` : 'Confirmer le paiement'}
                 </button>
-              </DetailActions>
+              </div>
             </form>
           )
         })()}
