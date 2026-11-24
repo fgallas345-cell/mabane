@@ -1,5 +1,6 @@
 // Questions toutes prêtes (gratuites, sans IA) : chaque question appelle un ou plusieurs
 // calculs de lecture de la fonction serveur, puis la réponse est rédigée ici.
+import { ShoppingCart, BarChart3, CalendarDays, CalendarCheck, HelpCircle, Box, TrendingUp, PackageCheck, Coins, Handshake } from 'lucide-react'
 import { callPatron, fcfa, pct } from './api'
 
 const DAY = 86_400_000
@@ -41,6 +42,7 @@ async function comparer(titre, cur, prev, labelCur, labelPrev) {
 export const QUESTIONS = [
   {
     label: "Ventes d'aujourd'hui vs hier",
+    icon: ShoppingCart,
     run: () => {
       const t = today()
       return comparer("Aujourd'hui comparé à hier", { du: iso(t), au: iso(t) }, { du: iso(addDays(t, -1)), au: iso(addDays(t, -1)) }, "Aujourd'hui", 'Hier')
@@ -48,6 +50,7 @@ export const QUESTIONS = [
   },
   {
     label: 'Cette semaine vs la semaine dernière',
+    icon: BarChart3,
     run: () => {
       const t = today()
       const m = monday(t)
@@ -63,6 +66,7 @@ export const QUESTIONS = [
   },
   {
     label: 'Bénéfice du mois',
+    icon: CalendarDays,
     run: async () => {
       const t = today()
       const r = await outil('resume_periode', { du: iso(monthStart(t)), au: iso(t) })
@@ -79,6 +83,7 @@ export const QUESTIONS = [
   },
   {
     label: 'Ce mois vs le mois dernier',
+    icon: CalendarCheck,
     run: () => {
       const t = today()
       const ms = monthStart(t)
@@ -90,6 +95,7 @@ export const QUESTIONS = [
   },
   {
     label: 'Qui me doit de l’argent ?',
+    icon: HelpCircle,
     run: async () => {
       const r = await outil('dettes_clients', { limite: 20 })
       if (!r.clients.length) return '**Aucune dette client.** Tout le monde a payé. 👍'
@@ -102,6 +108,7 @@ export const QUESTIONS = [
   },
   {
     label: 'Produits à commander',
+    icon: Box,
     run: async () => {
       const r = await outil('stock', { filtre: 'faible', recherche: '' })
       if (!r.produits.length) return '**Aucun produit sous son seuil d’alerte.** 👍'
@@ -114,6 +121,7 @@ export const QUESTIONS = [
   },
   {
     label: 'Meilleures ventes de la semaine',
+    icon: TrendingUp,
     run: async () => {
       const t = today()
       const r = await outil('meilleures_ventes', { du: iso(monday(t)), au: iso(t), limite: 10 })
@@ -123,6 +131,7 @@ export const QUESTIONS = [
   },
   {
     label: 'Meilleures ventes du mois',
+    icon: PackageCheck,
     run: async () => {
       const t = today()
       const r = await outil('meilleures_ventes', { du: iso(monthStart(t)), au: iso(t), limite: 10 })
@@ -132,15 +141,15 @@ export const QUESTIONS = [
   },
   {
     label: 'Dépenses du mois',
+    icon: Coins,
     run: async () => {
       const t = today()
       const r = await outil('depenses', { du: iso(monthStart(t)), au: iso(t) })
       if (!r.total) return 'Aucune dépense enregistrée ce mois-ci.'
       return [
         `**Dépenses du mois : ${fcfa(r.total)}**`,
-        'Par catégorie :',
         ...Object.entries(r.par_categorie).sort((a, b) => b[1] - a[1]).map(([k, v]) => `- ${k} : **${fcfa(v)}**`),
-        '',
+        '---',
         'Les plus grosses :',
         ...r.plus_grosses.slice(0, 5).map((e) => `- ${e.libelle} : ${fcfa(e.montant)} (${frDate(e.date)})`),
       ].join('\n')
@@ -148,6 +157,7 @@ export const QUESTIONS = [
   },
   {
     label: 'Achats et dettes fournisseurs',
+    icon: Handshake,
     run: async () => {
       const t = today()
       const r = await outil('achats_fournisseurs', { du: iso(monthStart(t)), au: iso(t) })

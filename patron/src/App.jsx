@@ -72,13 +72,13 @@ export default function App() {
   return (
     <div className="h-full flex flex-col">
       <main className="flex-1 overflow-y-auto">
-        {tab === 'home' && <Home firstName={firstName} onAsk={ask} onOpenAlerts={() => setTab('alerts')} onAlertCount={setAlertCount} />}
+        {tab === 'home' && <Home firstName={firstName} onAsk={ask} onOpenAlerts={() => setTab('alerts')} onAlertCount={setAlertCount} alertCount={alertCount} />}
         {tab === 'assistant' && <Questions pendingQuestion={pendingQuestion} onConsumeQuestion={() => setPendingQuestion(null)} />}
         {tab === 'alerts' && <Alerts onAlertCount={setAlertCount} />}
       </main>
 
-      <nav className="safe-bottom bg-white border-t border-gray-200/80 shadow-[0_-4px_20px_-12px_rgba(7,31,52,0.25)]" aria-label="Navigation">
-        <div className="grid grid-cols-3">
+      <nav className="safe-bottom bg-white rounded-t-[28px] shadow-[0_-8px_30px_-12px_rgba(7,31,52,0.25)]" aria-label="Navigation">
+        <div className="grid grid-cols-3 px-2 pt-2 pb-1.5">
           {TABS.map((t) => {
             const active = tab === t.key
             const Icon = t.icon
@@ -88,12 +88,12 @@ export default function App() {
                 type="button"
                 aria-current={active ? 'page' : undefined}
                 onClick={() => setTab(t.key)}
-                className={`relative flex flex-col items-center gap-1 py-2.5 text-xs font-semibold ${active ? 'text-navy-700' : 'text-gray-400'}`}
+                className={`relative flex flex-col items-center gap-1 py-1 text-[13px] font-semibold ${active ? 'text-[#13306f]' : 'text-gray-500'}`}
               >
-                <span className={`relative flex h-9 w-14 items-center justify-center rounded-2xl transition-colors ${active ? 'bg-navy-700 text-white' : ''}`}>
-                  <Icon size={20} />
+                <span className={`relative flex h-11 w-[86px] items-center justify-center rounded-full transition-colors ${active ? 'bg-[#13306f] text-white shadow-[0_8px_18px_-8px_rgba(19,48,111,0.8)]' : ''}`}>
+                  <Icon size={22} className={active ? 'fill-white/90' : ''} />
                   {t.key === 'alerts' && alertCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
+                    <span className="absolute -top-1 left-1/2 ml-1 min-w-[22px] h-[20px] px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center ring-2 ring-white">
                       {alertCount > 99 ? '99+' : alertCount}
                     </span>
                   )}
