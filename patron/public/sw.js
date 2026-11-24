@@ -1,7 +1,7 @@
 // Service worker de « Mabane Patron » : rend l'application installable et garde
 // l'interface en cache pour qu'elle s'ouvre vite. Les données (Supabase) ne sont
 // jamais mises en cache : les chiffres affichés sont toujours ceux du serveur.
-const CACHE = 'mabane-patron-v1'
+const CACHE = 'mabane-patron-v2'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/logo.png'])))

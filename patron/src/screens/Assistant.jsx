@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Send, Mic, MicOff, Sparkles, RotateCcw, AlertCircle } from 'lucide-react'
+import { Send, Mic, MicOff, Sparkles, RotateCcw, ChevronLeft } from 'lucide-react'
 import { callPatron, longDate } from '../lib/api'
 import RichText from '../lib/RichText'
+import { ScreenHeader, HeaderIcon, ErrorBox, TypingDots } from '../components/ui'
 
 const SUGGESTIONS = [
   "Combien j'ai vendu aujourd'hui ?",
@@ -28,7 +29,7 @@ function loadSaved() {
   return { api: [], bubbles: [] }
 }
 
-export default function Assistant({ pendingQuestion, onConsumeQuestion }) {
+export default function Assistant({ pendingQuestion, onConsumeQuestion, onBack }) {
   const [state, setState] = useState(loadSaved) // api : historique exact renvoyé par le serveur ; bubbles : affichage
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -109,35 +110,38 @@ export default function Assistant({ pendingQuestion, onConsumeQuestion }) {
 
   return (
     <div className="h-full flex flex-col">
-      <header className="safe-top bg-white border-b border-gray-200/80 px-4">
-        <div className="flex items-center justify-between py-3">
-          <div className="flex items-center gap-3">
-            <span className="h-10 w-10 rounded-2xl bg-navy-700 text-white flex items-center justify-center"><Sparkles size={20} /></span>
-            <div>
-              <h1 className="font-extrabold leading-tight">Assistant</h1>
-              <p className="text-xs text-gray-500">Réponses tirées des chiffres de la boutique</p>
-            </div>
-          </div>
-          {!empty && (
-            <button type="button" onClick={reset} disabled={busy} className="btn-soft !px-3 !py-2 text-xs">
-              <RotateCcw size={15} /> Nouvelle
-            </button>
-          )}
-        </div>
-      </header>
+      <ScreenHeader
+        visual={<HeaderIcon icon={Sparkles} />}
+        title="Assistant"
+        subtitle="Réponses tirées des chiffres de la boutique"
+        actions={
+          <>
+            {!empty && (
+              <button type="button" onClick={reset} disabled={busy} aria-label="Nouvelle conversation" className="header-btn">
+                <RotateCcw size={18} />
+              </button>
+            )}
+            {onBack && (
+              <button type="button" onClick={onBack} aria-label="Retour aux questions toutes prêtes" className="header-btn">
+                <ChevronLeft size={20} />
+              </button>
+            )}
+          </>
+        }
+      />
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 -mt-3 space-y-3 relative">
         {empty && (
-          <div className="pt-6 text-center">
-            <span className="mx-auto h-16 w-16 rounded-3xl bg-gradient-to-br from-navy-600 to-navy-800 text-white flex items-center justify-center shadow-lg">
-              <Sparkles size={30} />
+          <div className="card p-5 text-center">
+            <span className="mx-auto icon-chip h-14 w-14 bg-blue-100 text-navy-500">
+              <Sparkles size={26} />
             </span>
-            <p className="mt-4 text-lg font-extrabold">Posez votre question</p>
-            <p className="text-sm text-gray-500 mt-1 px-6">Ventes, bénéfice, dettes, stock, clients, factures… écrivez ou dictez.</p>
-            <div className="mt-5 flex flex-wrap justify-center gap-2">
-              {SUGGESTIONS.map((s) => (
-                <button key={s} type="button" onClick={() => ask(s)} className="rounded-full border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium shadow-card active:bg-blue-50">
-                  {s}
+            <p className="mt-3 text-lg title-sm">Posez votre question</p>
+            <p className="text-sm text-gray-500 mt-1">Ventes, bénéfice, dettes, stock, clients, factures… écrivez ou dictez.</p>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              {SUGGESTIONS.map((q) => (
+                <button key={q} type="button" onClick={() => ask(q)} className="chip">
+                  {q}
                 </button>
               ))}
             </div>
@@ -147,35 +151,20 @@ export default function Assistant({ pendingQuestion, onConsumeQuestion }) {
         {state.bubbles.map((b, i) =>
           b.role === 'user' ? (
             <div key={i} className="flex justify-end">
-              <p className="max-w-[85%] rounded-3xl rounded-br-lg bg-navy-700 text-white px-4 py-2.5 text-[15px]">{b.text}</p>
+              <p className="max-w-[85%] rounded-3xl rounded-br-lg bg-navy-700 text-white px-4 py-2.5 text-[15px] shadow-pill">{b.text}</p>
             </div>
           ) : b.role === 'assistant' ? (
-            <div key={i} className="flex justify-start">
-              <div className="max-w-[92%] rounded-3xl rounded-bl-lg bg-white border border-gray-200/80 shadow-card px-4 py-3 text-[15px] leading-relaxed">
-                <RichText text={b.text} />
-              </div>
+            <div key={i} className="card px-5 py-4 text-[15px] leading-relaxed">
+              <RichText text={b.text} />
             </div>
           ) : b.role === 'error' ? (
-            <div key={i} className="flex justify-start">
-              <p className="max-w-[92%] rounded-3xl rounded-bl-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm flex gap-2">
-                <AlertCircle size={17} className="shrink-0 mt-0.5" /> {b.text}
-              </p>
-            </div>
+            <ErrorBox key={i} message={b.text} />
           ) : (
             <p key={i} className="text-center text-xs text-gray-500">{b.text}</p>
           )
         )}
 
-        {busy && (
-          <div className="flex justify-start">
-            <div className="rounded-3xl rounded-bl-lg bg-white border border-gray-200/80 px-4 py-3 flex items-center gap-1.5" aria-label="L'assistant réfléchit">
-              {[0, 1, 2].map((d) => (
-                <span key={d} className="h-2 w-2 rounded-full bg-navy-500 animate-bounce" style={{ animationDelay: `${d * 0.15}s` }} />
-              ))}
-              <span className="ml-2 text-xs text-gray-500">Je consulte les chiffres…</span>
-            </div>
-          </div>
-        )}
+        {busy && <TypingDots label="Je consulte les chiffres…" />}
         <div ref={endRef} />
       </div>
 
@@ -184,21 +173,21 @@ export default function Assistant({ pendingQuestion, onConsumeQuestion }) {
           e.preventDefault()
           ask(input)
         }}
-        className="bg-white border-t border-gray-200/80 px-3 py-2.5 flex items-end gap-2"
+        className="bg-white border-t border-gray-100 px-3 py-2.5 flex items-end gap-2"
       >
         {SpeechRecognition && (
           <button
             type="button"
             onClick={toggleVoice}
             aria-label={listening ? 'Arrêter la dictée' : 'Dicter la question'}
-            className={`h-12 w-12 shrink-0 rounded-2xl flex items-center justify-center ${listening ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 text-navy-700'}`}
+            className={`h-12 w-12 shrink-0 rounded-full flex items-center justify-center transition ${listening ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 text-navy-700'}`}
           >
             {listening ? <MicOff size={20} /> : <Mic size={20} />}
           </button>
         )}
         <textarea
           rows={1}
-          className="input !py-3 resize-none max-h-32"
+          className="input !rounded-3xl resize-none max-h-32"
           placeholder={listening ? 'Je vous écoute…' : 'Votre question…'}
           aria-label="Votre question"
           value={input}
@@ -210,7 +199,7 @@ export default function Assistant({ pendingQuestion, onConsumeQuestion }) {
             }
           }}
         />
-        <button type="submit" disabled={busy || !input.trim()} aria-label="Envoyer" className="h-12 w-12 shrink-0 rounded-2xl bg-accent-500 text-navy-900 flex items-center justify-center disabled:opacity-40">
+        <button type="submit" disabled={busy || !input.trim()} aria-label="Envoyer" className="round-btn">
           <Send size={20} />
         </button>
       </form>

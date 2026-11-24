@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { PackageX, HandCoins, Clock, Phone, MessageCircle, RefreshCw } from 'lucide-react'
+import { Box, HandCoins, Clock, Phone, MessageCircle, RefreshCw, Bell, Users, FileWarning } from 'lucide-react'
 import { callPatron, fcfa } from '../lib/api'
+import { ScreenHeader, HeaderIcon, ErrorBox, Empty } from '../components/ui'
 
 const TABS = [
-  { key: 'stock', label: 'Stock', icon: PackageX },
+  { key: 'stock', label: 'Stock', icon: Box },
   { key: 'dettes', label: 'Dettes', icon: HandCoins },
   { key: 'anciennes', label: '+30 jours', icon: Clock },
 ]
@@ -15,18 +16,36 @@ const waNumber = (phone) => {
   return digits.length === 9 ? `221${digits}` : digits
 }
 
+const frDate = (d) => new Date(d).toLocaleDateString('fr-FR')
+
 function ContactButtons({ phone }) {
   const wa = waNumber(phone)
   if (!phone) return null
   return (
-    <span className="flex gap-1.5 shrink-0">
-      <a href={`tel:${phone}`} aria-label="Appeler" className="h-9 w-9 rounded-xl bg-blue-50 text-navy-500 flex items-center justify-center"><Phone size={16} /></a>
+    <span className="flex gap-2 shrink-0">
+      <a href={`tel:${phone}`} aria-label="Appeler" className="icon-chip h-11 w-11 bg-blue-50 text-navy-500 active:scale-95 transition">
+        <Phone size={19} className="fill-navy-500" />
+      </a>
       {wa && (
-        <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" aria-label="Écrire sur WhatsApp" className="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-          <MessageCircle size={16} />
+        <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" aria-label="Écrire sur WhatsApp" className="icon-chip h-11 w-11 bg-emerald-50 text-emerald-600 active:scale-95 transition">
+          <MessageCircle size={20} />
         </a>
       )}
     </span>
+  )
+}
+
+/** Ligne : nom en gras, détail gris, montant rouge éventuel, actions à droite */
+function Row({ title, detail, amount, upper = true, right }) {
+  return (
+    <li className="row-card px-4 py-3 flex items-center gap-3">
+      <span className="min-w-0 flex-1">
+        <span className={`block text-[15px] font-extrabold truncate text-navy-900 ${upper ? 'uppercase' : ''}`}>{title}</span>
+        <span className="block text-sm text-gray-500 truncate">{detail}</span>
+        {amount != null && <span className="block text-[15px] amount-red">{fcfa(amount)}</span>}
+      </span>
+      {right}
+    </li>
   )
 }
 
@@ -55,64 +74,55 @@ export default function Alerts({ onAlertCount }) {
   }, [load])
 
   const counts = { stock: data?.stock.length ?? 0, dettes: data?.dettes.length ?? 0, anciennes: data?.factures_anciennes.length ?? 0 }
+  const lateTotal = data ? data.factures_anciennes.reduce((s, f) => s + f.reste, 0) : 0
 
   return (
-    <div className="pb-6">
-      <header className="safe-top bg-white border-b border-gray-200/80 px-4 sticky top-0 z-10">
-        <div className="flex items-center justify-between py-3">
-          <div>
-            <h1 className="text-xl font-extrabold">Alertes</h1>
-            <p className="text-xs text-gray-500">Ce qui demande votre attention</p>
-          </div>
-          <button type="button" aria-label="Actualiser" onClick={load} className="h-10 w-10 rounded-2xl bg-gray-100 flex items-center justify-center">
-            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+    <div className="pb-6 min-h-full">
+      <ScreenHeader
+        visual={<HeaderIcon icon={Bell} />}
+        title="Alertes"
+        subtitle="Ce qui demande votre attention"
+        actions={
+          <button type="button" aria-label="Actualiser" onClick={load} className="header-btn">
+            <RefreshCw size={19} className={loading ? 'animate-spin' : ''} />
           </button>
-        </div>
-        <div role="tablist" className="grid grid-cols-3 gap-1 rounded-2xl bg-gray-100 p-1 mb-3">
+        }
+      />
+
+      <div className="px-4 -mt-3 space-y-3 relative">
+        {/* Onglets en pastilles avec compteurs */}
+        <div role="tablist" aria-label="Type d'alerte" className="flex gap-2 overflow-x-auto pb-1">
           {TABS.map((t) => {
             const active = tab === t.key
             const Icon = t.icon
             return (
-              <button
-                key={t.key}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setTab(t.key)}
-                className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold ${active ? 'bg-navy-700 text-white' : 'text-navy-900'}`}
-              >
-                <Icon size={15} /> {t.label}
-                {counts[t.key] > 0 && <span className={`rounded-full px-1.5 text-[10px] ${active ? 'bg-white/20' : 'bg-white'}`}>{counts[t.key]}</span>}
+              <button key={t.key} type="button" role="tab" aria-selected={active} onClick={() => setTab(t.key)} className={active ? 'pill-on' : 'pill-off'}>
+                <Icon size={17} /> {t.label}
+                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${active ? 'bg-white/20' : 'bg-gray-100'}`}>{counts[t.key]}</span>
               </button>
             )
           })}
         </div>
-      </header>
 
-      <div className="px-4 pt-4 space-y-3">
-        {error && (
-          <div className="card p-4 text-sm text-red-700 bg-red-50 border-red-200">
-            {error}
-            <button type="button" className="block mt-2 font-semibold underline" onClick={load}>Réessayer</button>
-          </div>
-        )}
-        {loading && !data && Array.from({ length: 5 }).map((_, i) => <div key={i} className="card h-16 animate-pulse" />)}
+        {error && <ErrorBox message={error} onRetry={load} />}
+        {loading && !data && Array.from({ length: 6 }).map((_, i) => <div key={i} className="row-card h-16 animate-pulse" />)}
 
         {data && tab === 'stock' && (
           data.stock.length === 0 ? (
-            <p className="card p-6 text-center text-sm text-gray-500">Aucun produit sous son seuil d'alerte. 👍</p>
+            <Empty>Aucun produit sous son seuil d'alerte. 👍</Empty>
           ) : (
-            <ul className="card divide-y divide-gray-100 overflow-hidden">
+            <ul className="space-y-2">
               {data.stock.map((p) => (
-                <li key={p.produit} className="flex items-center justify-between gap-3 px-4 py-3">
-                  <span className="min-w-0">
-                    <span className="block text-sm font-bold uppercase truncate">{p.produit}</span>
-                    <span className="block text-xs text-gray-500">Seuil d'alerte : {p.seuil} {p.unite || ''}</span>
-                  </span>
-                  <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${p.stock <= 0 ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-800'}`}>
-                    {p.stock <= 0 ? 'Rupture' : `${p.stock} restant${p.stock > 1 ? 's' : ''}`}
-                  </span>
-                </li>
+                <Row
+                  key={p.produit}
+                  title={p.produit}
+                  detail={`Seuil d'alerte : ${p.seuil} ${p.unite || ''}`}
+                  right={
+                    <span className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${p.stock <= 0 ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-800'}`}>
+                      {p.stock <= 0 ? 'Rupture' : `${p.stock} restant${p.stock > 1 ? 's' : ''}`}
+                    </span>
+                  }
+                />
               ))}
             </ul>
           )
@@ -120,23 +130,23 @@ export default function Alerts({ onAlertCount }) {
 
         {data && tab === 'dettes' && (
           <>
-            <div className="rounded-3xl bg-gradient-to-br from-red-500 to-red-700 text-white p-4">
-              <p className="text-sm text-white/80">Total dû par les clients</p>
-              <p className="text-2xl font-extrabold tabular-nums">{fcfa(data.dette_totale)}</p>
+            <div className="hero p-5">
+              <p className="text-sm text-white/85">Total dû par les clients</p>
+              <p className="text-[28px] font-extrabold tabular-nums leading-tight">{fcfa(data.dette_totale)}</p>
+              <Users size={44} className="absolute right-5 top-1/2 -translate-y-1/2 text-white/90 fill-white/90" />
             </div>
             {data.dettes.length === 0 ? (
-              <p className="card p-6 text-center text-sm text-gray-500">Aucune dette client. 👍</p>
+              <Empty>Aucune dette client. 👍</Empty>
             ) : (
-              <ul className="card divide-y divide-gray-100 overflow-hidden">
+              <ul className="space-y-2">
                 {data.dettes.map((c) => (
-                  <li key={c.client + c.plus_ancienne} className="flex items-center gap-3 px-4 py-3">
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-bold uppercase truncate">{c.client}</span>
-                      <span className="block text-xs text-gray-500">{c.factures} facture{c.factures > 1 ? 's' : ''} · depuis le {new Date(c.plus_ancienne).toLocaleDateString('fr-FR')}</span>
-                      <span className="block text-sm font-extrabold text-red-600 tabular-nums">{fcfa(c.reste)}</span>
-                    </span>
-                    <ContactButtons phone={c.telephone} />
-                  </li>
+                  <Row
+                    key={c.client + c.plus_ancienne}
+                    title={c.client}
+                    detail={`${c.factures} facture${c.factures > 1 ? 's' : ''} : depuis le ${frDate(c.plus_ancienne)}`}
+                    amount={c.reste}
+                    right={<ContactButtons phone={c.telephone} />}
+                  />
                 ))}
               </ul>
             )}
@@ -145,23 +155,30 @@ export default function Alerts({ onAlertCount }) {
 
         {data && tab === 'anciennes' && (
           data.factures_anciennes.length === 0 ? (
-            <p className="card p-6 text-center text-sm text-gray-500">Aucune facture impayée depuis plus de 30 jours. 👍</p>
+            <Empty>Aucune facture impayée depuis plus de 30 jours. 👍</Empty>
           ) : (
-            <ul className="card divide-y divide-gray-100 overflow-hidden">
-              {data.factures_anciennes.map((f) => (
-                <li key={f.numero} className="flex items-center gap-3 px-4 py-3">
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-bold">{f.numero}</span>
-                    <span className="block text-xs text-gray-500 uppercase truncate">{f.client} · {new Date(f.date).toLocaleDateString('fr-FR')}</span>
-                    <span className="block text-sm font-extrabold text-red-600 tabular-nums">{fcfa(f.reste)}</span>
-                  </span>
-                  <ContactButtons phone={f.telephone} />
-                </li>
-              ))}
-            </ul>
+            <>
+              <div className="rounded-3xl bg-amber-50 border border-amber-200 p-4 flex items-center gap-3">
+                <span className="icon-chip h-11 w-11 bg-amber-100 text-amber-600"><FileWarning size={22} /></span>
+                <p className="text-sm text-amber-900">
+                  <strong>{data.factures_anciennes.length} facture{data.factures_anciennes.length > 1 ? 's' : ''}</strong> impayée{data.factures_anciennes.length > 1 ? 's' : ''} depuis plus de 30 jours : <strong>{fcfa(lateTotal)}</strong>
+                </p>
+              </div>
+              <ul className="space-y-2">
+                {data.factures_anciennes.map((f) => (
+                  <Row
+                    key={f.numero}
+                    upper={false}
+                    title={f.numero}
+                    detail={`${f.client.toUpperCase()} · ${frDate(f.date)}`}
+                    amount={f.reste}
+                    right={<ContactButtons phone={f.telephone} />}
+                  />
+                ))}
+              </ul>
+            </>
           )
         )}
-
       </div>
     </div>
   )

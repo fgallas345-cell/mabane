@@ -24,7 +24,7 @@ export default function RichText({ text }) {
           titleDone = true
           return (
             <p key={i} className="flex items-center gap-2.5 pb-1 text-[16px] font-extrabold text-navy-900">
-              <span className="h-9 w-9 shrink-0 rounded-xl bg-blue-50 text-[#1d4fb8] flex items-center justify-center"><BarChart3 size={18} /></span>
+              <span className="icon-chip h-9 w-9 bg-blue-100 text-navy-500"><BarChart3 size={18} /></span>
               <span>{trimmed.replace(/\*\*/g, '')}</span>
             </p>
           )

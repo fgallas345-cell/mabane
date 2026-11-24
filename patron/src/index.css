@@ -13,24 +13,78 @@ body {
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
-  @apply bg-[#f3f6fb] text-navy-900;
+  @apply bg-page text-navy-900;
 }
 
 @layer components {
+  /* --- Surfaces --- */
   .card {
-    @apply bg-white rounded-3xl border border-gray-200/70 shadow-card;
+    @apply bg-white rounded-3xl border border-gray-100 shadow-card;
   }
+  .row-card {
+    @apply bg-white rounded-2xl border border-gray-100 shadow-row;
+  }
+  /* Grande carte bleue (montant clé) */
+  .hero {
+    @apply relative overflow-hidden rounded-3xl bg-gradient-to-br from-navy-400 via-navy-500 to-navy-700 text-white shadow-hero;
+  }
+  /* Pastille d'icône ronde (dans les cartes) */
+  .icon-chip {
+    @apply shrink-0 rounded-full flex items-center justify-center;
+  }
+
+  /* --- Boutons --- */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition active:scale-[0.98] disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-semibold transition active:scale-[0.98] disabled:opacity-50;
   }
   .btn-cta {
-    @apply btn bg-accent-500 text-navy-900 shadow-[0_10px_24px_-10px_rgba(243,158,38,0.7)];
+    @apply btn bg-accent-500 text-navy-900 shadow-cta;
+  }
+  .btn-primary {
+    @apply btn bg-navy-700 text-white shadow-pill;
   }
   .btn-soft {
     @apply btn bg-white border border-gray-200 text-navy-900;
   }
+  /* Bouton rond blanc translucide, dans les en-têtes bleus */
+  .header-btn {
+    @apply h-11 w-11 shrink-0 rounded-full bg-white/10 ring-1 ring-white/30 flex items-center justify-center text-white transition active:scale-95 disabled:opacity-50;
+  }
+  /* Bouton rond marine (recherche, envoi) */
+  .round-btn {
+    @apply h-12 w-12 shrink-0 rounded-full bg-navy-700 text-white flex items-center justify-center shadow-pill transition active:scale-95 disabled:opacity-40;
+  }
+  /* Petit bouton rond gris (flèche, actualiser) */
+  .mini-btn {
+    @apply h-8 w-8 shrink-0 rounded-full bg-gray-100 text-navy-900 flex items-center justify-center;
+  }
+
+  /* --- Pastilles d'onglets / de choix --- */
+  .pill {
+    @apply shrink-0 inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition-colors;
+  }
+  .pill-on {
+    @apply pill bg-navy-700 text-white shadow-pill;
+  }
+  .pill-off {
+    @apply pill bg-white text-navy-900 border border-gray-200;
+  }
+  /* Suggestion de question */
+  .chip {
+    @apply rounded-full border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-navy-900 active:bg-blue-50;
+  }
+
+  /* --- Champs --- */
   .input {
-    @apply w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-[15px] text-navy-900 outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500;
+    @apply w-full rounded-full border border-gray-200 bg-white px-5 py-3 text-[15px] text-navy-900 outline-none placeholder:text-gray-400 focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500;
+  }
+
+  /* --- Textes --- */
+  .title-sm {
+    @apply font-extrabold text-navy-900;
+  }
+  .amount-red {
+    @apply font-extrabold text-red-600 tabular-nums;
   }
 }
 
