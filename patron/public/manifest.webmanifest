@@ -1,0 +1,16 @@
+{
+  "name": "Mabane Patron",
+  "short_name": "Mabane Patron",
+  "description": "Les chiffres de la Quincaillerie Mabane et un assistant pour poser vos questions.",
+  "lang": "fr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#071f34",
+  "theme_color": "#071f34",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

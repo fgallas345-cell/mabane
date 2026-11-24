@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+  @apply bg-[#f3f6fb] text-navy-900;
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-3xl border border-gray-200/70 shadow-card;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition active:scale-[0.98] disabled:opacity-50;
+  }
+  .btn-cta {
+    @apply btn bg-accent-500 text-navy-900 shadow-[0_10px_24px_-10px_rgba(243,158,38,0.7)];
+  }
+  .btn-soft {
+    @apply btn bg-white border border-gray-200 text-navy-900;
+  }
+  .input {
+    @apply w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-[15px] text-navy-900 outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500;
+  }
+}
+
+/* Zones « encoche » des téléphones (iPhone, Android plein écran) */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

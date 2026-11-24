@@ -1,0 +1,25 @@
+{
+  "name": "mabane-patron",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Application mobile du propriétaire : chiffres du jour, alertes et assistant IA (lecture seule).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.0",
+    "lucide-react": "^1.23.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.3",
+    "autoprefixer": "^10.5.2",
+    "postcss": "^8.5.16",
+    "tailwindcss": "^3.4.19",
+    "vite": "^8.1.1"
+  }
+}
