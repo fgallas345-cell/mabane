@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { PackageX, HandCoins, Clock, Phone, MessageCircle, RefreshCw, Sparkles } from 'lucide-react'
+import { PackageX, HandCoins, Clock, Phone, MessageCircle, RefreshCw } from 'lucide-react'
 import { callPatron, fcfa } from '../lib/api'
 
 const TABS = [
@@ -30,7 +30,7 @@ function ContactButtons({ phone }) {
   )
 }
 
-export default function Alerts({ onAsk, onAlertCount }) {
+export default function Alerts({ onAlertCount }) {
   const [tab, setTab] = useState('stock')
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
@@ -162,9 +162,6 @@ export default function Alerts({ onAsk, onAlertCount }) {
           )
         )}
 
-        <button type="button" onClick={() => onAsk('Fais-moi un point sur les dettes clients et le stock à commander, avec les priorités.')} className="btn-cta w-full">
-          <Sparkles size={18} /> Demander un point à l'assistant
-        </button>
       </div>
     </div>
   )

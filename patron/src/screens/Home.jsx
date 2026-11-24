@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { RefreshCw, ArrowUp, ArrowDown, Wallet, ShoppingCart, TrendingUp, Receipt, HandCoins, PackageX, Sparkles, ChevronRight, LogOut } from 'lucide-react'
+import { RefreshCw, ArrowUp, ArrowDown, Wallet, ShoppingCart, TrendingUp, Receipt, HandCoins, PackageX, MessageSquareText, ChevronRight, LogOut } from 'lucide-react'
 import { callPatron, fcfa, pct, longDate } from '../lib/api'
 import { supabase } from '../lib/supabase'
 
@@ -36,7 +36,8 @@ function Tile({ icon: Icon, label, value, sub, tone = 'blue', onClick }) {
   )
 }
 
-const QUICK = ["Compare aujourd'hui avec hier", 'Qui me doit le plus ?', 'Quels produits dois-je commander ?', 'Mon bénéfice ce mois-ci ?']
+// Libellés identiques aux questions toutes prêtes (lib/answers.js)
+const QUICK = ["Ventes d'aujourd'hui vs hier", 'Qui me doit de l’argent ?', 'Produits à commander', 'Bénéfice du mois']
 
 export default function Home({ firstName, onAsk, onOpenAlerts, onAlertCount }) {
   const [data, setData] = useState(null)
@@ -166,7 +167,7 @@ export default function Home({ firstName, onAsk, onOpenAlerts, onAlertCount }) {
 
         {/* Questions rapides → assistant */}
         <section className="card p-4">
-          <h2 className="font-bold flex items-center gap-2"><Sparkles size={18} className="text-accent-500" /> Demandez à l'assistant</h2>
+          <h2 className="font-bold flex items-center gap-2"><MessageSquareText size={18} className="text-accent-500" /> Questions rapides</h2>
           <div className="mt-3 flex flex-wrap gap-2">
             {QUICK.map((q) => (
               <button key={q} type="button" onClick={() => onAsk(q)} className="rounded-full border border-gray-200 bg-[#f7f9fc] px-3.5 py-2 text-sm font-medium active:bg-blue-50">

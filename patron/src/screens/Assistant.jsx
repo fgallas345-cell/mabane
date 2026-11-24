@@ -1,6 +1,7 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Send, Mic, MicOff, Sparkles, RotateCcw, AlertCircle } from 'lucide-react'
 import { callPatron, longDate } from '../lib/api'
+import RichText from '../lib/RichText'
 
 const SUGGESTIONS = [
   "Combien j'ai vendu aujourd'hui ?",
@@ -16,33 +17,6 @@ const SUGGESTIONS = [
 // L'API impose de renvoyer l'historique tel quel : au-delà, on repart d'une nouvelle conversation
 const MAX_HISTORY = 70
 const STORAGE_KEY = 'mabane-patron-chat'
-
-/** Mise en forme légère des réponses : listes « - » et gras **…** */
-function RichText({ text }) {
-  const lines = String(text).split('\n')
-  const bold = (line) =>
-    line.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-      part.startsWith('**') && part.endsWith('**') ? <strong key={i}>{part.slice(2, -2)}</strong> : <Fragment key={i}>{part}</Fragment>
-    )
-  return (
-    <div className="space-y-1.5">
-      {lines.map((line, i) => {
-        const trimmed = line.trim()
-        if (!trimmed) return null
-        if (/^[-•*]\s+/.test(trimmed)) {
-          return (
-            <p key={i} className="flex gap-2">
-              <span className="text-accent-500 font-bold">•</span>
-              <span>{bold(trimmed.replace(/^[-•*]\s+/, ''))}</span>
-            </p>
-          )
-        }
-        if (/^#{1,6}\s+/.test(trimmed)) return <p key={i} className="font-bold">{bold(trimmed.replace(/^#{1,6}\s+/, ''))}</p>
-        return <p key={i}>{bold(trimmed)}</p>
-      })}
-    </div>
-  )
-}
 
 function loadSaved() {
   try {

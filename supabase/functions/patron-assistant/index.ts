@@ -7,7 +7,8 @@
 // Actions (POST, corps JSON) :
 //   { action: 'kpis' }                       → chiffres de l'écran d'accueil
 //   { action: 'alertes' }                    → stock faible, dettes, factures impayées anciennes
-//   { action: 'chat', messages: [...] }      → assistant IA (Claude) avec outils de lecture
+//   { action: 'outil', name, input }         → une question toute prête (gratuit, sans IA)
+//   { action: 'chat', messages: [...] }      → assistant IA (Claude) avec outils de lecture (payant)
 //
 // Déploiement :
 //   supabase functions deploy patron-assistant
@@ -498,6 +499,13 @@ Deno.serve(async (req) => {
           reste: round(Math.max(0, n(s.total) - n(s.amount_paid))),
         })),
       })
+    }
+
+    // Questions toutes prêtes (gratuites, sans IA) : exécute directement un outil de lecture
+    if (body.action === 'outil') {
+      const name = String(body.name ?? '')
+      if (!tools.some((t) => t.name === name)) return json({ error: 'Question inconnue' }, 400)
+      return json(await runTool(db, name, body.input ?? {}))
     }
 
     if (body.action === 'chat') {

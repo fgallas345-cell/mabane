@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
-import { Home as HomeIcon, Sparkles, Bell, LogOut, ShieldAlert } from 'lucide-react'
+import { Home as HomeIcon, MessageSquareText, Bell, LogOut, ShieldAlert } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import Login from './screens/Login'
 import Home from './screens/Home'
-import Assistant from './screens/Assistant'
+import Questions from './screens/Questions'
 import Alerts from './screens/Alerts'
 
 const TABS = [
   { key: 'home', label: 'Accueil', icon: HomeIcon },
-  { key: 'assistant', label: 'Assistant', icon: Sparkles },
+  { key: 'assistant', label: 'Questions', icon: MessageSquareText },
   { key: 'alerts', label: 'Alertes', icon: Bell },
 ]
 
@@ -73,8 +73,8 @@ export default function App() {
     <div className="h-full flex flex-col">
       <main className="flex-1 overflow-y-auto">
         {tab === 'home' && <Home firstName={firstName} onAsk={ask} onOpenAlerts={() => setTab('alerts')} onAlertCount={setAlertCount} />}
-        {tab === 'assistant' && <Assistant pendingQuestion={pendingQuestion} onConsumeQuestion={() => setPendingQuestion(null)} />}
-        {tab === 'alerts' && <Alerts onAsk={ask} onAlertCount={setAlertCount} />}
+        {tab === 'assistant' && <Questions pendingQuestion={pendingQuestion} onConsumeQuestion={() => setPendingQuestion(null)} />}
+        {tab === 'alerts' && <Alerts onAlertCount={setAlertCount} />}
       </main>
 
       <nav className="safe-bottom bg-white border-t border-gray-200/80 shadow-[0_-4px_20px_-12px_rgba(7,31,52,0.25)]" aria-label="Navigation">
