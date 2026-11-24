@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Plus, Pencil, Trash2, Search, Phone, History, Users, MapPin, Receipt, CreditCard, Wallet, UserPlus, UserCheck, Contact } from 'lucide-react'
 import { useClients } from '../../hooks/useEntities'
 import { useSales, useAddSalePayment } from '../../hooks/useSales'
+import PaymentForm from '../../components/PaymentForm'
 import Modal from '../../components/Modal'
 import ActionButton from '../../components/ActionButton'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -435,41 +436,21 @@ export default function Clients() {
       </Modal>
 
       {/* ---- Modal: paiement d'une dette client ---- */}
-      <Modal open={!!payingSale} onClose={() => setPayingSale(null)} icon={CreditCard} title="Enregistrer un paiement">
+      <Modal open={!!payingSale} onClose={() => setPayingSale(null)} icon={CreditCard} title="Enregistrer un paiement" subtitle={payingSale ? `Facture ${payingSale.invoice_number}` : ''} maxWidth="max-w-lg">
         {payingSale && (
-          <form onSubmit={handleAddPayment} className="space-y-4">
-            {paymentError && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-xl px-3 py-2">{paymentError}</div>}
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Facture <strong className="whitespace-nowrap">{payingSale.invoice_number}</strong> — solde dû :{' '}
-              <span className="text-red-500 font-semibold">{currency(Number(payingSale.total) - Number(payingSale.amount_paid))}</span>
-            </p>
-            <div>
-              <label className="label">Montant du paiement (FCFA)</label>
-              <input
-                type="number"
-                min="1"
-                max={Number(payingSale.total) - Number(payingSale.amount_paid)}
-                required
-                autoFocus
-                className="input text-lg font-semibold"
-                value={paymentAmount}
-                onChange={(e) => setPaymentAmount(e.target.value)}
-              />
-              <button
-                type="button"
-                className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1] mt-1.5"
-                onClick={() => setPaymentAmount(String(Number(payingSale.total) - Number(payingSale.amount_paid)))}
-              >
-                Solder la totalité
-              </button>
-            </div>
-            <div className="flex justify-end gap-2.5 pt-4 mt-1 border-t border-gray-100 dark:border-white/[0.06]">
-              <button type="button" className="btn-secondary" onClick={() => setPayingSale(null)}>Annuler</button>
-              <button type="submit" className="btn-primary" disabled={addPayment.isPending}>
-                {addPayment.isPending ? 'Enregistrement...' : 'Confirmer le paiement'}
-              </button>
-            </div>
-          </form>
+          <PaymentForm
+            partyLabel="Client"
+            partyName={historyClient?.name}
+            documentLabel={`Facture ${payingSale.invoice_number}`}
+            total={payingSale.total}
+            paid={payingSale.amount_paid}
+            amount={paymentAmount}
+            setAmount={setPaymentAmount}
+            error={paymentError}
+            pending={addPayment.isPending}
+            onSubmit={handleAddPayment}
+            onCancel={() => setPayingSale(null)}
+          />
         )}
       </Modal>
 

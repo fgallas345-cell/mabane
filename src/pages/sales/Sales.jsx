@@ -658,18 +658,29 @@ export default function Sales() {
     }
   }
 
+  // Factures ET devis : un devis se modifie sans toucher au stock
+  const canEditSale = (s) => isAdmin && s.status !== 'annulee' && s.delivery_status !== 'partielle'
+  const openEditSale = (s) => {
+    setEditSale(s)
+    setEditClientId(s.client_id || '')
+    setEditDiscount(s.discount || 0)
+    setEditSaleItems(s.sale_items || [])
+    setEditProductToAdd('')
+  }
+
   const handleUpdateSale = async (e) => {
     e.preventDefault()
     if (!editSale) return
 
+    const docName = editSale.quote_status === 'draft' ? 'le devis' : 'la facture'
     // --- Validation ---
     if (editSaleItems.length === 0) {
-      toast.error('Une facture doit contenir au moins un article.')
+      toast.error(`${editSale.quote_status === 'draft' ? 'Un devis' : 'Une facture'} doit contenir au moins un article.`)
       return
     }
     const newSubtotal = editSaleItems.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
     if (Number(editDiscount || 0) > newSubtotal) {
-      toast.error('La remise ne peut pas dépasser le sous-total de la facture.')
+      toast.error(`La remise ne peut pas dépasser le sous-total de ${docName}.`)
       return
     }
     const newTotal = newSubtotal - Number(editDiscount || 0)
@@ -722,7 +733,7 @@ export default function Sales() {
         setDetailSale(null) // Force refresh by closing detail
       }
     } catch (err) {
-      toast.error(err.message || 'Erreur lors de la mise à jour de la facture')
+      toast.error(err.message || `Erreur lors de la mise à jour de ${docName}`)
     }
   }
 
@@ -967,21 +978,37 @@ export default function Sales() {
       !isDraft && !isCancelled && due > 0 && { icon: CreditCard, label: 'Enregistrer un paiement', tone: 'emerald', onClick: () => { setPaymentOpen(s); setPaymentAmount(''); setPaymentMethod('especes'); setPaymentError('') } },
       !isDraft && !isCancelled && s.delivery_status !== 'livree' && { icon: Truck, label: 'Gérer les livraisons', onClick: () => setDeliverySale(s) },
       !isDraft && { icon: MessageCircle, label: s.clients?.phone ? 'Envoyer par WhatsApp' : 'WhatsApp : aucun numéro', disabled: !s.clients?.phone, onClick: () => sendInvoiceViaWhatsApp(s) },
-      isAdmin && !isDraft && !isCancelled && s.delivery_status !== 'partielle' && {
+      canEditSale(s) && {
         icon: Edit,
-        label: 'Modifier la facture',
-        onClick: () => {
-          setEditSale(s)
-          setEditClientId(s.client_id || '')
-          setEditDiscount(s.discount || 0)
-          setEditSaleItems(s.sale_items || [])
-          setEditProductToAdd('')
-        },
+        label: isDraft ? 'Modifier le devis' : 'Modifier la facture',
+        onClick: () => openEditSale(s),
       },
       isAdmin && !isCancelled && { icon: RotateCcw, label: isDraft ? 'Annuler le devis' : 'Annuler la facture', tone: 'red', onClick: () => setConfirmCancel(s) },
       isAdmin && isCancelled && { icon: Trash2, label: 'Supprimer la facture', tone: 'red', onClick: () => setConfirmDelete(s) },
     ]
   }
+
+  const editIsDraft = editSale?.quote_status === 'draft'
+  const editProductOptions = useMemo(
+    () => products.map((product) => ({
+      value: product.id,
+      label: `${product.name} - ${currency(product.sale_price)} (stock: ${formatQty(product.stock)})`,
+      searchText: `${product.name || ''} ${product.sale_price || ''}`,
+      disabled: !editIsDraft && Number(product.stock) <= 0,
+      content: (
+        <span className="flex min-w-0 flex-1 items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block truncate font-medium">{product.name}</span>
+            <span className={`block truncate text-xs ${Number(product.stock) <= 0 ? 'text-red-500' : 'text-gray-400'}`}>
+              {Number(product.stock) <= 0 ? 'Rupture de stock' : `Stock : ${formatQty(product.stock)}`}
+            </span>
+          </span>
+          <span className="shrink-0 text-xs font-semibold tabular-nums text-gray-500 dark:text-gray-300">{currency(product.sale_price)}</span>
+        </span>
+      ),
+    })),
+    [products, editIsDraft]
+  )
 
   const productOptions = useMemo(
     () =>
@@ -1549,7 +1576,7 @@ export default function Sales() {
           </div>
 
           {/* ---- Pied collant : total + actions ---- */}
-          <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 px-5 sm:px-6 py-4 bg-white/95 dark:bg-darkcard/95 backdrop-blur border-t border-gray-200 dark:border-white/[0.08] rounded-b-xl">
+          <div className="sticky -bottom-5 sm:-bottom-6 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 px-5 sm:px-6 py-4 bg-white/95 dark:bg-darkcard/95 backdrop-blur border-t border-gray-200 dark:border-white/[0.08] rounded-b-xl">
             {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400 mb-2">{error}</p>}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="rounded-2xl bg-blue-50/80 dark:bg-blue-500/10 px-5 py-2.5 sm:min-w-[280px]">
@@ -1579,13 +1606,24 @@ export default function Sales() {
       </Modal>
 
       {/* ---- Modal: modifier une facture (client, remise, articles) ---- */}
-      <Modal open={!!editSale} onClose={() => setEditSale(null)} icon={Pencil} title={<>Modifier la facture <span className="whitespace-nowrap">{editSale?.invoice_number}</span></>} maxWidth="max-w-2xl">
+      <Modal
+        open={!!editSale}
+        onClose={() => setEditSale(null)}
+        icon={Pencil}
+        title={<>{editIsDraft ? 'Modifier le devis' : 'Modifier la facture'} <span className="whitespace-nowrap">{editSale?.invoice_number}</span></>}
+        subtitle={editIsDraft ? 'Client, articles, quantités, prix et remise · le stock ne bouge pas' : 'Client, articles, quantités, prix et remise'}
+        maxWidth="max-w-4xl"
+      >
         {editSale && (() => {
           const editSubtotal = editSaleItems.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
           const editTotal = Math.max(0, editSubtotal - Number(editDiscount || 0))
+          const alreadyPaid = Number(editSale.amount_paid || 0)
+          const newDue = editTotal - alreadyPaid
+          const diff = editTotal - Number(editSale.total || 0)
           return (
-            <form onSubmit={handleUpdateSale}>
-              <div className="space-y-4">
+            <form onSubmit={handleUpdateSale} className="space-y-4">
+              {/* Client + ajout de produit */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="label">Client <span className="text-gray-400 font-normal">(optionnel)</span></label>
                   <SearchableSelect
@@ -1596,89 +1634,139 @@ export default function Sales() {
                     emptyMessage="Aucun client trouvé"
                   />
                 </div>
-
                 <div>
                   <label className="label">Ajouter un produit</label>
                   <SearchableSelect
                     value=""
                     onChange={(id) => addEditProduct(id)}
-                    options={productOptions}
+                    options={editProductOptions}
                     placeholder="Tapez le nom du produit puis Entrée..."
                     emptyMessage="Aucun produit trouvé"
                     clearOnSelect
                   />
                 </div>
+              </div>
 
-                <div className="border border-gray-200 dark:border-white/[0.08] rounded-xl divide-y divide-gray-100 dark:divide-white/[0.06]">
-                  {editSaleItems.length === 0 ? (
-                    <p className="text-sm text-gray-400 p-4 text-center">Aucun article : ajoutez-en au moins un.</p>
-                  ) : (
-                    editSaleItems.map((item) => (
-                      <div key={item.id} className="p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="text-sm font-bold text-brand-900 dark:text-gray-100 truncate">{item.product_name}</p>
-                          <button
-                            type="button"
-                            aria-label={`Retirer ${item.product_name}`}
-                            className="p-1.5 -mr-1.5 -mt-1 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl"
-                            onClick={() => handleRemoveEditSaleItem(item.id)}
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                        <div className="flex flex-wrap items-end justify-between gap-3 mt-2">
-                          <div className="flex items-end gap-3">
-                            <div>
-                              <p className="text-[11px] text-gray-400 mb-1">Quantité</p>
-                              <QtyStepper value={item.quantity} unit={unitOf(item.product_id)} onChange={(q) => handleEditSaleItemQuantity(item.id, q)} />
-                            </div>
-                            <div>
-                              <p className="text-[11px] text-gray-400 mb-1">Prix unitaire</p>
-                              <input
-                                type="number"
-                                inputMode="numeric"
-                                min="0"
-                                aria-label="Prix unitaire"
-                                className="input w-28 h-9 text-right"
-                                value={item.unit_price}
-                                onFocus={(e) => e.target.select()}
-                                onChange={(e) => handleEditSaleItemPrice(item.id, e.target.value)}
-                              />
-                            </div>
-                          </div>
-                          <p className="text-sm font-semibold tabular-nums">{currency(item.quantity * item.unit_price)}</p>
-                        </div>
-                      </div>
-                    ))
-                  )}
+              {/* Articles : une ligne par article */}
+              <div className="rounded-2xl border border-gray-200/80 dark:border-white/[0.08] overflow-hidden">
+                <div className="hidden md:grid grid-cols-[1fr_140px_130px_130px_40px] items-center gap-3 px-4 py-2.5 bg-gray-50/80 dark:bg-white/[0.03] border-b border-gray-200/80 dark:border-white/[0.08] text-xs font-bold uppercase tracking-wide text-brand-900 dark:text-gray-300">
+                  <span>Article ({editSaleItems.length})</span>
+                  <span className="text-center">Quantité</span>
+                  <span className="text-right">Prix unitaire</span>
+                  <span className="text-right">Total</span>
+                  <span />
                 </div>
+                {editSaleItems.length === 0 ? (
+                  <p className="text-sm text-gray-500 p-6 text-center">Aucun article : ajoutez-en au moins un.</p>
+                ) : (
+                  <ul className="divide-y divide-gray-100 dark:divide-white/[0.06] max-h-[42vh] overflow-y-auto">
+                    {editSaleItems.map((item) => (
+                      <li key={item.id} className="grid grid-cols-[1fr_auto] md:grid-cols-[1fr_140px_130px_130px_40px] items-center gap-x-3 gap-y-2 px-4 py-2.5">
+                        <p className="text-sm font-bold uppercase text-brand-900 dark:text-gray-100 truncate" title={item.product_name}>{item.product_name}</p>
+                        <button
+                          type="button"
+                          aria-label={`Retirer ${item.product_name}`}
+                          title="Retirer l'article"
+                          className="md:hidden h-9 w-9 rounded-xl flex items-center justify-center bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-400"
+                          onClick={() => handleRemoveEditSaleItem(item.id)}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                        <div className="md:flex md:justify-center">
+                          <QtyStepper value={item.quantity} unit={unitOf(item.product_id)} onChange={(q) => handleEditSaleItemQuantity(item.id, q)} />
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min="0"
+                            aria-label={`Prix unitaire de ${item.product_name}`}
+                            className="input !rounded-2xl h-10 pr-3 text-right font-semibold tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                            value={item.unit_price}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => handleEditSaleItemPrice(item.id, e.target.value)}
+                          />
+                        </div>
+                        <p className="text-sm font-extrabold tabular-nums text-right text-brand-900 dark:text-gray-100 col-span-2 md:col-span-1">
+                          <span className="md:hidden text-xs font-medium text-gray-500 mr-2">Total</span>
+                          {currency(item.quantity * item.unit_price)}
+                        </p>
+                        <button
+                          type="button"
+                          aria-label={`Retirer ${item.product_name}`}
+                          title="Retirer l'article"
+                          className="hidden md:flex h-9 w-9 rounded-xl items-center justify-center bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
+                          onClick={() => handleRemoveEditSaleItem(item.id)}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
 
+              {/* Remise + récapitulatif */}
+              <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4 rounded-2xl bg-gray-50 dark:bg-white/[0.03] p-4">
                 <div>
                   <label className="label" htmlFor="edit-discount">Remise (FCFA)</label>
-                  <input id="edit-discount" type="number" inputMode="numeric" min="0" className="input sm:w-48" value={editDiscount} onFocus={(e) => e.target.select()} onChange={(e) => setEditDiscount(e.target.value)} />
+                  <input
+                    id="edit-discount"
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    className="input !rounded-2xl text-right font-semibold tabular-nums"
+                    value={editDiscount}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setEditDiscount(e.target.value)}
+                  />
                 </div>
-
-                <dl className="rounded-xl bg-gray-50 dark:bg-white/[0.04] p-3 space-y-1.5 text-sm">
-                  <div className="flex justify-between text-gray-500 dark:text-gray-400"><dt>Sous-total</dt><dd className="tabular-nums">{currency(editSubtotal)}</dd></div>
-                  {Number(editDiscount) > 0 && (
-                    <div className="flex justify-between text-gray-500 dark:text-gray-400"><dt>Remise</dt><dd className="tabular-nums">- {currency(editDiscount)}</dd></div>
-                  )}
-                  <div className="flex justify-between text-gray-500 dark:text-gray-400"><dt>Déjà payé</dt><dd className="tabular-nums">{currency(editSale.amount_paid)}</dd></div>
+                <dl className={`grid grid-cols-2 gap-2 text-center ${editIsDraft ? 'sm:grid-cols-2' : 'sm:grid-cols-4'}`}>
+                  <div className="rounded-xl bg-white dark:bg-white/[0.04] px-2 py-2.5">
+                    <dt className="text-[11px] text-gray-500">Sous-total</dt>
+                    <dd className="text-sm font-bold tabular-nums text-brand-900 dark:text-gray-100">{currency(editSubtotal)}</dd>
+                  </div>
+                  <div className="rounded-xl bg-white dark:bg-white/[0.04] px-2 py-2.5">
+                    <dt className="text-[11px] text-gray-500">Ancien total</dt>
+                    <dd className="text-sm font-bold tabular-nums text-brand-900 dark:text-gray-100">{currency(editSale.total)}</dd>
+                  </div>
+                  {!editIsDraft && <>
+                  <div className="rounded-xl bg-white dark:bg-white/[0.04] px-2 py-2.5">
+                    <dt className="text-[11px] text-gray-500">Déjà payé</dt>
+                    <dd className="text-sm font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{currency(alreadyPaid)}</dd>
+                  </div>
+                  <div className={`rounded-xl px-2 py-2.5 ${newDue > 0 ? 'bg-red-50 dark:bg-red-500/10' : 'bg-emerald-50 dark:bg-emerald-500/10'}`}>
+                    <dt className="text-[11px] text-gray-500">{newDue > 0 ? 'Nouveau reste' : newDue < 0 ? 'Trop-perçu' : 'Soldée'}</dt>
+                    <dd className={`text-sm font-extrabold tabular-nums ${newDue > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{currency(Math.abs(newDue))}</dd>
+                  </div>
+                  </>}
                 </dl>
               </div>
 
-              <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-5 px-5 sm:px-6 py-3 bg-white dark:bg-darkcard border-t border-gray-200 dark:border-white/[0.08] rounded-b-xl">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs text-gray-400">Nouveau total</p>
-                    <p className="text-xl font-semibold tabular-nums leading-tight">{currency(editTotal)}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button type="button" className="btn-secondary" onClick={() => setEditSale(null)}>Annuler</button>
-                    <button type="submit" className="btn-primary" disabled={updateSaleItems.isPending || editSaleItems.length === 0}>
-                      {updateSaleItems.isPending ? 'Enregistrement...' : 'Enregistrer'}
-                    </button>
-                  </div>
+              {!editIsDraft && newDue < 0 && (
+                <Callout tone="amber" title="Le nouveau total est inférieur à ce qui a déjà été payé">
+                  Le client a payé {currency(alreadyPaid)} : vérifiez les quantités ou prévoyez un remboursement.
+                </Callout>
+              )}
+
+              {/* Pied collant : nouveau total + actions */}
+              <div className="sticky -bottom-5 sm:-bottom-6 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 px-5 sm:px-6 py-4 bg-white/95 dark:bg-darkcard/95 backdrop-blur border-t border-gray-200 dark:border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="rounded-2xl bg-blue-50/80 dark:bg-blue-500/10 px-5 py-2.5">
+                  <p className="text-sm font-semibold text-brand-900 dark:text-gray-200">{editIsDraft ? 'Nouveau total du devis' : 'Nouveau total'}</p>
+                  <p className="text-2xl font-extrabold tabular-nums leading-tight text-[#13306f] dark:text-blue-200">
+                    {currency(editTotal)}
+                    {diff !== 0 && (
+                      <span className={`ml-2 align-middle text-xs font-bold ${diff > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {diff > 0 ? '+' : '−'}{currency(Math.abs(diff))}
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <button type="button" className="btn-secondary !rounded-2xl !px-5" onClick={() => setEditSale(null)}>Annuler</button>
+                  <button type="submit" className="btn-cta flex-1 sm:flex-none" disabled={updateSaleItems.isPending || editSaleItems.length === 0}>
+                    <Check size={18} strokeWidth={2.75} /> {updateSaleItems.isPending ? 'Enregistrement...' : editIsDraft ? 'Enregistrer le devis' : 'Enregistrer les modifications'}
+                  </button>
                 </div>
               </div>
             </form>
@@ -1929,7 +2017,7 @@ export default function Sales() {
               )}
 
               {/* ---- Actions (pied collant) ---- */}
-              <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 px-5 sm:px-6 py-4 bg-white/95 dark:bg-darkcard/95 backdrop-blur border-t border-gray-200 dark:border-white/[0.08] flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5">
+              <div className="sticky -bottom-5 sm:-bottom-6 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 px-5 sm:px-6 py-4 bg-white/95 dark:bg-darkcard/95 backdrop-blur border-t border-gray-200 dark:border-white/[0.08] flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5">
                 <div className="flex flex-wrap gap-2">
                   <button className="btn-secondary !rounded-2xl" onClick={() => downloadInvoicePDF(detailSale)}>
                     <Download size={16} /> PDF
@@ -1942,6 +2030,11 @@ export default function Sales() {
                   {!isDraft && detailSale.delivery_status !== 'livree' && !isCancelled && (
                     <button className="btn-secondary !rounded-2xl" onClick={() => { const sale = detailSale; setDetailSale(null); setDeliverySale(sale) }}>
                       <Truck size={16} /> Livraisons
+                    </button>
+                  )}
+                  {canEditSale(detailSale) && (
+                    <button className="btn-secondary !rounded-2xl" onClick={() => { const sale = detailSale; setDetailSale(null); openEditSale(sale) }}>
+                      <Pencil size={16} /> {isDraft ? 'Modifier le devis' : 'Modifier'}
                     </button>
                   )}
                   {isDraft && isAdmin && (
@@ -2121,7 +2214,7 @@ export default function Sales() {
 
               {paymentError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{paymentError}</p>}
 
-              <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 px-5 sm:px-6 py-4 bg-white/95 dark:bg-darkcard/95 backdrop-blur border-t border-gray-200 dark:border-white/[0.08] flex gap-3">
+              <div className="sticky -bottom-5 sm:-bottom-6 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 px-5 sm:px-6 py-4 bg-white/95 dark:bg-darkcard/95 backdrop-blur border-t border-gray-200 dark:border-white/[0.08] flex gap-3">
                 <button type="button" className="btn-secondary !rounded-2xl !px-5" onClick={() => setPaymentOpen(null)}>Annuler</button>
                 <button type="submit" className="btn-cta flex-1" disabled={addPayment.isPending || tooMuch}>
                   <Check size={18} strokeWidth={2.75} />

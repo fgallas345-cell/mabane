@@ -8,6 +8,7 @@ import { usePurchases, useCreatePurchase, useAddPurchasePayment, useCancelPurcha
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import Pagination from '../../components/Pagination'
+import PaymentForm from '../../components/PaymentForm'
 import Modal from '../../components/Modal'
 import ActionButton from '../../components/ActionButton'
 import { DetailHeader, DetailList, DetailRow, Callout, DetailActions } from '../../components/Detail'
@@ -652,7 +653,7 @@ export default function Purchases() {
             </div>
           </div>
 
-          <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-5 px-5 sm:px-6 py-3 bg-white dark:bg-darkcard border-t border-gray-200 dark:border-white/[0.08] rounded-b-xl">
+          <div className="sticky -bottom-5 sm:-bottom-6 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-5 px-5 sm:px-6 py-3 bg-white dark:bg-darkcard border-t border-gray-200 dark:border-white/[0.08] rounded-b-xl">
             {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400 mb-2">{error}</p>}
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -728,7 +729,7 @@ export default function Purchases() {
                 <p className="text-sm text-gray-500 dark:text-gray-400">Déjà payé : <span className="font-medium tabular-nums">{currency(editPurchase.amount_paid)}</span></p>
               </div>
 
-              <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-5 px-5 sm:px-6 py-3 bg-white dark:bg-darkcard border-t border-gray-200 dark:border-white/[0.08] rounded-b-xl">
+              <div className="sticky -bottom-5 sm:-bottom-6 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-5 px-5 sm:px-6 py-3 bg-white dark:bg-darkcard border-t border-gray-200 dark:border-white/[0.08] rounded-b-xl">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-xs text-gray-400">Nouveau total</p>
@@ -809,41 +810,21 @@ export default function Purchases() {
       </Modal>
 
       {/* ---- Modal: paiement ---- */}
-      <Modal open={!!paymentOpen} onClose={() => setPaymentOpen(null)} icon={CreditCard} title="Enregistrer un paiement">
+      <Modal open={!!paymentOpen} onClose={() => setPaymentOpen(null)} icon={CreditCard} title="Enregistrer un paiement" subtitle={paymentOpen ? `Achat ${paymentOpen.purchase_number}` : ''} maxWidth="max-w-lg">
         {paymentOpen && (
-          <form onSubmit={handleAddPayment} className="space-y-4">
-            {paymentError && <div className="text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-xl px-3 py-2">{paymentError}</div>}
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Fournisseur <strong>{paymentOpen.supplier_name || paymentOpen.suppliers?.name}</strong> — solde dû :{' '}
-              <span className="text-red-500 font-semibold">{currency(Number(paymentOpen.total) - Number(paymentOpen.amount_paid))}</span>
-            </p>
-            <div>
-              <label className="label">Montant du paiement (FCFA)</label>
-              <input
-                type="number"
-                min="1"
-                max={Number(paymentOpen.total) - Number(paymentOpen.amount_paid)}
-                required
-                autoFocus
-                className="input text-lg font-semibold"
-                value={paymentAmount}
-                onChange={(e) => setPaymentAmount(e.target.value)}
-              />
-              <button
-                type="button"
-                className="badge bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1] mt-1.5"
-                onClick={() => setPaymentAmount(String(Number(paymentOpen.total) - Number(paymentOpen.amount_paid)))}
-              >
-                Solder la totalité
-              </button>
-            </div>
-            <div className="flex justify-end gap-2.5 pt-4 mt-1 border-t border-gray-100 dark:border-white/[0.06]">
-              <button type="button" className="btn-secondary" onClick={() => setPaymentOpen(null)}>Annuler</button>
-              <button type="submit" className="btn-primary" disabled={addPayment.isPending}>
-                {addPayment.isPending ? 'Enregistrement...' : 'Confirmer le paiement'}
-              </button>
-            </div>
-          </form>
+          <PaymentForm
+            partyLabel="Fournisseur"
+            partyName={paymentOpen.supplier_name || paymentOpen.suppliers?.name}
+            documentLabel={`Achat ${paymentOpen.purchase_number}`}
+            total={paymentOpen.total}
+            paid={paymentOpen.amount_paid}
+            amount={paymentAmount}
+            setAmount={setPaymentAmount}
+            error={paymentError}
+            pending={addPayment.isPending}
+            onSubmit={handleAddPayment}
+            onCancel={() => setPaymentOpen(null)}
+          />
         )}
       </Modal>
 

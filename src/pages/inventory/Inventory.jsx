@@ -283,7 +283,7 @@ export default function Inventory() {
           </div>
 
           {/* Barre de validation */}
-          <div className="sticky -bottom-5 lg:-bottom-7 -mx-4 lg:-mx-8 px-4 lg:px-8 py-3 bg-white/95 dark:bg-darkcard/95 backdrop-blur border-t border-gray-200 dark:border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="sticky -bottom-6 lg:-bottom-8 -mx-4 lg:-mx-8 px-4 lg:px-8 py-3 bg-white/95 dark:bg-darkcard/95 backdrop-blur border-t border-gray-200 dark:border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <p className="text-sm text-gray-600 dark:text-gray-300">
               <strong>{summary.counted}</strong> produit(s) compté(s) · <strong>{summary.gaps}</strong> écart(s) ·{' '}
               <strong className={summary.value < 0 ? 'text-red-600 dark:text-red-400' : ''}>{currency(summary.value)}</strong>
