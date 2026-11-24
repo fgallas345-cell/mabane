@@ -488,6 +488,8 @@ Deno.serve(async (req) => {
         ),
       ])
       return json({
+        // Nombres réels (les listes ci-dessous peuvent être limitées aux premiers éléments)
+        totaux: { stock: faible.nombre, dettes: dettes.nombre_clients, anciennes: factures.length },
         stock: faible.produits,
         dettes: dettes.clients,
         dette_totale: dettes.total_du,

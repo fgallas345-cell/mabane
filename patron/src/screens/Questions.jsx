@@ -75,14 +75,14 @@ export default function Questions({ pendingQuestion, onConsumeQuestion }) {
         subtitle="Posez une question : réponse immédiate"
         actions={
           thread.length > 0 && (
-            <button type="button" onClick={() => setThread([])} disabled={busy} className="btn !px-4 !py-2 border border-white/40 bg-white/10 text-white">
-              <RotateCcw size={15} /> Effacer
+            <button type="button" onClick={() => setThread([])} disabled={busy} className="btn !px-3 min-[380px]:!px-4 !py-2 border border-white/40 bg-white/10 text-white">
+              <RotateCcw size={15} /> <span className="max-[379px]:sr-only">Effacer</span>
             </button>
           )
         }
       />
 
-      <div className="px-4 -mt-3 space-y-4 relative">
+      <div className="px-3 min-[380px]:px-4 -mt-3 space-y-4 relative">
         {/* Recherche client / facture */}
         <form onSubmit={submitSearch} className="card p-3 space-y-3">
           <div className="grid grid-cols-2 gap-1 rounded-full bg-gray-100 p-1">
@@ -112,7 +112,7 @@ export default function Questions({ pendingQuestion, onConsumeQuestion }) {
         </form>
 
         {/* Questions toutes prêtes */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-2.5 min-[380px]:gap-3">
           {QUESTIONS.map((q) => {
             const Icon = q.icon || MessageSquareText
             return (
@@ -121,10 +121,10 @@ export default function Questions({ pendingQuestion, onConsumeQuestion }) {
                 type="button"
                 disabled={busy}
                 onClick={() => run(q.label, q.run, q.icon)}
-                className="card relative p-4 pr-8 text-left active:scale-[0.98] transition disabled:opacity-60 min-h-[104px] flex flex-col justify-between"
+                className="card relative p-3.5 pr-7 min-[380px]:p-4 min-[380px]:pr-8 text-left active:scale-[0.98] transition disabled:opacity-60 min-h-[104px] min-w-0 flex flex-col justify-between"
               >
                 <Icon size={26} className="text-navy-500" strokeWidth={2.2} />
-                <span className="mt-2 text-[14px] font-medium leading-snug text-navy-900">{q.label}</span>
+                <span className="mt-2 text-[13.5px] min-[380px]:text-[14px] font-medium leading-snug text-navy-900">{q.label}</span>
                 <ChevronRight size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-navy-500" />
               </button>
             )
@@ -137,7 +137,7 @@ export default function Questions({ pendingQuestion, onConsumeQuestion }) {
             const Icon = b.icon || MessageSquareText
             return (
               <div key={i} ref={i === lastUser ? endRef : undefined} className="flex justify-center pt-1 scroll-mt-4">
-                <p className="btn-primary !px-6 text-[15px] cursor-default">
+                <p className="btn-primary !px-5 text-[15px] cursor-default max-w-full text-center">
                   <Icon size={19} /> {b.text}
                 </p>
               </div>

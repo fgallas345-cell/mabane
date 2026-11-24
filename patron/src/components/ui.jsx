@@ -22,14 +22,14 @@ export function Skyline({ className = '' }) {
 }
 
 /** Logo Mabane dans un cercle blanc */
-export function Logo({ className = 'h-14 w-14' }) {
+export function Logo({ className = 'h-12 w-12 min-[380px]:h-14 min-[380px]:w-14' }) {
   return <img src="/logo.png" alt="Logo Mabane" className={`${className} shrink-0 rounded-full bg-white object-cover ring-4 ring-white/20`} />
 }
 
 /** Icône dans un cercle blanc (à la place du logo) */
 export function HeaderIcon({ icon: Icon }) {
   return (
-    <span className="h-14 w-14 shrink-0 rounded-full bg-white text-navy-700 flex items-center justify-center ring-4 ring-white/20">
+    <span className="h-12 w-12 min-[380px]:h-14 min-[380px]:w-14 shrink-0 rounded-full bg-white text-navy-700 flex items-center justify-center ring-4 ring-white/20">
       <Icon size={26} className="fill-navy-700/90" />
     </span>
   )
@@ -44,13 +44,13 @@ export function HeaderIcon({ icon: Icon }) {
  */
 export function ScreenHeader({ visual, title, subtitle, actions, overlap = false }) {
   return (
-    <header className={`safe-top relative overflow-hidden bg-gradient-to-br from-navy-500 via-navy-600 to-navy-800 text-white px-5 ${overlap ? 'pb-24' : 'pb-10'}`}>
+    <header className={`safe-top relative shrink-0 overflow-hidden bg-gradient-to-br from-navy-500 via-navy-600 to-navy-800 text-white px-4 min-[380px]:px-5 ${overlap ? 'pb-24' : 'pb-10'}`}>
       <Skyline className="pointer-events-none absolute right-0 top-2 h-36 w-60" />
-      <div className="relative flex items-center gap-3 pt-5">
+      <div className="relative flex items-center gap-2.5 min-[380px]:gap-3 pt-4 min-[380px]:pt-5">
         {visual}
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-extrabold leading-tight truncate">{title}</h1>
-          {subtitle && <p className="text-sm text-white/75 leading-snug">{subtitle}</p>}
+          <h1 className="text-[clamp(17px,5.2vw,20px)] font-extrabold leading-tight truncate">{title}</h1>
+          {subtitle && <p className="text-[13px] min-[380px]:text-sm text-white/75 leading-snug line-clamp-2">{subtitle}</p>}
         </div>
         {actions && <div className="flex gap-2 shrink-0">{actions}</div>}
       </div>

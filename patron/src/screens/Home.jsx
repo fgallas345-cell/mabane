@@ -13,7 +13,7 @@ function Trend({ value }) {
   const up = value >= 0
   const Icon = up ? ArrowUp : ArrowDown
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold text-white ${up ? 'bg-emerald-500' : 'bg-red-500'}`}>
+    <span className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 min-[380px]:px-2.5 py-1 text-[11px] min-[380px]:text-xs font-bold text-white ${up ? 'bg-emerald-500' : 'bg-red-500'}`}>
       <Icon size={13} strokeWidth={3} /> {up ? '+' : ''}{new Intl.NumberFormat('fr-FR').format(value)}%
     </span>
   )
@@ -39,7 +39,7 @@ function HeroCurve({ className = '' }) {
 
 function Tile({ icon: Icon, label, value, sub, tone = 'blue', onClick }) {
   return (
-    <button type="button" onClick={onClick} className="card relative p-4 text-left active:scale-[0.98] transition">
+    <button type="button" onClick={onClick} className="card relative p-3.5 min-[380px]:p-4 text-left active:scale-[0.98] transition min-w-0">
       <span className={`icon-chip h-12 w-12 ${CHIP_TONES[tone]}`}>
         <Icon size={23} />
       </span>
@@ -47,7 +47,7 @@ function Tile({ icon: Icon, label, value, sub, tone = 'blue', onClick }) {
         <ChevronRight size={16} />
       </span>
       <p className="mt-3 text-sm text-gray-600">{label}</p>
-      <p className="text-[17px] font-extrabold leading-tight tabular-nums text-navy-900 break-words">{value}</p>
+      <p className="text-[clamp(14px,4.4vw,17px)] font-extrabold leading-tight tabular-nums text-navy-900">{value}</p>
       {sub && <p className="text-xs text-gray-500 mt-1">{sub}</p>}
     </button>
   )
@@ -92,6 +92,8 @@ export default function Home({ firstName, onAsk, onOpenAlerts, onAlertCount, ale
   const month = data?.mois
   const salesCount = today ? today.factures.nombre + today.caisse_rapide.nombre : 0
   const dateLabel = longDate().replace(/(^|\s)\p{L}/gu, (m) => m.toUpperCase())
+  // Petit écran : date courte sur une ligne (« Mar. 24 nov. »)
+  const shortDate = new Date().toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }).replace(/^\p{L}/u, (m) => m.toUpperCase())
 
   return (
     <div className="pb-6 min-h-full">
@@ -99,7 +101,12 @@ export default function Home({ firstName, onAsk, onOpenAlerts, onAlertCount, ale
         overlap
         visual={<Logo />}
         title={<>Bonjour <span className="text-accent-400">{firstName}</span> <span aria-hidden="true">👋</span></>}
-        subtitle={dateLabel}
+        subtitle={
+          <>
+            <span className="min-[380px]:hidden">{shortDate}</span>
+            <span className="max-[379px]:hidden">{dateLabel}</span>
+          </>
+        }
         actions={
           <>
             <button type="button" aria-label={`Alertes (${alertCount})`} onClick={onOpenAlerts} className="header-btn relative">
@@ -113,22 +120,22 @@ export default function Home({ firstName, onAsk, onOpenAlerts, onAlertCount, ale
         }
       />
 
-      <div className="px-4 -mt-16 space-y-4 relative">
+      <div className="px-3 min-[380px]:px-4 -mt-16 space-y-3 min-[380px]:space-y-4 relative">
         {/* Grande carte : encaissé aujourd'hui */}
         <section className="hero p-5">
           <HeroCurve className="pointer-events-none absolute right-0 bottom-0 h-28 w-48" />
           <div className="relative flex items-center justify-between gap-2">
-            <p className="text-[15px] text-white/90 flex items-center gap-2"><Wallet size={18} /> Encaissé aujourd'hui</p>
+            <p className="min-w-0 text-[14px] min-[380px]:text-[15px] text-white/90 flex items-center gap-2 whitespace-nowrap"><Wallet size={18} className="shrink-0" /> Encaissé aujourd'hui</p>
             {today && <Trend value={pct(today.encaisse, yesterday.encaisse)} />}
           </div>
           {loading && !data ? (
             <div className="relative mt-3 h-10 w-2/3 rounded-xl bg-white/15 animate-pulse" />
           ) : (
-            <p className="relative mt-2 text-[34px] font-extrabold tabular-nums leading-tight">{today ? fcfa(today.encaisse) : '—'}</p>
+            <p className="relative mt-2 text-[clamp(26px,9vw,34px)] font-extrabold tabular-nums leading-tight">{today ? fcfa(today.encaisse) : '—'}</p>
           )}
           {today && (
-            <p className="relative text-sm text-white/80 mt-1 flex items-center gap-1.5">
-              <BarChart3 size={15} /> Hier : {fcfa(yesterday.encaisse)} • {salesCount} vente{salesCount > 1 ? 's' : ''} aujourd'hui
+            <p className="relative text-[13px] min-[380px]:text-sm text-white/80 mt-1 flex items-start gap-1.5 pr-10">
+              <BarChart3 size={15} className="shrink-0 mt-0.5" /> Hier : {fcfa(yesterday.encaisse)} • {salesCount} vente{salesCount > 1 ? 's' : ''} aujourd'hui
             </p>
           )}
         </section>
@@ -143,7 +150,7 @@ export default function Home({ firstName, onAsk, onOpenAlerts, onAlertCount, ale
 
         {data && (
           <>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5 min-[380px]:gap-3">
               <Tile icon={ShoppingCart} label="Ventes du jour" value={fcfa(today.chiffre_affaires)} sub={`Factures : ${fcfa(today.factures.montant)}`} onClick={() => onAsk("Ventes d'aujourd'hui vs hier")} />
               <Tile icon={TrendingUp} tone="green" label="Bénéfice du mois" value={fcfa(month.benefice)} sub={`Marge : ${fcfa(month.marge_brute)}`} onClick={() => onAsk('Bénéfice du mois')} />
               <Tile icon={FileText} tone="orange" label="Ventes du mois" value={fcfa(month.chiffre_affaires)} sub={`Dépenses : ${fcfa(month.depenses)}`} onClick={() => onAsk('Ce mois vs le mois dernier')} />

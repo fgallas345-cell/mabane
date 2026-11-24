@@ -8,12 +8,68 @@ body,
   height: 100%;
 }
 
+html {
+  -webkit-text-size-adjust: 100%; /* pas de grossissement automatique du texte en paysage */
+}
+
 body {
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
-  overscroll-behavior-y: none;
+  overscroll-behavior: none; /* pas de rebond ni de « tirer pour actualiser » du navigateur */
+  overflow: hidden; /* seule la zone de contenu défile, comme une application native */
   @apply bg-page text-navy-900;
+}
+
+/* Boutons et liens : réaction immédiate au toucher (pas de délai « double tap ») et pas de sélection de texte */
+button,
+a,
+[role='tab'] {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Champs à 16 px minimum : sinon l'iPhone zoome sur la page à chaque saisie */
+input,
+textarea,
+select {
+  font-size: 16px !important;
+}
+
+/* Cadre de l'application : hauteur exacte de l'écran visible (barre d'adresse comprise),
+   colonne de téléphone centrée sur tablette et ordinateur */
+.app-backdrop {
+  height: 100%;
+  height: 100dvh;
+  width: 100%;
+  overflow: hidden;
+  @apply bg-page;
+}
+.app-frame {
+  @apply relative mx-auto flex h-full w-full max-w-[480px] flex-col overflow-hidden bg-page;
+}
+@media (min-width: 520px) {
+  .app-backdrop {
+    @apply bg-gradient-to-br from-[#dfe9fb] to-[#c7d7f5];
+  }
+  .app-frame {
+    @apply shadow-[0_0_60px_-10px_rgba(7,31,52,0.35)];
+  }
+}
+
+/* Masquer la barre de défilement des listes horizontales (onglets) */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Textes longs (noms de produits, libellés) : retour à la ligne plutôt que débordement */
+.card,
+.row-card {
+  overflow-wrap: anywhere;
 }
 
 @layer components {
@@ -48,7 +104,7 @@ body {
   }
   /* Bouton rond blanc translucide, dans les en-têtes bleus */
   .header-btn {
-    @apply h-11 w-11 shrink-0 rounded-full bg-white/10 ring-1 ring-white/30 flex items-center justify-center text-white transition active:scale-95 disabled:opacity-50;
+    @apply h-10 w-10 min-[380px]:h-11 min-[380px]:w-11 shrink-0 rounded-full bg-white/10 ring-1 ring-white/30 flex items-center justify-center text-white transition active:scale-95 disabled:opacity-50;
   }
   /* Bouton rond marine (recherche, envoi) */
   .round-btn {

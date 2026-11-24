@@ -6,7 +6,7 @@ import { ScreenHeader, HeaderIcon, ErrorBox, Empty } from '../components/ui'
 const TABS = [
   { key: 'stock', label: 'Stock', icon: Box },
   { key: 'dettes', label: 'Dettes', icon: HandCoins },
-  { key: 'anciennes', label: '+30 jours', icon: Clock },
+  { key: 'anciennes', label: '+30 jours', short: '+30 j', icon: Clock },
 ]
 
 /** Numéro sénégalais au format international pour WhatsApp (77 123 45 67 → 221771234567) */
@@ -22,12 +22,12 @@ function ContactButtons({ phone }) {
   const wa = waNumber(phone)
   if (!phone) return null
   return (
-    <span className="flex gap-2 shrink-0">
-      <a href={`tel:${phone}`} aria-label="Appeler" className="icon-chip h-11 w-11 bg-blue-50 text-navy-500 active:scale-95 transition">
+    <span className="flex gap-1.5 min-[380px]:gap-2 shrink-0">
+      <a href={`tel:${phone}`} aria-label="Appeler" className="icon-chip h-10 w-10 min-[380px]:h-11 min-[380px]:w-11 bg-blue-50 text-navy-500 active:scale-95 transition">
         <Phone size={19} className="fill-navy-500" />
       </a>
       {wa && (
-        <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" aria-label="Écrire sur WhatsApp" className="icon-chip h-11 w-11 bg-emerald-50 text-emerald-600 active:scale-95 transition">
+        <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" aria-label="Écrire sur WhatsApp" className="icon-chip h-10 w-10 min-[380px]:h-11 min-[380px]:w-11 bg-emerald-50 text-emerald-600 active:scale-95 transition">
           <MessageCircle size={20} />
         </a>
       )}
@@ -38,10 +38,10 @@ function ContactButtons({ phone }) {
 /** Ligne : nom en gras, détail gris, montant rouge éventuel, actions à droite */
 function Row({ title, detail, amount, upper = true, right }) {
   return (
-    <li className="row-card px-4 py-3 flex items-center gap-3">
+    <li className="row-card px-3.5 min-[380px]:px-4 py-3 flex items-center gap-2.5 min-[380px]:gap-3">
       <span className="min-w-0 flex-1">
         <span className={`block text-[15px] font-extrabold truncate text-navy-900 ${upper ? 'uppercase' : ''}`}>{title}</span>
-        <span className="block text-sm text-gray-500 truncate">{detail}</span>
+        <span className="block text-[13px] min-[380px]:text-sm text-gray-500 leading-snug">{detail}</span>
         {amount != null && <span className="block text-[15px] amount-red">{fcfa(amount)}</span>}
       </span>
       {right}
@@ -61,7 +61,7 @@ export default function Alerts({ onAlertCount }) {
     try {
       const res = await callPatron('alertes')
       setData(res)
-      onAlertCount?.(res.stock.length + res.dettes.length)
+      onAlertCount?.((res.totaux?.stock ?? res.stock.length) + (res.totaux?.dettes ?? res.dettes.length))
     } catch (e) {
       setError(e.message)
     } finally {
@@ -73,7 +73,7 @@ export default function Alerts({ onAlertCount }) {
     load()
   }, [load])
 
-  const counts = { stock: data?.stock.length ?? 0, dettes: data?.dettes.length ?? 0, anciennes: data?.factures_anciennes.length ?? 0 }
+  const counts = data?.totaux ?? { stock: data?.stock.length ?? 0, dettes: data?.dettes.length ?? 0, anciennes: data?.factures_anciennes.length ?? 0 }
   const lateTotal = data ? data.factures_anciennes.reduce((s, f) => s + f.reste, 0) : 0
 
   return (
@@ -89,16 +89,20 @@ export default function Alerts({ onAlertCount }) {
         }
       />
 
-      <div className="px-4 -mt-3 space-y-3 relative">
+      <div className="px-3 min-[380px]:px-4 -mt-3 space-y-3 relative">
         {/* Onglets en pastilles avec compteurs */}
-        <div role="tablist" aria-label="Type d'alerte" className="flex gap-2 overflow-x-auto pb-1">
+        <div role="tablist" aria-label="Type d'alerte" className="grid grid-cols-3 gap-2">
           {TABS.map((t) => {
             const active = tab === t.key
             const Icon = t.icon
             return (
-              <button key={t.key} type="button" role="tab" aria-selected={active} onClick={() => setTab(t.key)} className={active ? 'pill-on' : 'pill-off'}>
-                <Icon size={17} /> {t.label}
-                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${active ? 'bg-white/20' : 'bg-gray-100'}`}>{counts[t.key]}</span>
+              <button key={t.key} type="button" role="tab" aria-selected={active} onClick={() => setTab(t.key)} className={`${active ? 'pill-on' : 'pill-off'} !px-2 !gap-1.5 min-w-0`}>
+                <Icon size={16} className="shrink-0 max-[399px]:hidden" />
+                <span className="truncate text-[13px]">
+                  <span className="min-[400px]:hidden">{t.short || t.label}</span>
+                  <span className="max-[399px]:hidden">{t.label}</span>
+                </span>
+                <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-bold ${active ? 'bg-white/20' : 'bg-gray-100'}`}>{counts[t.key]}</span>
               </button>
             )
           })}
@@ -130,10 +134,10 @@ export default function Alerts({ onAlertCount }) {
 
         {data && tab === 'dettes' && (
           <>
-            <div className="hero p-5">
+            <div className="hero p-5 pr-16">
               <p className="text-sm text-white/85">Total dû par les clients</p>
-              <p className="text-[28px] font-extrabold tabular-nums leading-tight">{fcfa(data.dette_totale)}</p>
-              <Users size={44} className="absolute right-5 top-1/2 -translate-y-1/2 text-white/90 fill-white/90" />
+              <p className="text-[clamp(22px,7.5vw,28px)] font-extrabold tabular-nums leading-tight">{fcfa(data.dette_totale)}</p>
+              <Users size={38} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/90 fill-white/90" />
             </div>
             {data.dettes.length === 0 ? (
               <Empty>Aucune dette client. 👍</Empty>
