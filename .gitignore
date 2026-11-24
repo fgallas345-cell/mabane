@@ -40,3 +40,7 @@ backup/
 
 # Signature manuscrite du gérant (donnée sensible : jamais dans le dépôt)
 signature/
+
+# Fichiers techniques de la CLI Supabase et secrets de déploiement
+supabase/.temp/
+.env.deploy
