@@ -512,7 +512,10 @@ Deno.serve(async (req) => {
   } catch (e) {
     if (e instanceof Anthropic.APIError) {
       const status = e.status ?? 502
+      // deno-lint-ignore no-explicit-any
+      const detail = String((e as any).error?.error?.message ?? e.message ?? '')
       const message =
+        /credit balance/i.test(detail) ? "Crédit Anthropic épuisé : rechargez le compte sur console.anthropic.com (Plans & Billing)." :
         status === 401 ? "Clé API Anthropic invalide." :
         status === 429 ? "Trop de questions en même temps : réessayez dans une minute." :
         status >= 500 ? "Le service d'IA est momentanément indisponible : réessayez." :
